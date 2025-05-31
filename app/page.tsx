@@ -40,6 +40,8 @@ export default function HomePage() {
   const [priceDetails, setPriceDetails] = useState<PriceDetails | null>(null);
   const [showPurchaseModal, setShowPurchaseModal] = useState(false);
   const [userTokenBalance, setUserTokenBalance] = useState<number>(0);
+  const [safewordInput, setSafewordInput] = useState('');
+  const [isSwapUnlocked, setIsSwapUnlocked] = useState(false);
 
   useEffect(() => {
     const storedEmail = localStorage.getItem('zeyodaUserEmail');
@@ -169,8 +171,6 @@ export default function HomePage() {
     if (!isLoggedIn) {
       setShakeActive(true);
       setTimeout(() => setShakeActive(false), 500);
-      const loginSectionEl = document.getElementById('loginSection');
-      loginSectionEl?.scrollIntoView({ behavior: 'smooth' });
       emailInputRef.current?.focus();
       return;
     }
@@ -181,35 +181,66 @@ export default function HomePage() {
     }
   };
 
-  const handleConfirmPurchase = () => {
+  const handleConfirmPurchase = (paymentMethod?: string) => {
     setShowPurchaseModal(false);
     const newBalance = userTokenBalance + 1;
     setUserTokenBalance(newBalance);
     localStorage.setItem('zeyodaUserTokenBalance', newBalance.toString());
-    alert(`Purchase confirmed for 1 ${artistConfig?.tokenName || 'token'}! Your new balance: ${newBalance}. Video: ${artistConfig?.videoSrc}`);
+    alert(
+      `Purchase Confirmed!\n\n` +
+      `Item: 1 ${artistConfig?.tokenName || 'token'} for "${artistConfig?.artworkTitle || 'artwork'}"\n` +
+      `Price: $${priceDetails?.currentDisplayPrice.toFixed(2)}\n` +
+      `Payment Method: ${paymentMethod || 'Confirmed'}\n\n` +
+      `Your new ${artistConfig?.tokenName || 'token'} balance: ${newBalance}.\n` +
+      `Video Access: ${artistConfig?.videoSrc}\n\n` +
+      `Thank you for your support!`
+    );
+  };
+
+  const handleSafewordSubmit = () => {
+    if (safewordInput.trim() === "") {
+      return;
+    }
+    console.log(`Command/Search/Safeword received: ${safewordInput}`);
+    setSafewordInput('');
   };
 
   const handleEmailLogin = () => {
     const email = emailInputRef.current?.value;
-    if (email && email.trim() !== "") {
+    if (email && email.trim() !== "" && email.includes('@')) {
       localStorage.setItem('zeyodaUserEmail', email);
       setIsLoggedIn(true);
       const storedBalance = localStorage.getItem('zeyodaUserTokenBalance'); 
       setUserTokenBalance(storedBalance ? parseFloat(storedBalance) : 0);
       setShowPurchaseModal(false);
+      setSafewordInput('');
     } else {
-      alert("Please enter your email address.");
+      alert("Please enter a valid email address.");
+      setShakeActive(true);
+      setTimeout(() => setShakeActive(false), 500);
       emailInputRef.current?.focus();
     }
   };
 
   const handleLogout = () => {
     localStorage.removeItem('zeyodaUserEmail');
+    localStorage.removeItem('zeyodaUserTokenBalance');
     setIsLoggedIn(false);
-    setUserTokenBalance(0); 
+    setIsSwapUnlocked(false);
+    setUserTokenBalance(0);
     setShowPurchaseModal(false);
     setPriceDetails(null);
-    alert("You have been logged out. Your token balance for this session has been reset.");
+    alert("You have been logged out. Your token balance has been reset.");
+  };
+
+  const handleSafewordInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const newValue = e.target.value;
+    setSafewordInput(newValue);
+
+    if (isLoggedIn && !isSwapUnlocked && newValue.toLowerCase() === 'artistocks') {
+      setIsSwapUnlocked(true);
+      console.log("Swap unlocked state SET to true in handleSafewordInputChange");
+    }
   };
 
   if (error) {
@@ -233,6 +264,8 @@ export default function HomePage() {
       </div>
     );
   }
+
+  console.log("Current isSwapUnlocked state (on render):", isSwapUnlocked);
 
   const { displayName, artworkTitle, videoSrc, tokenPrice, artworkYear, orbitalTokens: currentOrbitalTokens, name: artistName, tokenName: artistTokenName } = artistConfig;
 
@@ -310,12 +343,12 @@ export default function HomePage() {
           </div>
         </div>
 
-        <div className="action-section">
+        <div className="action-section text-center mb-4">
           <button 
             id="getDownloadButton" 
             className="get-download-button" 
             onClick={handleDownloadVideo}
-            disabled={showPurchaseModal || (isLoggedIn && userTokenBalance > 0)} 
+            disabled={showPurchaseModal || (isLoggedIn && userTokenBalance > 0)}
           >
             <span className="lock-icon">
               {isLoggedIn ? (userTokenBalance > 0 ? '✅' : '🔓') : '🔒'}
@@ -327,27 +360,11 @@ export default function HomePage() {
           </button>
 
           {!isLoggedIn && (
-            <div 
-              id="loginSection" 
-              className={`login-section ${shakeActive ? 'shake' : ''}`}
-            >
+            <div id="login-prompts-container" className="login-prompts mt-6">
               <h3 id="accessHeadline" className="access-headline">
                 Sign in to purchase {artistTokenName}
               </h3>
-              <div className="email-login-container">
-                <input 
-                  type="email" 
-                  id="emailInput" 
-                  ref={emailInputRef}
-                  placeholder="Enter your email address" 
-                  className="email-input" 
-                  onKeyDown={(e) => e.key === 'Enter' && handleEmailLogin()}
-                />
-                <button id="emailLoginBtn" className="login-btn email" onClick={handleEmailLogin}>
-                  Continue with Email
-                </button>
-              </div>
-              <div className="social-login-container">
+              <div className="social-login-container mt-3">
                 <p className="login-separator">or continue with</p>
                 <div className="social-buttons">
                   <button className="login-btn twitter" onClick={() => alert('Twitter login coming soon!')}>X (Twitter)</button>
@@ -371,15 +388,21 @@ export default function HomePage() {
                   <p>Platform (ZEYODA) Fee: ${priceDetails.platformShare.toFixed(4)} (15%)</p>
                   <p>Ecosystem Investors: ${priceDetails.investorShare.toFixed(4)} (5%)</p>
                 </div>
-                <div className="purchase-actions">
-                  <button onClick={handleConfirmPurchase} className="confirm-purchase-btn">Confirm & Get 1 {artistConfig.tokenName}</button>
+                <div className="mock-payment-options mt-4">
+                  <h4 className="text-lg font-semibold mb-2">Choose Payment Method:</h4>
+                  <button className="payment-option-btn" onClick={() => handleConfirmPurchase('Venmo')}>Venmo</button>
+                  <button className="payment-option-btn" onClick={() => handleConfirmPurchase('PayPal')}>PayPal</button>
+                  <button className="payment-option-btn" onClick={() => handleConfirmPurchase('Crypto')}>Crypto</button>
+                  <button className="payment-option-btn" onClick={() => handleConfirmPurchase('Credit/Debit')}>Credit/Debit</button>
+                </div>
+                <div className="purchase-actions mt-6">
                   <button onClick={() => setShowPurchaseModal(false)} className="cancel-purchase-btn">Cancel</button>
                 </div>
               </div>
             </div>
           )}
 
-          {isLoggedIn && userTokenBalance > 0 && artistConfig && (
+          {isLoggedIn && userTokenBalance > 0 && artistConfig && isSwapUnlocked && (
             <div className="swap-section mock-ui-section">
               <h3>Swap Your {artistConfig.tokenName}s</h3>
               <div className="swap-form">
@@ -405,8 +428,52 @@ export default function HomePage() {
               </div>
             </div>
           )}
-
         </div>
+
+        <div 
+          className={`unified-input-container mock-ui-section p-4 border-t-2 border-gray-700 mt-8 ${!isLoggedIn && shakeActive ? 'shake' : ''}`}
+        >
+          {isLoggedIn && (
+            <h3 className="text-xl font-semibold mb-3 text-center">Chat / Command</h3>
+          )}
+          <div className="flex items-center max-w-xl mx-auto">
+            <input
+              ref={emailInputRef}
+              type="text"
+              value={safewordInput}
+              onChange={handleSafewordInputChange}
+              placeholder={
+                isLoggedIn 
+                  ? "Type command, search, or safeword..." 
+                  : "Enter your email address to continue"
+              }
+              className="flex-grow p-3 border border-gray-600 rounded-l-lg bg-gray-900 bg-opacity-70 text-white focus:ring-accentColor focus:border-accentColor backdrop-blur-sm"
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  if (!isLoggedIn) {
+                    handleEmailLogin();
+                  } else {
+                    handleSafewordSubmit();
+                  }
+                }
+              }}
+              aria-label={isLoggedIn ? "Chat or command input" : "Email address input"}
+            />
+            <button
+              onClick={() => {
+                if (!isLoggedIn) {
+                  handleEmailLogin();
+                } else {
+                  handleSafewordSubmit();
+                }
+              }}
+              className="p-3 bg-accentColor text-white rounded-r-lg hover:bg-opacity-80 focus:outline-none focus:ring-2 focus:ring-accentColor focus:ring-opacity-50"
+            >
+              {isLoggedIn ? "Send" : "Continue"}
+            </button>
+          </div>
+        </div>
+
       </main>
     </>
   );
