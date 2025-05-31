@@ -1,0 +1,49 @@
+{
+  "artists": {
+    "yourartistid": {
+      "name": "YOUR ARTIST NAME",
+      "displayName": "Your Artist Display Name",
+      "tokenName": "ART TOKEN",
+      "artworkTitle": "My Masterpiece",
+      "artworkYear": "2024",
+      "tokenPrice": 0.0005,
+      "videoSrc": "/assets/2JAITEA.mp4",
+      "theme": {
+        "primaryColor": "#0a1a3b",
+        "accentColor": "#4073ff",
+        "gradientStart": "#d4af37",
+        "gradientMiddle": "#f9f295",
+        "gradientEnd": "#d4af37",
+        "fontFamily": "Bungee, cursive"
+      },
+      "orbitalTokens": [
+        { "name": "OTHER ARTIST", "angle": 0 },
+        { "name": "ANOTHER ARTIST", "angle": 72 },
+        { "name": "THIRD ARTIST", "angle": 144 },
+        { "name": "FOURTH ARTIST", "angle": 216 },
+        { "name": "FIFTH ARTIST", "angle": 288 }
+      ]
+    },
+    "gosheesh": {
+      "name": "GOSHEESH",
+      "displayName": "Gosheesh",
+      "tokenName": "GOSH TOKENS",
+      "artworkTitle": "Gosheesh Collection X",
+      "artworkYear": "2025",
+      "tokenPrice": 0.001,
+      "videoSrc": "/assets/1GOSHEESH copy.mp4",
+      "theme": {
+        "primaryColor": "#1a0a3b",
+        "accentColor": "#7f40ff",
+        "gradientStart": "#af37d4",
+        "gradientMiddle": "#f295f9",
+        "gradientEnd": "#af37d4",
+        "fontFamily": "Bungee, cursive"
+      },
+      "orbitalTokens": [
+        { "name": "JAI TEA", "angle": 0 },
+        { "name": "YOURARTISTID", "angle": 72 }
+      ]
+    }
+  }
+} 

@@ -3,6 +3,9 @@
 :root {
   --background: #ffffff;
   --foreground: #171717;
+  --gradient-end: #d4af37;
+  --artist-font: var(--font-bungee), cursive;
+  --body-font: var(--font-geist-sans), sans-serif;
 }
 
 @theme inline {
@@ -23,4 +26,670 @@ body {
   background: var(--background);
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
+}
+
+/* _chat.css - Chat interaction styling */
+
+/* Chat input container - already defined in layout, specific chat overrides here if needed */
+/* .chat-input-container {} */
+
+/* Chat input styling */
+.chat-input {
+    width: 100%;
+    padding: 12px 45px 12px 20px; /* Space for potential send button */
+    border-radius: 30px;
+    border: 1px solid var(--chat-input-border, rgba(64, 115, 255, 0.3));
+    background-color: var(--chat-input-bg, rgba(0, 0, 0, 0.3));
+    color: white;
+    font-size: 0.95rem;
+    transition: all 0.2s ease;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3),
+                inset 0 1px 3px rgba(0, 0, 0, 0.2);
+    backdrop-filter: blur(5px);
+}
+
+.chat-input:focus {
+    border-color: var(--chat-input-focus, rgba(64, 115, 255, 0.7));
+    box-shadow: 0 5px 20px rgba(0, 0, 0, 0.4),
+                inset 0 1px 3px rgba(0, 0, 0, 0.2),
+                0 0 0 2px rgba(var(--accent-color-rgb, 64, 115, 255), 0.2);
+    outline: none;
+}
+
+.chat-input::placeholder {
+    color: rgba(255, 255, 255, 0.5);
+}
+
+/* Chat send button (optional) */
+.chat-send-button {
+    position: absolute;
+    right: 8px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    background-color: var(--accent-color, #4073ff);
+    color: white;
+    border: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.3);
+}
+
+.chat-send-button:hover {
+    transform: translateY(-50%) scale(1.1);
+    box-shadow: 0 3px 8px rgba(0, 0, 0, 0.4);
+}
+
+.chat-send-button:active {
+    transform: translateY(-50%) scale(0.95);
+}
+
+/* Chat messages container */
+.chat-messages {
+    display: flex;
+    flex-direction: column;
+    margin-bottom: 15px;
+    max-height: 300px; /* Or adjust as needed */
+    overflow-y: auto;
+    padding: 10px;
+    /* Styles for scrollbar can be inherited from _base.css or specified here */
+}
+
+/* User message bubble */
+.user-message {
+    align-self: flex-end;
+    max-width: 80%;
+    background-color: var(--accent-color, #4073ff);
+    color: white;
+    padding: 10px 15px;
+    border-radius: 18px 18px 4px 18px; /* Rounded top, square bottom-left */
+    margin-bottom: 10px;
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+    word-break: break-word;
+    animation: fadeIn 0.3s ease;
+}
+
+/* Artist message bubble */
+.artist-message {
+    align-self: flex-start;
+    max-width: 80%;
+    background-color: rgba(255, 255, 255, 0.1);
+    color: white;
+    padding: 10px 15px;
+    border-radius: 18px 18px 18px 4px; /* Rounded top, square bottom-right */
+    margin-bottom: 10px;
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+    word-break: break-word;
+    animation: fadeIn 0.3s ease;
+}
+
+/* Chat typing indicator */
+.typing-indicator {
+    display: flex;
+    align-items: center;
+    align-self: flex-start;
+    background-color: rgba(255, 255, 255, 0.1);
+    padding: 12px 15px;
+    border-radius: 18px;
+    margin-bottom: 10px;
+}
+
+.typing-dot {
+    width: 8px;
+    height: 8px;
+    background-color: rgba(255, 255, 255, 0.6);
+    border-radius: 50%;
+    margin: 0 3px;
+    animation: typingAnimation 1.5s infinite ease-in-out;
+}
+
+.typing-dot:nth-child(1) {
+    animation-delay: 0s;
+}
+
+.typing-dot:nth-child(2) {
+    animation-delay: 0.3s;
+}
+
+.typing-dot:nth-child(3) {
+    animation-delay: 0.6s;
+}
+
+@keyframes typingAnimation {
+    0% { transform: scale(1); opacity: 0.6; }
+    50% { transform: scale(1.5); opacity: 1; }
+    100% { transform: scale(1); opacity: 0.6; }
+}
+
+/* Response from chat (e.g., for AI responses or system messages) */
+.chat-response {
+    padding: 15px;
+    background-color: rgba(var(--accent-color-rgb, 64, 115, 255), 0.1);
+    border-radius: 8px;
+    margin-top: 15px;
+    border-left: 3px solid var(--accent-color, #4073ff);
+    animation: fadeIn 0.5s ease;
+}
+
+/* Media queries for responsive chat */
+@media (max-width: 480px) {
+    .chat-input {
+        padding: 10px 40px 10px 15px;
+        font-size: 0.9rem;
+    }
+    
+    .chat-send-button {
+        width: 28px;
+        height: 28px;
+    }
+    
+    .user-message, .artist-message {
+        max-width: 85%;
+        padding: 8px 12px;
+        font-size: 0.9rem;
+    }
+}
+
+/* _orbit.css - Orbital token animations and stylings */
+
+/* Orbital tokens container */
+.orbital-tokens {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 100%; /* Was 0, needs to encompass orbit radius */
+    height: 100%; /* Was 0, needs to encompass orbit radius */
+    pointer-events: none;
+    z-index: 10;
+    transform-style: preserve-3d;
+    perspective: 1200px;
+    transform: translate(-50%, -50%); /* Center the container itself */
+}
+
+/* Orbit token styling (extends base .token style from _theme.css) */
+.orbit-token {
+    position: absolute;
+    top: 0;  /* Position is now relative to transform's translate3d */
+    left: 0;  /* Position is now relative to transform's translate3d */
+    width: 90px;
+    height: 90px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.7rem;
+    font-weight: 700;
+    pointer-events: auto;
+    transition: transform 0.2s ease-out, opacity 0.3s ease, filter 0.3s ease;
+    will-change: transform, opacity, z-index, filter;
+    backface-visibility: hidden;
+    transform-origin: center center;
+    z-index: 5;
+    opacity: 0.85;
+    box-shadow: 0 0 15px rgba(0, 0, 0, 0.5),
+                inset 0 0 15px rgba(255, 255, 255, 0.2);
+    background-color: var(--token-bg); /* Inherited from _theme.css .token */
+    border: 1px solid var(--token-border); /* Inherited from _theme.css .token */
+    padding: 5px;
+    word-break: break-word;
+    line-height: 1.1;
+    letter-spacing: -0.2px;
+    white-space: pre-line; /* Preserves line breaks */
+    text-align: center;
+    cursor: default; /* Default, override for clickable ones */
+}
+
+/* Hover effect for orbit tokens */
+.orbit-token:hover {
+    z-index: 30 !important; /* Higher z-index to ensure it appears on top */
+    transform: translate3d(0, 0, 150px) scale(1.25) !important; /* Push forward on hover */
+    opacity: 1 !important;
+    filter: blur(0px) !important;
+    border-color: var(--accent-color);
+    box-shadow: 0 0 25px var(--accent-color),
+                0 0 40px rgba(var(--accent-color-rgb), 0.7),
+                inset 0 0 15px rgba(255, 255, 255, 0.3);
+}
+
+/* Active effect for orbit tokens */
+.orbit-token:active {
+    transform: translate3d(0, 0, 140px) scale(1.15) !important; /* Slightly less push and scale on active */
+    transition-duration: 0.1s;
+}
+
+/* Specific styling for tokens that are links to other artists */
+.orbit-token[data-artist-id] {
+    cursor: pointer;
+    /* Add any specific visual cue if needed, e.g., brighter border */
+}
+
+/* Small screen adjustments */
+@media (max-width: 768px) {
+    .orbit-token {
+        width: 70px;
+        height: 70px;
+        font-size: 0.6rem;
+    }
+    /* Adjust orbit radius or perspective for smaller screens if the effect is too much */
+}
+
+/* Very small screen adjustments */
+@media (max-width: 480px) {
+    .orbit-token {
+        width: 60px;
+        height: 60px;
+        font-size: 0.5rem;
+    }
+    .orbital-tokens {
+        perspective: 800px; /* Less perspective on very small screens */
+    }
+}
+
+/* _components.css - Reusable UI component styles */
+.login-btn.twitter::before {
+    background-image: url('/assets/icon-x.svg'); /* UPDATED PATH */
+}
+
+/* Icons for login buttons */
+.login-btn.email::before {
+    background-image: url('/assets/icon-email.svg'); /* UPDATED PATH */
+}
+.login-btn.twitter::before {
+    background-image: url('/assets/icon-x.svg'); /* UPDATED PATH */
+}
+.login-btn.gmail::before {
+    background-image: url('/assets/icon-gmail.svg'); /* UPDATED PATH */
+}
+.login-btn.phone::before {
+    background-image: url('/assets/icon-phone.svg'); /* UPDATED PATH */
+}
+.login-btn.facebook::before {
+    background-image: url('/assets/icon-facebook.svg'); /* UPDATED PATH */
+}
+
+/* Specific icons for payment buttons */
+.payment-btn.cash::before { background-image: url('/assets/icon-cash.svg'); } /* UPDATED PATH */
+.payment-btn.coinbase::before { background-image: url('/assets/icon-coinbase.svg'); } /* UPDATED PATH */
+.payment-btn.phantom::before { background-image: url('/assets/icon-phantom.svg'); } /* UPDATED PATH */
+
+.swap-select {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23ffffff' width='18px' height='18px'%3E%3Cpath d='M7 10l5 5 5-5z'/%3E%3C/svg%3E");
+}
+
+/* START OF GITHUB style.css */
+
+/* END OF GITHUB style.css */
+
+/* Added styles for new elements in app/page.tsx */
+
+.app-header {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  justify-content: flex-end; /* Positions logout button to the right */
+  padding: 20px;
+  z-index: 100; /* Ensures header is above other content */
+}
+
+.logout-button {
+  background-color: rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  padding: 8px 15px;
+  border-radius: 20px;
+  cursor: pointer;
+  font-size: 0.8rem;
+  font-weight: bold;
+  text-transform: uppercase;
+  transition: all 0.2s ease;
+  backdrop-filter: blur(5px);
+}
+
+.logout-button:hover {
+  background-color: rgba(255, 255, 255, 0.2);
+  color: white;
+  border-color: rgba(255, 255, 255, 0.4);
+  box-shadow: 0 0 10px rgba(255, 255, 255, 0.3);
+}
+
+.app-main {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center; /* Vertically center content in main area */
+  min-height: 100vh;
+  padding-top: 80px; /* Space for the fixed header */
+  padding-bottom: 40px; /* Space at the bottom */
+}
+
+.main-title-container {
+  margin-bottom: 20px; /* Space below the main title */
+  text-align: center;
+}
+
+.main-artist-title {
+  font-family: var(--artist-font); /* Using Bungee from theme */
+  font-size: 4rem; /* Large title */
+  color: #fff; /* White color, adjust if theme provides this */
+  text-transform: uppercase;
+  letter-spacing: 2px;
+  text-shadow: 0 0 10px rgba(255, 255, 255, 0.3),
+               0 0 20px rgba(var(--accent-color-rgb), 0.5); /* Glow effect */
+}
+
+/* video-container, artwork-info, video-controls are already mostly styled from previous steps */
+/* We might need to adjust margins or padding for them within the new layout */
+
+.artwork-and-controls {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 15px; /* Space between artwork info and video controls */
+    margin-top: 15px; /* Space above this block, below video */
+    width: 100%;
+    max-width: 600px; /* Consistent with video max-width */
+}
+
+.artwork-info {
+    text-align: center;
+}
+/* artwork-title and artwork-description styles are already present from previous steps */
+
+.action-section {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 20px; /* Space between download button and purchase info */
+  margin-top: 30px; /* Space above this section */
+  width: 100%;
+  max-width: 500px; /* Control width of this section */
+}
+
+.get-download-button {
+  background-color: var(--accent-color); /* Use theme accent color */
+  color: white;
+  border: none;
+  padding: 15px 30px;
+  border-radius: 8px;
+  font-size: 1.1rem;
+  font-weight: bold;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  box-shadow: 0 4px 15px rgba(var(--accent-color-rgb), 0.3);
+}
+
+.get-download-button .lock-icon {
+  font-size: 1.2rem; /* Make icon slightly larger */
+}
+
+.get-download-button:hover {
+  background-color: color-mix(in srgb, var(--accent-color) 85%, black);
+  box-shadow: 0 6px 20px rgba(var(--accent-color-rgb), 0.5);
+  transform: translateY(-2px);
+}
+
+.get-download-button:active {
+  transform: translateY(0);
+  box-shadow: 0 2px 10px rgba(var(--accent-color-rgb), 0.4);
+}
+
+.purchase-info {
+  text-align: center;
+  color: rgba(255, 255, 255, 0.8); /* Light text color */
+  font-size: 0.9rem;
+}
+
+.purchase-info p {
+  margin-bottom: 10px;
+}
+
+.purchase-input {
+  background-color: rgba(0, 0, 0, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: white;
+  padding: 10px 15px;
+  border-radius: 20px; /* Pill shape */
+  width: 100%;
+  max-width: 300px; /* Control input width */
+  text-align: center;
+  font-size: 0.9rem;
+  transition: all 0.2s ease;
+  box-shadow: inset 0 1px 3px rgba(0,0,0,0.3);
+}
+
+.purchase-input::placeholder {
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.purchase-input:focus {
+  outline: none;
+  border-color: var(--accent-color);
+  box-shadow: inset 0 1px 3px rgba(0,0,0,0.3), 0 0 0 2px rgba(var(--accent-color-rgb), 0.3);
+}
+
+
+/* Responsive adjustments for titles and buttons */
+@media (max-width: 768px) {
+  .main-artist-title {
+    font-size: 3rem;
+  }
+  .get-download-button {
+    font-size: 1rem;
+    padding: 12px 25px;
+  }
+}
+
+@media (max-width: 480px) {
+  .main-artist-title {
+    font-size: 2.2rem;
+  }
+  .app-header {
+    padding: 15px;
+  }
+  .logout-button {
+    font-size: 0.7rem;
+    padding: 6px 12px;
+  }
+  .get-download-button {
+    font-size: 0.9rem;
+    padding: 10px 20px;
+    width: calc(100% - 40px); /* Full width with some padding */
+    justify-content: center;
+  }
+  .purchase-input {
+    max-width: calc(100% - 40px); /* Full width with some padding */
+  }
+  .artwork-and-controls {
+    margin-top: 10px;
+    gap: 10px;
+  }
+  .action-section {
+    margin-top: 20px;
+    gap: 15px;
+  }
+}
+
+
+/* Ensure login/payment icon paths are correct if these styles are still used from old CSS. */
+/* Example: .login-btn.twitter::before { background-image: url('/assets/icon-twitter.svg'); } */
+/* The following seems to be from previous merge, ensure paths if these are active */
+.login-btn.email::before {
+    background-image: url('/assets/icon-email.svg'); /* UPDATED PATH */
+}
+
+/* Styles for the Login Section (Pic 3) */
+/* These styles are based on the structure of the old project's style.css */
+
+.login-section {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 20px;
+  width: 100%;
+  max-width: 450px; /* Adjust as needed */
+  padding: 20px;
+  background-color: rgba(10, 20, 50, 0.3); /* Darker, slightly transparent background */
+  border-radius: 12px;
+  border: 1px solid rgba(var(--accent-color-rgb), 0.2);
+  box-shadow: 0 8px 30px rgba(0,0,0,0.3);
+  margin-top: 20px; /* Space above login section if .action-section padding isn't enough */
+}
+
+.access-headline {
+  font-size: 1.1rem;
+  font-weight: bold;
+  color: #fff;
+  text-align: center;
+  margin-bottom: 10px;
+}
+
+.email-login-container {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  gap: 15px;
+}
+
+.email-input {
+  width: 100%;
+  padding: 12px 15px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background-color: rgba(0, 0, 0, 0.25);
+  color: white;
+  font-size: 0.95rem;
+  transition: all 0.2s ease;
+  box-shadow: inset 0 1px 3px rgba(0,0,0,0.2);
+}
+
+.email-input::placeholder {
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.email-input:focus {
+  outline: none;
+  border-color: var(--accent-color);
+  background-color: rgba(0, 0, 0, 0.3);
+  box-shadow: inset 0 1px 3px rgba(0,0,0,0.2), 0 0 0 2px rgba(var(--accent-color-rgb), 0.3);
+}
+
+/* General .login-btn styling - some might be duplicated from earlier merge, ensure consistency */
+.login-btn {
+  width: 100%;
+  padding: 12px 20px;
+  border-radius: 6px;
+  font-size: 0.95rem;
+  font-weight: bold;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  border: 1px solid transparent;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+}
+
+.login-btn::before { /* For icons */
+  content: "";
+  display: inline-block;
+  width: 20px;
+  height: 20px;
+  background-size: contain;
+  background-repeat: no-repeat;
+  background-position: center;
+}
+
+.login-btn.email {
+  background-color: var(--accent-color); /* Theme accent */
+  color: white;
+  border-color: var(--accent-color);
+}
+.login-btn.email:hover {
+  background-color: color-mix(in srgb, var(--accent-color) 85%, black);
+}
+
+.social-login-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
+  gap: 15px;
+  margin-top: 10px;
+}
+
+.login-separator {
+  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.6);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.social-buttons {
+  display: grid;
+  grid-template-columns: 1fr 1fr; /* Two columns for social buttons */
+  gap: 10px;
+  width: 100%;
+}
+
+/* Individual social button colors - refer to Pic 3 */
+.login-btn.twitter {
+  background-color: #000; /* Black for X/Twitter */
+  color: white;
+  border-color: #333;
+}
+.login-btn.twitter:hover { background-color: #1a1a1a; }
+
+.login-btn.gmail {
+  background-color: #DB4437; /* Red for Gmail */
+  color: white;
+  border-color: #c23327;
+}
+.login-btn.gmail:hover { background-color: #c23327; }
+
+.login-btn.phone {
+  background-color: #007bff; /* Blue for Phone - placeholder color */
+  color: white;
+  border-color: #0056b3;
+}
+.login-btn.phone:hover { background-color: #0056b3; }
+
+.login-btn.facebook {
+  background-color: #1877F2; /* Blue for Facebook */
+  color: white;
+  border-color: #0f5abc;
+}
+.login-btn.facebook:hover { background-color: #0f5abc; }
+
+/* Add icons for social buttons using ::before if available from previous CSS merge or add new ones */
+/* .login-btn.twitter::before { background-image: url('/assets/icon-x.svg'); } */
+/* .login-btn.gmail::before { background-image: url('/assets/icon-gmail.svg'); } */
+/* .login-btn.phone::before { background-image: url('/assets/icon-phone.svg'); } */
+/* .login-btn.facebook::before { background-image: url('/assets/icon-facebook.svg'); } */
+
+
+@media (max-width: 480px) {
+  .login-section {
+    max-width: calc(100% - 30px); /* Adjust width for small screens */
+    padding: 15px;
+  }
+  .access-headline {
+    font-size: 1rem;
+  }
+  .login-btn, .email-input {
+    font-size: 0.9rem;
+    padding: 10px 15px;
+  }
+  .social-buttons {
+    grid-template-columns: 1fr; /* Stack social buttons on very small screens */
+  }
 }
