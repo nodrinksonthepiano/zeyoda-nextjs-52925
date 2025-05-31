@@ -693,3 +693,232 @@ body {
     grid-template-columns: 1fr; /* Stack social buttons on very small screens */
   }
 }
+
+/* Shake Animation for Login Prompt */
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  10%, 30%, 50%, 70%, 90% { transform: translateX(-8px); }
+  20%, 40%, 60%, 80% { transform: translateX(8px); }
+}
+
+.shake {
+  animation: shake 0.5s cubic-bezier(.36,.07,.19,.97) both;
+}
+
+/* Purchase Modal Styles */
+.purchase-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.75);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000; /* Ensure it's on top */
+  padding: 20px;
+}
+
+.purchase-modal {
+  background-color: var(--background, #1e1e1e);
+  color: var(--foreground, #ffffff);
+  padding: 25px 30px;
+  border-radius: 12px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+  width: 100%;
+  max-width: 500px;
+  border: 1px solid rgba(var(--accent-color-rgb, 64, 115, 255), 0.3);
+  animation: fadeInScaleUp 0.3s ease-out;
+}
+
+@keyframes fadeInScaleUp {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.purchase-modal h2 {
+  font-family: var(--artist-font, bungee);
+  font-size: 1.8rem;
+  color: var(--accent-color, #4073ff);
+  margin-bottom: 15px;
+  text-align: center;
+}
+
+.purchase-modal p {
+  margin-bottom: 10px;
+  line-height: 1.6;
+  font-size: 0.95rem;
+}
+
+.price-breakdown {
+  margin-top: 20px;
+  margin-bottom: 25px;
+  padding: 15px;
+  background-color: rgba(255, 255, 255, 0.05);
+  border-radius: 8px;
+}
+
+.price-breakdown hr {
+  border: none;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  margin: 10px 0;
+}
+
+.price-breakdown p {
+  font-size: 0.9rem;
+  margin-bottom: 8px;
+}
+
+.price-breakdown strong {
+  color: var(--accent-color, #4073ff);
+}
+
+.purchase-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 15px;
+  margin-top: 20px;
+}
+
+.confirm-purchase-btn,
+.cancel-purchase-btn {
+  font-family: var(--body-font, sans-serif);
+  padding: 10px 20px;
+  border-radius: 20px;
+  border: none;
+  font-size: 0.9rem;
+  font-weight: bold;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  letter-spacing: 0.5px;
+}
+
+.confirm-purchase-btn {
+  background-image: linear-gradient(to right, var(--gradient-start, #d4af37), var(--gradient-middle, #f9f295), var(--gradient-end, #d4af37));
+  background-size: 200% auto;
+  color: #0a1a3b; /* Dark text for light button */
+  box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+}
+
+.confirm-purchase-btn:hover {
+  background-position: right center; /* change the direction of the change here */
+  box-shadow: 0 6px 20px rgba(0,0,0,0.3);
+  transform: translateY(-2px);
+}
+
+.cancel-purchase-btn {
+  background-color: transparent;
+  border: 1px solid var(--accent-color, #4073ff);
+  color: var(--accent-color, #4073ff);
+}
+
+.cancel-purchase-btn:hover {
+  background-color: rgba(var(--accent-color-rgb, 64, 115, 255), 0.1);
+  border-color: rgba(var(--accent-color-rgb, 64, 115, 255), 0.7);
+}
+
+/* Header User Info */
+.header-user-info {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+}
+
+.token-balance {
+  font-size: 0.9rem;
+  color: var(--foreground, #ededed);
+  background-color: rgba(255, 255, 255, 0.1);
+  padding: 5px 10px;
+  border-radius: 15px;
+  border: 1px solid rgba(var(--accent-color-rgb, 64, 115, 255), 0.2);
+}
+
+/* Mock Swap Section Styles */
+.swap-section {
+  margin-top: 30px;
+  padding: 20px;
+  background-color: rgba(var(--accent-color-rgb, 64, 115, 255), 0.05);
+  border-radius: 8px;
+  border: 1px solid rgba(var(--accent-color-rgb, 64, 115, 255), 0.1);
+}
+
+.mock-ui-section h3 {
+  font-family: var(--artist-font, bungee);
+  font-size: 1.5rem;
+  color: var(--accent-color, #4073ff);
+  margin-bottom: 15px;
+  text-align: center;
+}
+
+.swap-form {
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+}
+
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.form-group label {
+  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.swap-input,
+.swap-select {
+  padding: 10px;
+  border-radius: 6px;
+  border: 1px solid rgba(var(--accent-color-rgb, 64, 115, 255), 0.3);
+  background-color: rgba(0, 0, 0, 0.2);
+  color: var(--foreground, #ededed);
+  font-size: 0.9rem;
+}
+
+.swap-input:focus,
+.swap-select:focus {
+  outline: none;
+  border-color: var(--accent-color, #4073ff);
+  box-shadow: 0 0 0 2px rgba(var(--accent-color-rgb, 64, 115, 255), 0.2);
+}
+
+.swap-execute-btn {
+  font-family: var(--body-font, sans-serif);
+  padding: 12px 20px;
+  border-radius: 20px;
+  border: none;
+  font-size: 1rem;
+  font-weight: bold;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  letter-spacing: 0.5px;
+  background-image: linear-gradient(to right, var(--gradient-start, #d4af37), var(--gradient-middle, #f9f295), var(--gradient-end, #d4af37));
+  background-size: 200% auto;
+  color: #0a1a3b; /* Dark text for light button */
+  box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+  margin-top: 10px;
+}
+
+.swap-execute-btn:hover {
+  background-position: right center;
+  box-shadow: 0 6px 20px rgba(0,0,0,0.3);
+  transform: translateY(-2px);
+}
+
+.swap-execute-btn:disabled {
+  background-image: none;
+  background-color: rgba(255,255,255,0.1);
+  color: rgba(255,255,255,0.4);
+  cursor: not-allowed;
+  box-shadow: none;
+  transform: none;
+}

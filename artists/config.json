@@ -1,0 +1,70 @@
+{
+  "artists": {
+    "yourartistid": {
+      "name": "YOUR ARTIST NAME",
+      "displayName": "YOUR ARTIST DISPLAY NAME",
+      "tokenName": "YOUR TOKEN NAME",
+      "artworkTitle": "Your Default Artwork Title",
+      "artworkYear": "2025",
+      "tokenPrice": 0.0005,
+      "videoSrc": "assets/your-video.mp4",
+      "theme": {
+        "primaryColor": "#0a1a3b", 
+        "accentColor": "#4073ff",
+        "gradientStart": "#d4af37",
+        "gradientMiddle": "#f9f295",
+        "gradientEnd": "#d4af37",
+        "fontFamily": "Bungee, cursive"
+      },
+      "orbitalTokens": [
+        { "name": "OTHER ARTIST", "angle": 0 },
+        { "name": "ANOTHER ARTIST", "angle": 72 }
+      ]
+    },
+    "gosheesh": {
+      "name": "GOSHEESH",
+      "displayName": "GOSHEESH",
+      "tokenName": "GOSHIES",
+      "artworkTitle": "Cosmic Bloom",
+      "artworkYear": "2024",
+      "tokenPrice": 0.0008,
+      "videoSrc": "assets/gosheesh-video.mp4",
+      "theme": {
+        "primaryColor": "#1a0a2b", 
+        "accentColor": "#9400FF",
+        "gradientStart": "#FFD700",
+        "gradientMiddle": "#DAA520",
+        "gradientEnd": "#B8860B",
+        "fontFamily": "Bungee, cursive"
+      },
+      "orbitalTokens": [
+        { "name": "JAITEA", "angle": 0 },
+        { "name": "ZEN ARTIST", "angle": 90 },
+        { "name": "CRYPTO CREATOR", "angle": 180 },
+        { "name": "AI VISIONARY", "angle": 270 }
+      ]
+    },
+    "jaitea": {
+      "name": "JAI TEA",
+      "displayName": "JAI TEA",
+      "tokenName": "TEATOKENS",
+      "artworkTitle": "Serenity Streams",
+      "artworkYear": "2024",
+      "tokenPrice": 0.0006,
+      "videoSrc": "assets/jaitea-video.mp4",
+      "theme": {
+        "primaryColor": "#0a1f0f", 
+        "accentColor": "#00FF7F",
+        "gradientStart": "#32CD32",
+        "gradientMiddle": "#98FB98",
+        "gradientEnd": "#3CB371",
+        "fontFamily": "Arial, sans-serif" 
+      },
+      "orbitalTokens": [
+        { "name": "GOSHEESH", "angle": 0 },
+        { "name": "AUDIO ALCHEMIST", "angle": 120 },
+        { "name": "PIXEL PAINTER", "angle": 240 }
+      ]
+    }
+  }
+} 
