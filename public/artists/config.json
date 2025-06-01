@@ -41,8 +41,29 @@
         "fontFamily": "Bungee, cursive"
       },
       "orbitalTokens": [
-        { "name": "JAI TEA", "angle": 0 },
-        { "name": "YOURARTISTID", "angle": 72 }
+        { "name": "jaitea", "angle": 0 },
+        { "name": "yourartistid", "angle": 72 }
+      ]
+    },
+    "jaitea": {
+      "name": "JAI TEA",
+      "displayName": "Jai Tea",
+      "tokenName": "JAI TOKENS",
+      "artworkTitle": "Jai Tea Collection Y",
+      "artworkYear": "2025",
+      "tokenPrice": 0.0008,
+      "videoSrc": "/assets/2JAITEA.mp4",
+      "theme": {
+        "primaryColor": "#3b0a1a",
+        "accentColor": "#ff4073",
+        "gradientStart": "#d437af",
+        "gradientMiddle": "#f995f2",
+        "gradientEnd": "#d437af",
+        "fontFamily": "Bungee, cursive"
+      },
+      "orbitalTokens": [
+        { "name": "gosheesh", "angle": 0 },
+        { "name": "yourartistid", "angle": 180 }
       ]
     }
   }

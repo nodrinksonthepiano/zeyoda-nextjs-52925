@@ -17,8 +17,8 @@
         "fontFamily": "Bungee, cursive"
       },
       "orbitalTokens": [
-        { "name": "OTHER ARTIST", "angle": 0 },
-        { "name": "ANOTHER ARTIST", "angle": 72 }
+        { "name": "OTHER ARTIST", "angle": 0, "artistId": "otherartist" },
+        { "name": "ANOTHER ARTIST", "angle": 72, "artistId": "anotherartist" }
       ]
     },
     "gosheesh": {
@@ -27,7 +27,7 @@
       "tokenName": "GOSHIES",
       "artworkTitle": "Cosmic Bloom",
       "artworkYear": "2024",
-      "tokenPrice": 0.0008,
+      "tokenPrice": 0.0005,
       "videoSrc": "assets/gosheesh-video.mp4",
       "theme": {
         "primaryColor": "#1a0a2b", 
@@ -38,10 +38,10 @@
         "fontFamily": "Bungee, cursive"
       },
       "orbitalTokens": [
-        { "name": "JAITEA", "angle": 0 },
-        { "name": "ZEN ARTIST", "angle": 90 },
-        { "name": "CRYPTO CREATOR", "angle": 180 },
-        { "name": "AI VISIONARY", "angle": 270 }
+        { "name": "JAI TEA", "angle": 0, "artistId": "jaitea" },
+        { "name": "ZEN ARTIST", "angle": 90, "artistId": "zenartist" },
+        { "name": "CRYPTO CREATOR", "angle": 180, "artistId": "cryptocreator" },
+        { "name": "AI VISIONARY", "angle": 270, "artistId": "aivisionary" }
       ]
     },
     "jaitea": {
@@ -50,8 +50,8 @@
       "tokenName": "TEATOKENS",
       "artworkTitle": "Serenity Streams",
       "artworkYear": "2024",
-      "tokenPrice": 0.0006,
-      "videoSrc": "assets/jaitea-video.mp4",
+      "tokenPrice": 0.0004,
+      "videoSrc": "assets/2JAITEA.mp4",
       "theme": {
         "primaryColor": "#0a1f0f", 
         "accentColor": "#00FF7F",
@@ -61,9 +61,9 @@
         "fontFamily": "Arial, sans-serif" 
       },
       "orbitalTokens": [
-        { "name": "GOSHEESH", "angle": 0 },
-        { "name": "AUDIO ALCHEMIST", "angle": 120 },
-        { "name": "PIXEL PAINTER", "angle": 240 }
+        { "name": "GOSHEESH", "angle": 0, "artistId": "gosheesh" },
+        { "name": "AUDIO ALCHEMIST", "angle": 120, "artistId": "audioalchemist" },
+        { "name": "PIXEL PAINTER", "angle": 240, "artistId": "pixelpainter" }
       ]
     }
   }

@@ -20,7 +20,7 @@ interface ArtistConfig {
     gradientEnd: string;
     fontFamily: string;
   };
-  orbitalTokens: Array<{ name: string; angle: number; x?: number; y?: number; z?: number; opacity?: number; scale?: number; blur?: number; isVisible?: boolean; element?: HTMLElement | null }>;
+  orbitalTokens: Array<{ name: string; angle: number; artistId?: string; x?: number; y?: number; z?: number; opacity?: number; scale?: number; blur?: number; isVisible?: boolean; element?: HTMLElement | null }>;
 }
 
 interface PriceDetails {
@@ -38,6 +38,7 @@ export default function HomePage() {
   const searchParams = useSearchParams();
   const artistIdFromUrl = searchParams.get('artist') || 'gosheesh';
   const [artistConfig, setArtistConfig] = useState<ArtistConfig | null>(null);
+  const [allArtistsConfig, setAllArtistsConfig] = useState<{[key: string]: ArtistConfig} | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isMuted, setIsMuted] = useState(true);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
@@ -61,11 +62,31 @@ export default function HomePage() {
   const [showAssetsPanel, setShowAssetsPanel] = useState<boolean>(false);
   const [downloadIpfsHash, setDownloadIpfsHash] = useState<string | null>(null);
 
+  // Ref for the video container to dynamically adjust orbit
+  const videoContainerRef = useRef<HTMLDivElement | null>(null);
+
   // State for the Swap Interface
   const [swapFromAsset, setSwapFromAsset] = useState<string>("USD");
   const [swapToAsset, setSwapToAsset] = useState<string>("");
   const [swapFromAmount, setSwapFromAmount] = useState<string>("");
   const [swapToAmount, setSwapToAmount] = useState<string>("");
+
+  // State for Video Player
+  const [isVideoError, setIsVideoError] = useState(false);
+
+  // State for Orbital Token Dragging
+  const orbitalTokensContainerRef = useRef<HTMLDivElement | null>(null);
+  const [isDraggingOrbit, setIsDraggingOrbit] = useState(false);
+  const [orbitAngleOffset, setOrbitAngleOffset] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return parseFloat(localStorage.getItem('zeyodaOrbitAngleOffset') || '0');
+    }
+    return 0;
+  });
+  const dragStartCoords = useRef<{ x: number; y: number } | null>(null);
+  const lastDragCoords = useRef<{ x: number; y: number } | null>(null);
+  const animationFrameIdRef = useRef<number | null>(null); // To store animation frame ID
+  const isOrbitAnimationPaused = useRef(false); // To pause animation during drag
 
   useEffect(() => {
     const currentArtistId = artistIdFromUrl;
@@ -129,59 +150,155 @@ export default function HomePage() {
 
   useEffect(() => {
     async function fetchConfig() {
-      const artistIdFromUrl = searchParams.get('artist') || 'gosheesh';
       try {
+        console.log(`[fetchConfig] Attempting to fetch configuration for artistIdFromUrl: '${artistIdFromUrl}'`);
         setArtistConfig(null);
         setError(null);
 
-        const response = await fetch('/artists/config.json');
-        if (!response.ok) {
-          throw new Error(`HTTP error! status: ${response.status} while fetching /artists/config.json`);
-        }
-        const data = await response.json();
+        const cacheBuster = `?v=${new Date().getTime()}`;
+        const response = await fetch(`/artists/config.json${cacheBuster}`, { cache: 'no-store' });
+        console.log(`[fetchConfig] Response received for /artists/config.json${cacheBuster}. Status: ${response.status}, OK: ${response.ok}`);
 
-        if (data.artists && data.artists[artistIdFromUrl]) {
-          const config = data.artists[artistIdFromUrl];
+        if (!response.ok) {
+          const errorText = await response.text();
+          console.error(`[fetchConfig] HTTP error! Status: ${response.status}. Response text: ${errorText}`);
+          throw new Error(`HTTP error! status: ${response.status} while fetching /artists/config.json. Server said: ${errorText}`);
+        }
+        
+        const responseText = await response.text();
+        console.log("[fetchConfig] Raw response text from /artists/config.json" + cacheBuster + ":\n", responseText);
+
+        let data;
+        try {
+          data = JSON.parse(responseText);
+          console.log("[fetchConfig] Successfully parsed data from /artists/config.json" + cacheBuster + ". Initial parsed data object:\n", JSON.stringify(data, null, 2));
+        } catch (parseError) {
+          console.error("[fetchConfig] JSON parsing error for /artists/config.json" + cacheBuster + ":", parseError);
+          console.error("[fetchConfig] Raw text that failed to parse:", responseText); // Log the text that failed
+          throw new Error("Failed to parse artist configuration.");
+        }
+
+        if (!data || !data.artists) {
+          console.warn("[fetchConfig] data.artists is missing or data is null/undefined after parsing config.json. Data object received:", data);
+          setAllArtistsConfig({}); 
+          throw new Error("Parsed artist configuration is invalid or missing 'artists' property.");
+        }
+        
+        console.log("[fetchConfig] 'data.artists' object keys before setting to state:", Object.keys(data.artists));
+        setAllArtistsConfig(data.artists); // Set all artists first
+        
+        // Now check for the specific artist ID
+        const currentArtistKey = artistIdFromUrl;
+        console.log(`[fetchConfig] Checking for artist key: '${currentArtistKey}' in parsed data.artists.`);
+
+        if (data.artists.hasOwnProperty(currentArtistKey)) {
+          const config = data.artists[currentArtistKey];
+          console.log(`[fetchConfig] Successfully found config for '${currentArtistKey}'.`);
           const initializedTokens = config.orbitalTokens.map((token: any) => ({ 
             ...token, 
             x: 0, y: 0, z: 0, opacity: 0.85, scale: 1, blur: 5, isVisible: true 
           }));
           setArtistConfig({...config, orbitalTokens: initializedTokens });
         } else {
-          console.error(`Artist configuration not found for ID: '${artistIdFromUrl}' in data:`, data);
-          throw new Error(`Artist configuration not found for ID: '${artistIdFromUrl}'. Valid IDs might be: ${Object.keys(data.artists || {}).join(', ')}`);
+          const availableKeys = Object.keys(data.artists).join(', ') || 'No keys found';
+          const dataSnapshot = JSON.stringify(data); 
+          const dataArtistsSnapshot = JSON.stringify(data.artists);
+
+          console.error(`[fetchConfig] Artist configuration not found for ID: '${currentArtistKey}'. 
+                         Available artist IDs in data.artists: ${availableKeys}. 
+                         Full data object snapshot: ${dataSnapshot}. 
+                         data.artists snapshot: ${dataArtistsSnapshot}.`);
+          throw new Error(`Artist configuration not found for ID: '${currentArtistKey}'. Valid IDs in loaded config: ${availableKeys}`);
         }
       } catch (e) {
+        console.error(`[fetchConfig] General error during fetchConfig for ${artistIdFromUrl}:`, e);
         if (e instanceof Error) {
           setError(e.message);
         } else {
           setError("An unknown error occurred while fetching artist config.");
         }
-        console.error(`Failed to load artist config for ${artistIdFromUrl}:`, e);
       }
     }
 
     fetchConfig();
-  }, [searchParams]);
+  }, [searchParams, artistIdFromUrl]);
 
   useEffect(() => {
-    if (!artistConfig || !artistConfig.orbitalTokens) return;
-    const orbitRadius = 200;
-    const animationSpeed = 0.0005;
-    let animationFrameId: number;
+    if (!artistConfig || !artistConfig.orbitalTokens) {
+      if (animationFrameIdRef.current) {
+        cancelAnimationFrame(animationFrameIdRef.current);
+        animationFrameIdRef.current = null;
+      }
+      return;
+    }
+
+    const videoElement = videoContainerRef.current;
+    if (!videoElement) {
+      if (animationFrameIdRef.current) {
+        cancelAnimationFrame(animationFrameIdRef.current);
+        animationFrameIdRef.current = null;
+      } 
+      return; // Don't animate if video container isn't there yet
+    }
+
     const animate = (timestamp: number) => {
+      if (isOrbitAnimationPaused.current && !isDraggingOrbit) { // Pause if requested and not actively dragging
+        animationFrameIdRef.current = requestAnimationFrame(animate);
+        return;
+      }
+
+      // Update the shared orbitAngleOffset state for persistence and manual interaction feedback
+      // The actual animation speed is primarily driven by timestamp in the style calculation below
+      if (!isDraggingOrbit) { // Only let automatic animation update offset if not dragging
+        setOrbitAngleOffset(prevOffset => (prevOffset + 0.05) % 360); // Slow continuous drift for the state offset
+      }
+
       setArtistConfig(prevConfig => {
         if (!prevConfig || !prevConfig.orbitalTokens) return prevConfig;
+        
+        const rect = videoElement.getBoundingClientRect();
+        const videoWidth = rect.width;
+        const videoHeight = rect.height;
+
+        // Log dimensions for debugging orbit
+        if (timestamp % 300 < 16) { // Log roughly every 5 seconds (assuming 60fps)
+            console.log(`[AnimateOrbit] Video dimensions: width=${videoWidth}, height=${videoHeight}`);
+        }
+
+        const orbitPadding = 60; 
+        let dynamicOrbitRadius = Math.max(videoWidth, videoHeight) / 2 + orbitPadding;
+
+        if (videoWidth === 0 && videoHeight === 0) { // Fallback if video dimensions are not yet available
+            dynamicOrbitRadius = 200; // Default radius
+            if (timestamp % 300 < 16) {
+                console.warn("[AnimateOrbit] Video dimensions are 0. Using fallback orbit radius:", dynamicOrbitRadius);
+            }
+        } else {
+            if (timestamp % 300 < 16) {
+                console.log("[AnimateOrbit] Calculated dynamicOrbitRadius:", dynamicOrbitRadius);
+            }
+        }
+
+        const animationSpeed = 0.0005;
+
+        const currentGlobalAngleOffsetRad = orbitAngleOffset * (Math.PI / 180);
+
         const updatedTokens = prevConfig.orbitalTokens.map((token, index) => {
           const initialAngleRad = (token.angle || 0) * (Math.PI / 180);
-          const currentAngleRad = initialAngleRad + animationSpeed * timestamp;
-          const x = orbitRadius * Math.cos(currentAngleRad);
-          const y = orbitRadius * Math.sin(currentAngleRad) * 0.5;
-          const z = orbitRadius * Math.sin(currentAngleRad) * Math.cos(currentAngleRad) * 0.3;
-          const perspectiveFactor = 1 + z / (orbitRadius * 2);
+          const timeBasedAngleRad = !isDraggingOrbit ? (animationSpeed * timestamp) : 0;
+          
+          const currentAngleRad = initialAngleRad + timeBasedAngleRad + currentGlobalAngleOffsetRad;
+          
+          const x = dynamicOrbitRadius * Math.cos(currentAngleRad);
+          // Make y circular, not elliptical
+          const y = dynamicOrbitRadius * Math.sin(currentAngleRad);
+          // Keep z-effect for perspective if desired, or simplify
+          const z = dynamicOrbitRadius * Math.sin(currentAngleRad) * Math.cos(currentAngleRad) * 0.1; // Reduced z influence for less distortion
+          
+          const perspectiveFactor = 1 + z / (dynamicOrbitRadius * 2); // Adjust perspective calculation if z changes
           const scale = Math.max(0.5, Math.min(1.5, perspectiveFactor));
-          const opacity = Math.max(0.3, Math.min(1, ( (z + orbitRadius*0.3) / (orbitRadius*0.6) * 0.7 + 0.3)));
-          const blur = Math.max(0, Math.min(4, 2 - (z / (orbitRadius * 0.4)) * 2));
+          const opacity = Math.max(0.3, Math.min(1, ( (z + dynamicOrbitRadius*0.3) / (dynamicOrbitRadius*0.6) * 0.7 + 0.3)));
+          const blur = Math.max(0, Math.min(4, 2 - (z / (dynamicOrbitRadius * 0.4)) * 2));
           return {
             ...token,
             x,
@@ -195,11 +312,30 @@ export default function HomePage() {
         });
         return { ...prevConfig, orbitalTokens: updatedTokens };
       });
-      animationFrameId = requestAnimationFrame(animate);
+      animationFrameIdRef.current = requestAnimationFrame(animate);
     };
-    animationFrameId = requestAnimationFrame(animate);
-    return () => cancelAnimationFrame(animationFrameId);
-  }, [artistConfig?.name]);
+
+    if (!isDraggingOrbit) { // Start animation if not currently dragging
+        isOrbitAnimationPaused.current = false;
+        if (animationFrameIdRef.current) cancelAnimationFrame(animationFrameIdRef.current);
+        animationFrameIdRef.current = requestAnimationFrame(animate);
+    } else {
+        isOrbitAnimationPaused.current = true;
+    }
+
+    return () => {
+      if (animationFrameIdRef.current) {
+        cancelAnimationFrame(animationFrameIdRef.current);
+      }
+    };
+  }, [artistConfig?.name, orbitAngleOffset, isDraggingOrbit]); // Add isDraggingOrbit and orbitAngleOffset dependencies
+
+  // Effect for saving orbitAngleOffset to localStorage
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('zeyodaOrbitAngleOffset', orbitAngleOffset.toString());
+    }
+  }, [orbitAngleOffset]);
 
   useEffect(() => {
     if (artistConfig && artistConfig.theme) {
@@ -564,6 +700,100 @@ export default function HomePage() {
     }
   }, [artistConfig, unlockedArtistStates, artistIdFromUrl, swapFromAmount]);
 
+  const navigateToArtist = (artistId: string) => {
+    if (artistId) {
+      console.log(`[navigateToArtist] Navigating to artist: ${artistId}`);
+      window.location.search = `?artist=${artistId}`;
+    } else {
+      console.warn("[navigateToArtist] Attempted to navigate with undefined artistId");
+    }
+  };
+
+  // Orbital Token Drag Handlers
+  useEffect(() => {
+    const container = orbitalTokensContainerRef.current;
+    if (!container) return;
+
+    // Helper to get coordinates from either mouse or touch event
+    const getCoords = (e: MouseEvent | TouchEvent): { x: number; y: number } | null => {
+      if (e instanceof MouseEvent) return { x: e.clientX, y: e.clientY };
+      if ('touches' in e && e.touches && e.touches.length > 0) return { x: e.touches[0].clientX, y: e.touches[0].clientY };
+      return null;
+    };
+
+    const handleDragStart = (e: MouseEvent | TouchEvent) => {
+      const coords = getCoords(e);
+      if (!coords) return;
+
+      setIsDraggingOrbit(true);
+      // isOrbitAnimationPaused.current is set by the animation useEffect when isDraggingOrbit is true
+      dragStartCoords.current = coords;
+      lastDragCoords.current = coords;
+      
+      // For touch events, prevent default if we are indeed starting a drag on the orbit container
+      // This helps distinguish from page scroll.
+      if (e.target === container && 'touches' in e) {
+         // No explicit preventDefault here, let touchmove handle it if it's a drag
+      }
+    };
+
+    const handleDragMove = (e: MouseEvent | TouchEvent) => {
+      if (!isDraggingOrbit || !dragStartCoords.current || !lastDragCoords.current) return;
+      
+      const coords = getCoords(e);
+      if (!coords) return;
+
+      // Only prevent default and update angle if actually dragging
+      if (e.cancelable && ('touches' in e)) {
+        e.preventDefault(); 
+      }
+
+      const deltaX = coords.x - lastDragCoords.current.x;
+      const angleChangeFactor = 0.5; // Adjust sensitivity
+      
+      setOrbitAngleOffset(prevOffset => {
+        const newOffset = (prevOffset - deltaX * angleChangeFactor);
+        // Normalize to 0-360 if desired, though raw accumulation also works for transform
+        return (newOffset % 360 + 360) % 360; 
+      });
+
+      lastDragCoords.current = coords;
+    };
+
+    const handleDragEnd = () => {
+      if (!isDraggingOrbit) return; // Only act if a drag was in progress
+      setIsDraggingOrbit(false);
+      // isOrbitAnimationPaused.current will be set to false by the animation useEffect
+      dragStartCoords.current = null;
+      lastDragCoords.current = null;
+      // orbitAngleOffset is saved to localStorage by its own useEffect
+    };
+
+    // Mouse events
+    container.addEventListener('mousedown', handleDragStart as EventListener);
+    document.addEventListener('mousemove', handleDragMove as EventListener); // Listen on document for wider drag area
+    document.addEventListener('mouseup', handleDragEnd); // Listen on document
+    document.addEventListener('mouseleave', handleDragEnd); // If mouse leaves window while dragging
+
+    // Touch events
+    // passive: false for touchmove to allow preventDefault
+    container.addEventListener('touchstart', handleDragStart as EventListener, { passive: true });
+    container.addEventListener('touchmove', handleDragMove as EventListener, { passive: false });
+    container.addEventListener('touchend', handleDragEnd);
+    container.addEventListener('touchcancel', handleDragEnd);
+
+    return () => {
+      container.removeEventListener('mousedown', handleDragStart as EventListener);
+      document.removeEventListener('mousemove', handleDragMove as EventListener);
+      document.removeEventListener('mouseup', handleDragEnd);
+      document.removeEventListener('mouseleave', handleDragEnd);
+      container.removeEventListener('touchstart', handleDragStart as EventListener);
+      container.removeEventListener('touchmove', handleDragMove as EventListener);
+      container.removeEventListener('touchend', handleDragEnd);
+      container.removeEventListener('touchcancel', handleDragEnd);
+    };
+  }, [isDraggingOrbit]); // Re-setup if isDraggingOrbit changes (though it primarily gates internal logic)
+
   if (error) {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center p-8 bg-red-900 text-white">
@@ -581,7 +811,7 @@ export default function HomePage() {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center p-8">
         <div className="loading-spinner"></div>
-        <p className="ml-2">Loading ZEYODA experience...</p>
+        <p className="ml-2">Loading ZEYODA experience for {artistIdFromUrl}...</p>
       </div>
     );
   }
@@ -693,37 +923,60 @@ export default function HomePage() {
         </div>
 
         <div className="video-container">
-          {videoSrc ? (
-            <video id="artistVideo" autoPlay loop muted={isMuted} playsInline key={videoSrc}>
+          {videoSrc && !isVideoError ? (
+            <video 
+              id="artistVideo" 
+              autoPlay 
+              loop 
+              muted={isMuted} 
+              playsInline 
+              key={videoSrc} 
+              onError={() => setIsVideoError(true)}
+              onCanPlay={() => setIsVideoError(false)} // Reset error if video becomes playable
+            >
               <source src={videoSrc} type="video/mp4" />
               Your browser does not support the video tag.
             </video>
           ) : (
             <div className="video-fallback" style={{display: 'flex'}}>
                 <div className="fallback-icon">📺</div>
-                <h3>{displayName}'s content preview</h3>
-                <p className="fallback-note">Video content temporarily unavailable</p>
+                <h3>{displayName}\'s content preview</h3>
+                <p className="fallback-note">Video content {isVideoError ? 'could not be loaded' : 'temporarily unavailable'}</p>
             </div>
           )}
           
           <div className="orbit-glow"></div>
           
           {currentOrbitalTokens && currentOrbitalTokens.length > 0 && (
-            <div id="orbitalTokens" className="orbital-tokens">
-              {currentOrbitalTokens.map((token, index) => (
-                <div 
-                  key={`${artistName}-token-${index}`}
-                  className="orbit-token" 
-                  style={{
-                    transform: `translate3d(${token.x || 0}px, ${token.y || 0}px, ${token.z || 0}px) scale(${token.scale || 1})`,
-                    opacity: token.opacity,
-                    filter: `blur(${token.blur || 0}px)`,
-                    zIndex: 5 + Math.floor(token.z || 0), 
-                  }}
-                >
-                  {token.name}
-                </div>
-              ))}
+            <div 
+              id="orbitalTokens" 
+              className="orbital-tokens"
+              ref={orbitalTokensContainerRef}
+            >
+              {currentOrbitalTokens.map((token, index) => {
+                const isClickable = token.artistId && allArtistsConfig && allArtistsConfig[token.artistId];
+                return (
+                  <div 
+                    key={`${artistName}-token-${index}`}
+                    className={`orbit-token ${isClickable ? 'cursor-pointer' : ''}`}
+                    style={{
+                      transform: `translate3d(${token.x || 0}px, ${token.y || 0}px, ${token.z || 0}px) scale(${token.scale || 1})`,
+                      opacity: token.opacity,
+                      filter: `blur(${token.blur || 0}px)`,
+                      zIndex: 5 + Math.floor(token.z || 0), 
+                    }}
+                    onClick={() => {
+                      if (isClickable && token.artistId) {
+                        navigateToArtist(token.artistId);
+                      }
+                    }}
+                    {...(isClickable && token.artistId && { 'data-artist-id': token.artistId })}
+                    title={isClickable && token.artistId ? `Explore ${allArtistsConfig?.[token.artistId]?.displayName || token.name}` : token.name}
+                  >
+                    {token.name}
+                  </div>
+                );
+              })}
             </div>
           )}
           
@@ -782,11 +1035,21 @@ export default function HomePage() {
                   className="w-2/5 p-2 border border-gray-600 rounded-md bg-gray-700 text-white focus:ring-accentColor focus:border-accentColor"
                 >
                   <option value="USD">USD (Cash)</option>
-                  {Object.entries(userTokenBalances)
-                    .filter(([_, balance]) => balance > 0)
-                    .map(([tokenSymbol, _]) => (
-                      <option key={tokenSymbol} value={tokenSymbol}>{tokenSymbol}</option>
-                  ))}
+                  {artistConfig && allArtistsConfig && (
+                    unlockedArtistStates[artistIdFromUrl] ? (
+                      Object.entries(allArtistsConfig).map(([id, artist]) => {
+                        const isOwned = userTokenBalances[artist.tokenName] && userTokenBalances[artist.tokenName] > 0;
+                        if (isOwned || id === artistIdFromUrl) {
+                          return <option key={artist.tokenName} value={artist.tokenName}>{artist.tokenName}</option>;
+                        }
+                        return null;
+                      })
+                    ) : (
+                      (userTokenBalances[artistConfig.tokenName] && userTokenBalances[artistConfig.tokenName] > 0 || artistIdFromUrl === artistConfig.name.toLowerCase()) && (
+                         <option key={artistConfig.tokenName} value={artistConfig.tokenName}>{artistConfig.tokenName}</option>
+                      )
+                    )
+                  )}
                 </select>
                 <input
                   type="number"
