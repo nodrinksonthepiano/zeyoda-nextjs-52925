@@ -62,6 +62,8 @@ const Wallet: React.FC<WalletProps> = ({
   const hasVisibleArtistTokens = currentArtistTokens.length > 0;
   const hasVisibleDownload = ownsCurrentArtistDownload;
 
+  const hasAnyAssetsForArtist = hasVisibleArtistTokens || hasVisibleDownload;
+
   return (
     <div className={`your-assets-panel open bg-gray-800 shadow-2xl rounded-lg border border-gray-700 transform transition-all duration-300 ease-out`}>
       <div className="flex justify-between items-center mb-4 wallet-header" style={{ backgroundColor: 'var(--primary-color)', padding: '12px 16px', borderBottom: '1px solid rgba(255, 255, 255, 0.1)'}}>
@@ -75,44 +77,42 @@ const Wallet: React.FC<WalletProps> = ({
         </button>
       </div>
       
-      <div className="divide-y divide-gray-700 wallet-content">
+      <div className="wallet-content">
         
-        {hasVisibleArtistTokens && (
+        {artistConfig && hasAnyAssetsForArtist && (
           <div className="wallet-artist-section px-4 py-3">
-            <h4 className="text-lg font-semibold text-accentColor mb-1">{artistConfig.displayName}</h4>
-            {currentArtistTokens.map(([tokenSymbol, balance]) => (
+            <h4 className="text-lg font-semibold text-accentColor mb-2">{artistConfig.displayName}</h4>
+            
+            {hasVisibleArtistTokens && currentArtistTokens.map(([tokenSymbol, balance]) => (
               <div key={tokenSymbol} className="py-1 wallet-asset-item flex justify-between items-center">
                 <div>
                   <span className="asset-icon mr-2">⚡</span>
-                  <span className="asset-name text-sm text-gray-300">{tokenSymbol}</span>
+                  <span className="asset-name text-sm text-gray-300">{tokenSymbol} TOKENS</span> 
                 </div>
                 <span className="asset-amount font-medium text-gray-100">{balance}</span>
               </div>
             ))}
-          </div>
-        )}
 
-        {hasVisibleDownload && (
-          <div className="wallet-artist-section px-4 py-3">
-            <h4 className="text-lg font-semibold text-white mb-1">Featured Content</h4>
-            <div className="py-1 wallet-asset-item flex justify-between items-center">
-              <div>
-                <span className="asset-icon mr-2">🎵</span>
-                <span className="asset-title flex-1 text-sm text-gray-300">{artistConfig.artworkTitle}</span>
+            {hasVisibleDownload && (
+              <div className={`py-1 wallet-asset-item flex justify-between items-center ${hasVisibleArtistTokens ? 'mt-2' : ''}`}> 
+                <div>
+                  <span className="asset-icon mr-2">🎵</span>
+                  <span className="asset-title flex-1 text-sm text-gray-300">{artistConfig.artworkTitle}</span>
+                </div>
+                {downloadIpfsHash ? (
+                   <a 
+                      href={`https://ipfs.io/ipfs/${downloadIpfsHash}`} 
+                      target="_blank" 
+                      rel="noopener noreferrer" 
+                      className="asset-download-link text-accentColor hover:underline text-sm font-medium"
+                    >
+                      Download
+                    </a>
+                ) : (
+                  <span className="text-gray-500 text-sm">(Link pending)</span>
+                )}
               </div>
-              {downloadIpfsHash ? (
-                 <a 
-                    href={`https://ipfs.io/ipfs/${downloadIpfsHash}`} 
-                    target="_blank" 
-                    rel="noopener noreferrer" 
-                    className="asset-download-link text-accentColor hover:underline text-sm"
-                  >
-                    Download
-                  </a>
-              ) : (
-                <span className="text-gray-500 text-sm">(Link pending)</span>
-              )}
-            </div>
+            )}
           </div>
         )}
         
