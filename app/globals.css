@@ -1201,3 +1201,206 @@ body {
   /* padding: 1.5rem; */ /* Tailwind p-6 is 24px, reference is 1.5rem (24px) */
   /* border-radius: 8px; */ /* Tailwind rounded-lg */
 }
+
+/* Added from public/reference/styles/_wallet.css */
+.your-assets-panel {
+    position: fixed; 
+    top: 70px; 
+    left: 20px; 
+    width: 280px; /* Explicitly set to v23 width */
+    max-height: calc(80vh - 70px); 
+    background-color: var(--primary-color, #0a1a3b);
+    border-radius: 8px;
+    box-shadow: 0 5px 20px rgba(0,0,0,0.3);
+    z-index: 1000; 
+    
+    transform: translateX(-100%); 
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.3s ease, transform 0.4s ease-in-out, visibility 0.3s ease; 
+    overflow: hidden; 
+    display: flex;
+    flex-direction: column;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    padding: 1.5rem; 
+}
+
+.your-assets-panel.open {
+    transform: translateX(0); 
+    opacity: 1;
+    visibility: visible;
+}
+
+.wallet-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 16px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    background-color: var(--primary-color); /* Match panel header */
+}
+
+.wallet-header h3 {
+    margin: 0;
+    font-size: 1rem;
+    color: white;
+    font-weight: 600;
+}
+
+.wallet-content {
+    padding: 0;
+    overflow-y: auto;
+    flex: 1;
+    max-height: calc(100% - 50px); /* Ensure content does not overflow header */
+}
+
+.wallet-empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 30px 20px;
+    text-align: center;
+    color: rgba(255, 255, 255, 0.7);
+}
+
+.wallet-empty-state .empty-icon {
+    font-size: 2rem;
+    margin-bottom: 10px;
+    opacity: 0.5;
+}
+
+.wallet-artist-section {
+    padding: 12px 16px;
+}
+
+.wallet-artist-section:not(:last-child) {
+    border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.wallet-artist-section h4 {
+    margin: 0 0 10px 0;
+    font-size: 0.9rem;
+    color: var(--accent-color);
+    font-weight: 500;
+}
+
+.wallet-asset-item {
+    display: flex;
+    align-items: center;
+    padding: 10px 0; /* Increased padding slightly */
+    color: rgba(255, 255, 255, 0.9);
+    font-size: 0.85rem;
+}
+
+.wallet-asset-item:not(:last-child) {
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.asset-icon {
+    margin-right: 12px; /* Increased margin */
+    font-size: 1.1rem; /* Slightly larger icon */
+    color: var(--accent-color, #4073ff); /* Use accent color for icons */
+}
+
+.asset-amount {
+    font-weight: bold;
+    margin-right: 6px;
+    color: white;
+}
+
+.asset-name {
+    color: rgba(255, 255, 255, 0.7);
+    margin-right: 8px;
+}
+
+.asset-title {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: rgba(255, 255, 255, 0.85);
+}
+
+.asset-download-link {
+    margin-left: auto; /* Push to the right */
+    color: var(--accent-color, #4073ff);
+    text-decoration: none;
+    font-size: 0.8rem; /* Adjusted size */
+    padding: 4px 8px; /* Adjusted padding */
+    border-radius: 5px; /* Adjusted radius */
+    background-color: rgba(var(--accent-color-rgb, 64, 115, 255), 0.15);
+    transition: all 0.2s ease;
+    font-weight: 500;
+}
+
+.asset-download-link:hover {
+    background-color: rgba(var(--accent-color-rgb, 64, 115, 255), 0.25);
+    color: white;
+    transform: scale(1.05);
+}
+
+/* Added from public/reference/styles/_components.css for .wallet-button */
+.wallet-button {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 8px 16px; /* Slightly more padding */
+    background: linear-gradient(to bottom, 
+                var(--button-gradient-start, #5c8eff), 
+                var(--button-gradient-end, #2850cc));
+    border: none;
+    border-radius: 30px;
+    color: var(--button-text, white);
+    font-size: 0.8rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease-in-out;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.25), 
+                inset 0 1px 0 rgba(255,255,255,0.2),
+                inset 0 -2px 0 rgba(0,0,0,0.2);
+    text-shadow: var(--button-text-shadow, 0 1px 2px rgba(0, 0, 0, 0.4));
+}
+
+.wallet-button:hover {
+    background: linear-gradient(to bottom, 
+                var(--button-hover-gradient-start, #699aff), 
+                var(--button-hover-gradient-end, #3461e8));
+    transform: translateY(-2px);
+    box-shadow: 0 4px 10px rgba(0,0,0,0.3), 
+                inset 0 1px 0 rgba(255,255,255,0.2),
+                inset 0 -2px 0 rgba(0,0,0,0.2);
+    filter: brightness(1.1);
+}
+
+.wallet-button:active {
+    transform: translateY(1px);
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.4),
+                inset 0 1px 2px rgba(0, 0, 0, 0.3);
+}
+
+.wallet-button:focus {
+    outline: none;
+    box-shadow: 0 0 0 3px var(--button-focus-ring, rgba(92, 142, 255, 0.6)), 
+                0 4px 8px rgba(0, 0, 0, 0.3);
+}
+
+/* Ensure wallet specific styles are not overriding general button styles too much */
+.app-header .wallet-button {
+  /* Specific overrides for wallet button in header if needed */
+}
+
+/* Styles for the close button in the wallet, if using one from _components.css */
+.your-assets-panel .wallet-header button {
+    background: transparent; /* Make it less prominent */
+    border: none;
+    color: rgba(255,255,255,0.7);
+    font-size: 1.2rem;
+    padding: 5px;
+    border-radius: 50%;
+}
+
+.your-assets-panel .wallet-header button:hover {
+    background: rgba(255,255,255,0.1);
+    color: white;
+}

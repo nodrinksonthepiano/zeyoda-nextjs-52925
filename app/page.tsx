@@ -2,6 +2,7 @@
 import Image from "next/image";
 import { useEffect, useState, useRef } from "react";
 import { useSearchParams } from 'next/navigation';
+import Wallet from './components/Wallet';
 
 interface ArtistConfig {
   name: string;
@@ -29,8 +30,13 @@ interface PriceDetails {
   investorShare: number;
 }
 
+interface UserTokenBalances {
+  [tokenSymbol: string]: number;
+}
+
 export default function HomePage() {
   const searchParams = useSearchParams();
+  const artistIdFromUrl = searchParams.get('artist') || 'gosheesh';
   const [artistConfig, setArtistConfig] = useState<ArtistConfig | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isMuted, setIsMuted] = useState(true);
@@ -39,9 +45,9 @@ export default function HomePage() {
   const emailInputRef = useRef<HTMLInputElement>(null);
   const [priceDetails, setPriceDetails] = useState<PriceDetails | null>(null);
   const [showPurchaseModal, setShowPurchaseModal] = useState(false);
-  const [userTokenBalance, setUserTokenBalance] = useState<number>(0);
+  const [userTokenBalances, setUserTokenBalances] = useState<UserTokenBalances>({});
   const [safewordInput, setSafewordInput] = useState('');
-  const [isSwapUnlocked, setIsSwapUnlocked] = useState(false);
+  const [unlockedArtistStates, setUnlockedArtistStates] = useState<{ [key: string]: boolean }>({});
   const [hasPurchasedDownload, setHasPurchasedDownload] = useState<boolean>(false);
   const [showExploreButton, setShowExploreButton] = useState<boolean>(false);
   const [purchaseAmountDollars, setPurchaseAmountDollars] = useState(20);
@@ -52,26 +58,74 @@ export default function HomePage() {
   const [purchaseConfirmationData, setPurchaseConfirmationData] = useState<string | null>(null);
   const [safewordVerified, setSafewordVerified] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [showAssetsPanel, setShowAssetsPanel] = useState<boolean>(false);
+  const [downloadIpfsHash, setDownloadIpfsHash] = useState<string | null>(null);
+
+  // State for the Swap Interface
+  const [swapFromAsset, setSwapFromAsset] = useState<string>("USD");
+  const [swapToAsset, setSwapToAsset] = useState<string>("");
+  const [swapFromAmount, setSwapFromAmount] = useState<string>("");
+  const [swapToAmount, setSwapToAmount] = useState<string>("");
 
   useEffect(() => {
+    const currentArtistId = artistIdFromUrl;
+    setHasPurchasedDownload(false);
+    setDownloadIpfsHash(null);
+
     const storedEmail = localStorage.getItem('zeyodaUserEmail');
     if (storedEmail) {
       setIsLoggedIn(true);
-      const storedBalance = localStorage.getItem('zeyodaUserTokenBalance');
-      let currentBalance = 0;
-      if (storedBalance) {
-        currentBalance = parseFloat(storedBalance);
-        setUserTokenBalance(currentBalance);
+      const storedBalances = localStorage.getItem('zeyodaUserTokenBalances');
+      if (storedBalances) {
+        try {
+          setUserTokenBalances(JSON.parse(storedBalances));
+        } catch (e) {
+          console.error("Error parsing token balances from localStorage", e);
+          setUserTokenBalances({});
+        }
+      } else {
+        setUserTokenBalances({});
       }
-      const storedDownloadStatus = localStorage.getItem('zeyodaHasPurchasedDownload_' + (searchParams.get('artist') || 'gosheesh'));
-      if (storedDownloadStatus === 'true') {
-        setHasPurchasedDownload(true);
-        if (currentBalance > 0) {
-          setShowExploreButton(true);
+
+      const storedUnlockedArtists = localStorage.getItem('zeyodaUnlockedArtists');
+      if (storedUnlockedArtists) {
+        try {
+          setUnlockedArtistStates(JSON.parse(storedUnlockedArtists));
+        } catch (e) {
+          console.error("Error parsing unlocked artists from localStorage", e);
+          setUnlockedArtistStates({});
         }
       }
+
+      const storedDownloadStatus = localStorage.getItem('zeyodaHasPurchasedDownload_' + currentArtistId);
+      if (storedDownloadStatus === 'true') {
+        setHasPurchasedDownload(true);
+        const storedIpfsHash = localStorage.getItem('zeyodaIpfsHash_' + currentArtistId);
+        if (storedIpfsHash) {
+          setDownloadIpfsHash(storedIpfsHash);
+        }
+        console.log(`[Wallet] Loaded hasPurchasedDownload for ${currentArtistId}: true`);
+      } else {
+        console.log(`[Wallet] No stored hasPurchasedDownload for ${currentArtistId} or not true.`);
+      }
+    } else {
+      setIsLoggedIn(false);
+      setUserTokenBalances({});
+      setUnlockedArtistStates({});
     }
-  }, [searchParams]);
+  }, [searchParams, artistIdFromUrl]);
+
+  useEffect(() => {
+    if (isLoggedIn && artistConfig && hasPurchasedDownload) {
+      if (userTokenBalances[artistConfig.tokenName] && userTokenBalances[artistConfig.tokenName] > 0) {
+        setShowExploreButton(true);
+      } else {
+        setShowExploreButton(false);
+      }
+    } else {
+      setShowExploreButton(false);
+    }
+  }, [isLoggedIn, artistConfig, hasPurchasedDownload, userTokenBalances]);
 
   useEffect(() => {
     async function fetchConfig() {
@@ -161,25 +215,16 @@ export default function HomePage() {
   }, [artistConfig?.theme]);
 
   useEffect(() => {
-    if (artistConfig && artistConfig.tokenPrice > 0) {
-      const calculatedArtistocks = Math.floor(purchaseAmountDollars / artistConfig.tokenPrice);
-      setPurchaseAmountArtistocks(calculatedArtistocks);
-      if (calculatedArtistocks !== parseInt(artistocksInput) || artistocksInput === "") {
-         setArtistocksInput(calculatedArtistocks > 0 ? calculatedArtistocks.toString() : "");
-      }
-    } else {
-      setPurchaseAmountArtistocks(0);
-      setArtistocksInput("");
-    }
-  }, [purchaseAmountDollars, artistConfig?.tokenPrice]);
+    const dollarValueForTokens = (unlockedArtistStates[artistIdFromUrl] && swapFromAsset === 'USD')
+                                     ? parseFloat(swapFromAmount || '0')
+                                     : purchaseAmountDollars;
 
-  useEffect(() => {
-    let calculatedTotal = purchaseAmountDollars;
+    let calculatedTotal = dollarValueForTokens;
     if (includeDownload && !hasPurchasedDownload) {
       calculatedTotal += 1;
     }
     setTotalPurchasePrice(calculatedTotal);
-  }, [purchaseAmountDollars, includeDownload, hasPurchasedDownload]);
+  }, [swapFromAmount, swapFromAsset, unlockedArtistStates, artistIdFromUrl, purchaseAmountDollars, includeDownload, hasPurchasedDownload]);
 
   const toggleMute = () => {
     const video = document.getElementById('artistVideo') as HTMLVideoElement;
@@ -237,18 +282,24 @@ export default function HomePage() {
     if (!artistConfig) return;
 
     let itemsPurchasedMessage = [];
-    let newBalance = userTokenBalance;
+    let newBalances = { ...userTokenBalances };
     const artistId = searchParams.get('artist') || 'gosheesh';
+    let purchasedDownloadThisTransaction = false;
 
     if (includeDownload && !hasPurchasedDownload) {
       itemsPurchasedMessage.push(`1 x Featured Download for "${artistConfig.artworkTitle}"`);
       setHasPurchasedDownload(true);
       localStorage.setItem('zeyodaHasPurchasedDownload_' + artistId, 'true');
+      const placeholderHash = "QmSyXs8d2jzAH79Fn1ZBPnp7FqcasunHkT9qTrpcbu5HdX";
+      setDownloadIpfsHash(placeholderHash);
+      localStorage.setItem('zeyodaIpfsHash_' + artistId, placeholderHash);
+      purchasedDownloadThisTransaction = true;
+      console.log(`[Purchase] Set hasPurchasedDownload for ${artistId} to true in localStorage during confirm.`);
     }
 
     if (purchaseAmountArtistocks > 0) {
       itemsPurchasedMessage.push(`${purchaseAmountArtistocks} ${artistConfig.tokenName}s`);
-      newBalance += purchaseAmountArtistocks;
+      newBalances[artistConfig.tokenName] = (newBalances[artistConfig.tokenName] || 0) + purchaseAmountArtistocks;
     }
     
     if (itemsPurchasedMessage.length === 0) {
@@ -256,36 +307,58 @@ export default function HomePage() {
         return;
     }
 
-    setUserTokenBalance(newBalance);
-    localStorage.setItem('zeyodaUserTokenBalance', newBalance.toString());
+    setUserTokenBalances(newBalances);
+    localStorage.setItem('zeyodaUserTokenBalances', JSON.stringify(newBalances));
 
-    const confirmationMessage = `Purchase Confirmed! Items: ${itemsPurchasedMessage.join(', ')}. Total Price: $${totalPurchasePrice.toFixed(2)}. Payment Method: ${paymentMethod || 'Confirmed'}. Your new ${artistConfig.tokenName} balance (global): ${newBalance}.`;
+    const confirmationMessage = `Purchase Confirmed! Items: ${itemsPurchasedMessage.join(', ')}. Total Price: $${totalPurchasePrice.toFixed(2)}. Payment Method: ${paymentMethod || 'Confirmed'}. Your new ${artistConfig.tokenName} balance: ${newBalances[artistConfig.tokenName] || 0}.`;
     setPurchaseConfirmationData(confirmationMessage);
     
     setShowExploreButton(true);
+    if (purchasedDownloadThisTransaction || purchaseAmountArtistocks > 0) {
+      setShowAssetsPanel(true);
+    }
 
     setPurchaseAmountDollars(20);
     setIncludeDownload(true);
   };
 
   const handleSafewordSubmit = () => {
+    if (!artistConfig || !artistConfig.name) {
+      alert("Artist data is still loading. Please wait a moment and try submitting the safeword again.");
+      return;
+    }
     console.log("Attempting safeword submission...");
-    console.log("Safeword input:", safewordInput);
-    console.log("Artist config name:", artistConfig?.name);
-    const expectedSafeword = artistConfig?.name.toLowerCase() + "unlock";
-    console.log("Expected safeword:", expectedSafeword);
+    const expectedSafeword = artistConfig.name.toLowerCase() + "unlock";
+    console.log("Safeword input:", safewordInput, "Expected:", expectedSafeword, "Artist ID:", artistIdFromUrl);
 
-    if (artistConfig && safewordInput.toLowerCase() === expectedSafeword) {
-      console.log("Safeword CORRECT!");
+    if (safewordInput.toLowerCase() === expectedSafeword) {
+      console.log("Safeword CORRECT for artist:", artistIdFromUrl);
       setSafewordVerified(true);
-      setIsSwapUnlocked(true);
+
+      const newUnlockedStates = { ...unlockedArtistStates, [artistIdFromUrl]: true };
+      setUnlockedArtistStates(newUnlockedStates);
+      localStorage.setItem('zeyodaUnlockedArtists', JSON.stringify(newUnlockedStates));
+      
       setSafewordInput('');
-      setPurchaseConfirmationData(null); // Clear any previous purchase message
+      setPurchaseConfirmationData(null);
+
+      setSwapFromAsset("USD");
+      const defaultUsdAmount = "20.00";
+      setSwapFromAmount(defaultUsdAmount);
+
+      if (artistConfig.tokenPrice > 0) {
+        const usdValue = parseFloat(defaultUsdAmount);
+        const calculatedTokens = Math.floor(usdValue / artistConfig.tokenPrice);
+        setPurchaseAmountArtistocks(calculatedTokens);
+        setArtistocksInput(calculatedTokens > 0 ? calculatedTokens.toString() : (usdValue === 0 ? "0" : ""));
+      } else {
+        setPurchaseAmountArtistocks(0);
+        setArtistocksInput("");
+      }
     } else {
-      console.log("Safeword INCORRECT or artistConfig not loaded.");
-      alert("Incorrect safeword. Please try again or ensure artist config is loaded.");
-      setSafewordVerified(false); // Explicitly set to false on failure
-      // setIsSwapUnlocked(false); // Optionally reset this too, though safewordVerified should gate it
+      console.log("Safeword INCORRECT or artistConfig not fully loaded for check.");
+      alert("Incorrect safeword. Please try again.");
+      setSafewordVerified(false); 
     }
   };
 
@@ -294,8 +367,15 @@ export default function HomePage() {
     if (email && email.trim() !== "" && email.includes('@')) {
       localStorage.setItem('zeyodaUserEmail', email);
       setIsLoggedIn(true);
-      const storedBalance = localStorage.getItem('zeyodaUserTokenBalance'); 
-      setUserTokenBalance(storedBalance ? parseFloat(storedBalance) : 0);
+      const storedBalances = localStorage.getItem('zeyodaUserTokenBalances');
+      if (storedBalances) {
+        try {
+          setUserTokenBalances(JSON.parse(storedBalances));
+        } catch (e) {
+          console.error("Error parsing token balances from localStorage", e);
+          setUserTokenBalances({});
+        }
+      }
       setShowPurchaseModal(false);
       setSafewordInput('');
     } else {
@@ -308,17 +388,23 @@ export default function HomePage() {
 
   const handleLogout = () => {
     localStorage.removeItem('zeyodaUserEmail');
-    localStorage.removeItem('zeyodaUserTokenBalance');
+    localStorage.removeItem('zeyodaUserTokenBalances');
     localStorage.removeItem('zeyodaHasPurchasedDownload_gosheesh');
     localStorage.removeItem('zeyodaHasPurchasedDownload_jaitea');
+    localStorage.removeItem('zeyodaUnlockedArtists');
+
     setIsLoggedIn(false);
-    setIsSwapUnlocked(false);
-    setUserTokenBalance(0);
+    setUnlockedArtistStates({});
+    setUserTokenBalances({});
     setHasPurchasedDownload(false);
     setShowPurchaseModal(false);
     setPriceDetails(null);
     setShowExploreButton(false);
     setIncludeDownload(true);
+    setSwapFromAmount("");
+    setArtistocksInput("");
+    setPurchaseAmountArtistocks(0);
+    setPurchaseAmountDollars(20);
     alert("You have been logged out. Your token balance has been reset.");
   };
 
@@ -326,13 +412,29 @@ export default function HomePage() {
     const newValue = e.target.value;
     setSafewordInput(newValue);
 
-    if (isLoggedIn && !isSwapUnlocked && newValue.toLowerCase() === 'artistocks') {
-      setIsSwapUnlocked(true);
-      console.log("Swap unlocked state SET to true in handleSafewordInputChange");
+    if (isLoggedIn && artistConfig && artistConfig.name && artistConfig.tokenPrice > 0 && !unlockedArtistStates[artistIdFromUrl]) {
+      if (newValue.toLowerCase().includes("artistocks")) {
+        console.log(`"artistocks" keyword detected, unlocking for artist: ${artistIdFromUrl}`);
+        
+        const newUnlockedStates = { ...unlockedArtistStates, [artistIdFromUrl]: true };
+        setUnlockedArtistStates(newUnlockedStates);
+        localStorage.setItem('zeyodaUnlockedArtists', JSON.stringify(newUnlockedStates));
+        
+        setSwapFromAsset("USD");
+        const defaultUsdAmount = "20.00";
+        setSwapFromAmount(defaultUsdAmount);
+
+        const usdValue = parseFloat(defaultUsdAmount);
+        const calculatedTokens = Math.floor(usdValue / artistConfig.tokenPrice);
+        setPurchaseAmountArtistocks(calculatedTokens);
+        setArtistocksInput(calculatedTokens > 0 ? calculatedTokens.toString() : (usdValue === 0 ? "0" : ""));
+
+        setPurchaseConfirmationData(null);
+      }
     }
   };
 
-  const alreadyOwnsEverything = hasPurchasedDownload && userTokenBalance > 0;
+  const alreadyOwnsEverything = hasPurchasedDownload && artistConfig && userTokenBalances[artistConfig.tokenName] && userTokenBalances[artistConfig.tokenName] > 0;
 
   const handleExploreOtherArtist = () => {
     if (!artistConfig) return;
@@ -354,26 +456,31 @@ export default function HomePage() {
   };
 
   const handleArtistocksInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const inputVal = e.target.value;
-    setArtistocksInput(inputVal);
+    const tokensString = e.target.value;
+    setArtistocksInput(tokensString);
 
-    if (inputVal === "") {
-      if (artistConfig && artistConfig.tokenPrice > 0) {
-         setPurchaseAmountDollars(0);
+    const numArtistocks = parseInt(tokensString || '0', 10);
+    const validNumArtistocks = isNaN(numArtistocks) || numArtistocks < 0 ? 0 : numArtistocks;
+    setPurchaseAmountArtistocks(validNumArtistocks);
+
+    if (artistConfig && artistConfig.tokenPrice > 0) {
+      const equivalentDollars = validNumArtistocks * artistConfig.tokenPrice;
+      if (swapFromAsset === "USD") {
+        setSwapFromAmount(equivalentDollars.toFixed(2));
       }
-      return;
-    }
-
-    const numArtistocks = parseInt(inputVal, 10);
-    if (!isNaN(numArtistocks) && numArtistocks >= 0 && artistConfig && artistConfig.tokenPrice > 0) {
-      const equivalentDollars = numArtistocks * artistConfig.tokenPrice;
-      setPurchaseAmountDollars(equivalentDollars);
     }
   };
 
   const handleSliderChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const amount = parseFloat(e.target.value);
-    setPurchaseAmountDollars(amount);
+    const usdString = e.target.value;
+    setSwapFromAmount(usdString);
+
+    if (artistConfig && artistConfig.tokenPrice > 0) {
+      const usdValue = parseFloat(usdString || '0');
+      const calculatedTokens = Math.floor(usdValue / artistConfig.tokenPrice);
+      setPurchaseAmountArtistocks(calculatedTokens);
+      setArtistocksInput(calculatedTokens > 0 ? calculatedTokens.toString() : (usdValue === 0 ? "0" : ""));
+    }
   };
 
   const handleIncludeDownloadChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -390,13 +497,72 @@ export default function HomePage() {
     const artistId = searchParams.get('artist') || 'gosheesh';
     setHasPurchasedDownload(true);
     localStorage.setItem('zeyodaHasPurchasedDownload_' + artistId, 'true');
+    const placeholderHash = "QmSyXs8d2jzAH79Fn1ZBPnp7FqcasunHkT9qTrpcbu5HdX";
+    setDownloadIpfsHash(placeholderHash);
+    localStorage.setItem('zeyodaIpfsHash_' + artistId, placeholderHash);
+    console.log(`[Purchase] Set hasPurchasedDownload for ${artistId} to true in localStorage during $1 handleDollarPurchase.`);
     
-    setUserTokenBalance(prevBalance => prevBalance);
+    setUserTokenBalances(prevBalances => ({ ...prevBalances }));
 
     setPurchaseConfirmationData(`Successfully purchased featured download for "${artistConfig.artworkTitle}" for $1.00!`);
     setIsLoading(false);
     setShowExploreButton(true);
+    setShowAssetsPanel(true);
   };
+
+  useEffect(() => {
+    if (artistConfig) {
+      setSwapToAsset(artistConfig.tokenName);
+    }
+  }, [artistConfig]);
+
+  useEffect(() => {
+    if (swapFromAsset === "USD" && swapToAsset === artistConfig?.tokenName && artistConfig && artistConfig.tokenPrice > 0) {
+      const fromVal = parseFloat(swapFromAmount);
+      if (!isNaN(fromVal) && fromVal > 0) {
+        setSwapToAmount((fromVal / artistConfig.tokenPrice).toFixed(8)); 
+      } else {
+        setSwapToAmount("");
+      }
+    } else {
+      setSwapToAmount(""); 
+    }
+  }, [swapFromAmount, swapFromAsset, swapToAsset, artistConfig]);
+
+  const handleSwapFromAmountChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const usdString = e.target.value;
+    setSwapFromAmount(usdString);
+
+    if (swapFromAsset === "USD" && artistConfig && artistConfig.tokenPrice > 0) {
+      const usdValue = parseFloat(usdString || '0');
+      const calculatedTokens = Math.floor(usdValue / artistConfig.tokenPrice);
+      setPurchaseAmountArtistocks(calculatedTokens);
+      setArtistocksInput(calculatedTokens > 0 ? calculatedTokens.toString() : (usdValue === 0 ? "0" : ""));
+    }
+  };
+
+  const handlePreviewSwap = () => {
+    console.log("SWAP PREVIEW:");
+    console.log("FROM:", swapFromAmount, swapFromAsset);
+    console.log("TO:", swapToAmount, swapToAsset);
+    alert(`Previewing Swap: ${swapFromAmount} ${swapFromAsset} to ${swapToAmount} ${swapToAsset}`);
+  };
+
+  useEffect(() => {
+    if (artistConfig && unlockedArtistStates[artistIdFromUrl] && artistConfig.tokenPrice > 0) {
+      if (swapFromAmount.trim() === "" || parseFloat(swapFromAmount || "0") === 0) {
+        console.log(`Setting $20 default for already unlocked artist: ${artistIdFromUrl}`);
+        const defaultUsdAmount = "20.00";
+        setSwapFromAsset("USD");
+        setSwapFromAmount(defaultUsdAmount);
+
+        const usdValue = parseFloat(defaultUsdAmount);
+        const calculatedTokens = Math.floor(usdValue / artistConfig.tokenPrice);
+        setPurchaseAmountArtistocks(calculatedTokens);
+        setArtistocksInput(calculatedTokens > 0 ? calculatedTokens.toString() : "0");
+      }
+    }
+  }, [artistConfig, unlockedArtistStates, artistIdFromUrl, swapFromAmount]);
 
   if (error) {
     return (
@@ -415,16 +581,19 @@ export default function HomePage() {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center p-8">
         <div className="loading-spinner"></div>
-        <p className="ml-2">Loading ZEYODA experience for artist...</p>
+        <p className="ml-2">Loading ZEYODA experience...</p>
       </div>
     );
   }
 
-  console.log("Current isSwapUnlocked state (on render):", isSwapUnlocked);
+  console.log("Current isSwapUnlocked state (on render):", unlockedArtistStates);
+  console.log("Current userTokenBalances state (on render):", userTokenBalances);
 
   const { displayName, artworkTitle, videoSrc, tokenPrice, artworkYear, orbitalTokens: currentOrbitalTokens, name: artistName, tokenName: artistTokenName } = artistConfig;
 
-  const showActualSwapInterface = isLoggedIn && userTokenBalance > 0 && artistConfig && isSwapUnlocked && !purchaseConfirmationData;
+  const currentArtistBalance = userTokenBalances[artistTokenName] || 0;
+
+  const showActualSwapInterface = isLoggedIn && currentArtistBalance > 0 && artistConfig && unlockedArtistStates[artistIdFromUrl] && !purchaseConfirmationData;
 
   let buyButtonText = "LOADING...";
   let buyButtonDisabled = true; 
@@ -432,65 +601,86 @@ export default function HomePage() {
 
   if (artistConfig) {
     if (!isLoggedIn) {
-      // This case is now handled by the separate $1 download button / login prompt
-      // So, the main buy button logic will assume isLoggedIn is true when it's relevant
-    } else { // Logged In
-      if (isSwapUnlocked) { // Advanced purchase options are visible
+    } else {
+      if (unlockedArtistStates[artistIdFromUrl]) {
         buyButtonAction = handlePrimaryAction;
-        const anythingToBuy = purchaseAmountArtistocks > 0 || (includeDownload && !hasPurchasedDownload);
-        
-        if (!anythingToBuy) {
-          if (hasPurchasedDownload && purchaseAmountArtistocks === 0) {
-            buyButtonText = "ENTER AMOUNT FOR TOKENS";
-          } else if (!hasPurchasedDownload && purchaseAmountArtistocks === 0 && !includeDownload) {
-            buyButtonText = "SELECT DOWNLOAD OR ENTER AMOUNT";
-          } else {
-            buyButtonText = "SELECT ITEMS TO PURCHASE";
-          }
-          buyButtonDisabled = true;
+            
+        const purchasingDownloadNow = includeDownload && !hasPurchasedDownload;
+        const purchasingTokensNow = purchaseAmountArtistocks > 0;
+
+        if (!purchasingDownloadNow && !purchasingTokensNow) {
+            buyButtonDisabled = true;
+            if (alreadyOwnsEverything) {
+                buyButtonText = `GET MORE ${artistTokenName || 'TOKENS'}`;
+            } else if (hasPurchasedDownload) {
+                buyButtonText = `GET ${artistTokenName || 'TOKENS'}`;
+            } else {
+                buyButtonText = "SELECT DOWNLOAD OR AMOUNT";
+            }
         } else {
-          let textParts = [];
-          if (includeDownload && !hasPurchasedDownload) {
-            textParts.push("DOWNLOAD");
-          }
-          if (purchaseAmountArtistocks > 0) {
-            textParts.push(`${purchaseAmountArtistocks} ${artistTokenName}s`);
-          }
-          buyButtonText = `GET ${textParts.join(' + ')} ($${totalPurchasePrice.toFixed(2)})`;
-          buyButtonDisabled = false;
+            buyButtonDisabled = false;
+            let textParts = [];
+            if (purchasingDownloadNow) {
+                textParts.push("DOWNLOAD");
+            }
+            if (purchasingTokensNow) {
+                textParts.push(`${purchaseAmountArtistocks} ${artistTokenName || 'TOKENS'}`);
+            }
+            buyButtonText = `GET ${textParts.join(' + ')} ($${totalPurchasePrice.toFixed(2)})`;
         }
-
-        if (alreadyOwnsEverything && purchaseAmountArtistocks === 0) { // Special case if they own everything and try to buy 0 tokens
-            buyButtonText = "ALL ITEMS OWNED";
-            buyButtonDisabled = true;
-        } else if (hasPurchasedDownload && !includeDownload && purchaseAmountArtistocks === 0) { // Own download, unchecked it, 0 tokens
-            buyButtonText = "ENTER AMOUNT OR CHECK DOWNLOAD";
-            buyButtonDisabled = true;
-        }
-
       } else {
-        // This state (logged in, but swap NOT unlocked) is handled by the $1 download button
-        // So, the main dynamic buy button under advanced options won't be visible here.
-        // We can leave a default or placeholder if necessary, but it shouldn't be shown.
-        buyButtonText = "ENTER SAFEWORD TO UNLOCK"; // Fallback, though button not visible
+        buyButtonText = `UNLOCK ${artistTokenName.toUpperCase()} SWAP`; 
         buyButtonDisabled = true;
       }
     }
   }
-  // If the purchase modal is showing (which can only happen if logged in), disable the main button
   if (showPurchaseModal) buyButtonDisabled = true; 
 
   return (
     <>
       <div id="particles" className="cosmic-particles"></div>
 
+      {isLoggedIn && (
+        <Wallet
+          artistConfig={artistConfig}
+          userTokenBalances={userTokenBalances}
+          hasPurchasedDownload={hasPurchasedDownload}
+          showAssetsPanel={showAssetsPanel}
+          onClose={() => setShowAssetsPanel(false)}
+          artistIdFromUrl={artistIdFromUrl}
+          downloadIpfsHash={downloadIpfsHash}
+        />
+      )}
+
       <header className="app-header">
-        {isLoggedIn ? (
-          <div className="header-user-info">
-            <span className="token-balance">Your {artistTokenName}s: {userTokenBalance}</span>
-            <button onClick={handleLogout} className="logout-button">
-              LOG OUT / RESET
-            </button>
+        {isLoggedIn && artistConfig ? (
+          <div className="header-user-info flex items-center justify-between w-full">
+            <div className="flex items-center">
+              <button 
+                onClick={() => setShowAssetsPanel(!showAssetsPanel)} 
+                className="wallet-button mr-4"
+                style={{
+                  padding: '8px 12px',
+                  background: 'linear-gradient(to bottom, #5c8eff, #2850cc)',
+                  border: 'none',
+                  borderRadius: '30px',
+                  color: 'white',
+                  fontSize: '0.8rem',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  boxShadow: '0 2px 6px rgba(0,0,0,0.25), inset 0 1px 0 rgba(255,255,255,0.2), inset 0 -2px 0 rgba(0,0,0,0.2)',
+                  textShadow: '0 1px 2px rgba(0,0,0,0.4)'
+                }}
+              >
+                {showAssetsPanel ? 'Hide Assets' : 'Your Assets'}
+              </button>
+            </div>
+            
+            <div className="flex items-center">
+              <button onClick={handleLogout} className="logout-button">
+                LOG OUT / RESET
+              </button>
+            </div>
           </div>
         ) : (
           <span className="login-prompt-header">Login to engage</span>
@@ -554,8 +744,7 @@ export default function HomePage() {
           </div>
         </div>
 
-        {/* $1 Download Button - Visible if not logged in, or logged in but swap NOT unlocked AND download not purchased */}
-        {!hasPurchasedDownload && (!isLoggedIn || (isLoggedIn && !isSwapUnlocked)) && (
+        {!hasPurchasedDownload && (!isLoggedIn || (isLoggedIn && !unlockedArtistStates[artistIdFromUrl])) && (
           <div className="my-4 w-full max-w-md mx-auto">
             <button
               onClick={() => {
@@ -563,8 +752,8 @@ export default function HomePage() {
                   setShakeActive(true);
                   setTimeout(() => setShakeActive(false), 500);
                   emailInputRef.current?.focus();
-                } else { // Logged in but swap not unlocked
-                  handleDollarPurchase(); // This handles the $1 download purchase
+                } else {
+                  handleDollarPurchase();
                 }
               }}
               disabled={isLoading && isLoggedIn}
@@ -577,47 +766,60 @@ export default function HomePage() {
           </div>
         )}
 
-        {/* Advanced Purchase Options & Main Purchase Button - Visible when logged in, swap unlocked, and no confirmation message */}
-        {isLoggedIn && isSwapUnlocked && !purchaseConfirmationData && artistConfig && (
+        {isLoggedIn && unlockedArtistStates[artistIdFromUrl] && !purchaseConfirmationData && artistConfig && (
           <div className="my-4 w-full max-w-md mx-auto p-4 border rounded-lg bg-gray-800 bg-opacity-70 shadow-xl backdrop-blur-sm">
             <h3 className="text-xl font-semibold mb-6 text-center text-white">Purchase Options</h3>
             
-            {/* FROM Section */}
             <div className="mb-4">
               <label className="block text-sm font-medium text-gray-300 mb-1">FROM</label>
               <div className="flex items-center space-x-2">
-                <span className="px-3 py-2 bg-gray-700 text-white rounded-md text-sm">USD</span>
+                <select 
+                  id="fromAsset"
+                  value={swapFromAsset} 
+                  onChange={(e) => {
+                    setSwapFromAsset(e.target.value);
+                  }}
+                  className="w-2/5 p-2 border border-gray-600 rounded-md bg-gray-700 text-white focus:ring-accentColor focus:border-accentColor"
+                >
+                  <option value="USD">USD (Cash)</option>
+                  {Object.entries(userTokenBalances)
+                    .filter(([_, balance]) => balance > 0)
+                    .map(([tokenSymbol, _]) => (
+                      <option key={tokenSymbol} value={tokenSymbol}>{tokenSymbol}</option>
+                  ))}
+                </select>
                 <input
                   type="number"
-                  value={purchaseAmountDollars > 0 ? purchaseAmountDollars.toFixed(2) : ""}
-                  onChange={handleDollarInputChange}
-                  min="0"
+                  value={swapFromAmount}
+                  onChange={handleSwapFromAmountChange}
                   placeholder="0.00"
-                  className="w-full p-2 border border-gray-600 rounded-md bg-gray-700 text-white focus:ring-accentColor focus:border-accentColor"
-                  aria-label="Amount in USD"
+                  className="w-3/5 p-2 border border-gray-600 rounded-md bg-gray-700 text-white focus:ring-accentColor focus:border-accentColor"
+                  aria-label="Amount of asset to swap from"
                 />
               </div>
             </div>
 
-            {/* Slider */}
-            <div className="mb-6">
-              <label htmlFor="usdSlider" className="block text-sm font-medium text-gray-300 mb-1">
-                Adjust USD Amount (Slider)
-              </label>
-              <input
-                type="range"
-                id="usdSlider"
-                min="0"
-                max="500"
-                step="1"
-                value={purchaseAmountDollars}
-                onChange={handleSliderChange}
-                className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-accentColor"
-              />
-               <div className="text-xs text-gray-400 mt-1 text-center">Current: ${purchaseAmountDollars.toFixed(2)}</div>
-            </div>
+            {swapFromAsset === "USD" && (
+              <div className="mb-6">
+                <label htmlFor="usdSlider" className="block text-sm font-medium text-gray-300 mb-1">
+                  Adjust USD Amount (Slider)
+                </label>
+                <input
+                  type="range"
+                  id="usdSlider"
+                  min="0"
+                  max="500"
+                  step="1"
+                  value={swapFromAmount || '0'}
+                  onChange={handleSliderChange}
+                  className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-accentColor"
+                />
+                <div className="text-xs text-gray-400 mt-1 text-center">
+                  Current: ${parseFloat(swapFromAmount || '0').toFixed(2)}
+                </div>
+              </div>
+            )}
 
-            {/* TO Section */}
             <div className="mb-4">
               <label className="block text-sm font-medium text-gray-300 mb-1">TO</label>
               <div className="flex items-center space-x-2">
@@ -640,24 +842,43 @@ export default function HomePage() {
               )}
             </div>
             
-            {/* Include Download Checkbox */}
-            {!hasPurchasedDownload && (
-              <div className="mb-6 flex items-center">
-                <input
-                  type="checkbox"
-                  id="includeDownload"
-                  name="includeDownload"
-                  checked={includeDownload}
-                  onChange={handleIncludeDownloadChange}
-                  className="h-4 w-4 text-accentColor border-gray-500 rounded focus:ring-accentColor bg-gray-700"
-                />
-                <label htmlFor="includeDownload" className="ml-2 text-sm font-medium text-gray-300">
-                  Include Featured Download ($1.00)
-                </label>
-              </div>
-            )}
+            <div className="mb-6 flex items-center">
+              {hasPurchasedDownload ? (
+                <>
+                  <input 
+                    type="checkbox" 
+                    id="downloadOwned" 
+                    checked 
+                    disabled 
+                    className="h-4 w-4 text-green-600 border-gray-500 rounded focus:ring-green-500 bg-gray-700 cursor-not-allowed"
+                  />
+                  <label 
+                    htmlFor="downloadOwned" 
+                    className="ml-2 text-sm font-medium text-green-400"
+                  >
+                    Featured Download (Already Owned)
+                  </label>
+                </>
+              ) : (
+                <>
+                  <input
+                    type="checkbox"
+                    id="includeDownload"
+                    name="includeDownload"
+                    checked={includeDownload}
+                    onChange={handleIncludeDownloadChange}
+                    className="h-4 w-4 text-accentColor border-gray-500 rounded focus:ring-accentColor bg-gray-700"
+                  />
+                  <label 
+                    htmlFor="includeDownload" 
+                    className="ml-2 text-sm font-medium text-gray-300"
+                  >
+                    Include Featured Download ($1.00)
+                  </label>
+                </>
+              )}
+            </div>
             
-            {/* Main Dynamic Purchase Button */}
             <button
               onClick={buyButtonAction}
               disabled={buyButtonDisabled}
@@ -702,7 +923,7 @@ export default function HomePage() {
                 <div className="mock-payment-options mt-4 mb-6">
                   <h4 className="text-lg font-semibold mb-4 text-center text-gray-200">CHOOSE PAYMENT METHOD:</h4>
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                    {[ // Placeholder icons, replace with actual icons/SVGs
+                    {[
                       { name: 'Venmo', icon: 'V' }, 
                       { name: 'PayPal', icon: 'P' }, 
                       { name: 'Crypto', icon: '₿' }, 
@@ -713,7 +934,7 @@ export default function HomePage() {
                         onClick={() => handleConfirmPurchase(method.name)} 
                         className="payment-option-btn group flex flex-col items-center justify-center p-3 bg-gray-700 hover:bg-accentColor text-white rounded-lg transition-all duration-150 ease-in-out transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-accentColor focus:ring-opacity-50 shadow-md hover:shadow-lg"
                       >
-                        <span className="text-2xl mb-1 group-hover:text-white">{method.icon}</span> {/* Replace with <img> or icon component */}
+                        <span className="text-2xl mb-1 group-hover:text-white">{method.icon}</span>
                         <span className="text-xs sm:text-sm group-hover:text-white">{method.name}</span>
                       </button>
                     ))}
@@ -740,24 +961,16 @@ export default function HomePage() {
               <button
                 onClick={() => {
                   setPurchaseConfirmationData(null);
-                  // Reset amounts for next purchase
-                  if (artistConfig?.tokenPrice && artistConfig.tokenPrice > 0) {
-                     setPurchaseAmountDollars(20); // Default or last entered valid amount
-                     setArtistocksInput(Math.floor(20 / artistConfig.tokenPrice).toString());
-                  } else {
-                     setPurchaseAmountDollars(0);
-                     setArtistocksInput("");
-                  }
-                  setIncludeDownload(true); // Default to including download if not owned
+                  handleExploreOtherArtist();
                 }}
                 className="mt-4 px-6 py-3 bg-accentColor hover:bg-opacity-80 text-white font-bold rounded-lg w-full custom-buy-button text-lg shadow-md hover:shadow-lg transition-all duration-150 ease-in-out transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-accentColor focus:ring-opacity-50"
               >
-                OK
+                Explore {artistName?.toLowerCase() === 'gosheesh' ? 'JAI TEA' : 'GOSHEESH'}
               </button>
             </div>
           )}
 
-          {isLoggedIn && artistConfig && !isSwapUnlocked && showExploreButton && !purchaseConfirmationData && (
+          {isLoggedIn && artistConfig && !unlockedArtistStates[artistIdFromUrl] && showExploreButton && !purchaseConfirmationData && (
             <div className="text-center my-6">
               {alreadyOwnsEverything && <p className="text-lg mb-3 text-green-400">You own all items by {displayName}!</p>}
               <button 
@@ -766,13 +979,6 @@ export default function HomePage() {
               >
                 Explore {artistName?.toLowerCase() === 'gosheesh' ? 'JAI TEA' : 'GOSHEESH'}
               </button>
-            </div>
-          )}
-
-          {showActualSwapInterface && artistConfig && (
-            <div className="swap-section mock-ui-section">
-              <h3>Swap Your {artistConfig.tokenName}s</h3>
-              <p className="text-center p-4">Full swap interface coming soon. You have {userTokenBalance} {artistConfig.tokenName}s.</p>
             </div>
           )}
         </div>
