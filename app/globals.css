@@ -384,6 +384,42 @@ body {
                0 0 20px rgba(var(--accent-color-rgb), 0.5); /* Glow effect */
 }
 
+.video-container {
+  position: relative; /* Crucial for absolute positioning of orbital-tokens */
+  width: 100%;
+  max-width: 700px; /* Or whatever the desired max video width is */
+  margin: 20px auto; /* Center the video container */
+  aspect-ratio: 16 / 9; /* Maintain video aspect ratio */
+  background-color: #000; /* Fallback if video doesn't load, or for glow */
+  border-radius: 8px; /* Match other elements */
+  overflow: hidden; /* Ensures orbit glow doesn't spill if not desired */
+  box-shadow: 0 10px 30px rgba(0,0,0,0.5); /* Add some depth */
+}
+
+.video-container video,
+.video-container .video-fallback {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover; /* Ensure video covers the container */
+  border-radius: 8px; /* If overflow hidden is on parent */
+}
+
+.orbit-glow {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 120%; /* Make glow larger than video */
+  height: 120%;
+  background: radial-gradient(ellipse at center, rgba(var(--accent-color-rgb, 64,115,255), 0.25) 0%, transparent 60%);
+  z-index: 1; /* Behind video but in front of container background */
+  pointer-events: none;
+  opacity: 0.7; /* Adjust as needed */
+}
+
 /* video-container, artwork-info, video-controls are already mostly styled from previous steps */
 /* We might need to adjust margins or padding for them within the new layout */
 
@@ -921,4 +957,247 @@ body {
   cursor: not-allowed;
   box-shadow: none;
   transform: none;
+}
+
+/* Styles for the new Purchase Controls (Slider, Inputs) */
+.purchase-controls-container {
+  /* Using Tailwind for background, padding, rounded, shadow already */
+  /* Add specific non-Tailwind styles if needed */
+}
+
+.artistock-purchase-slider-inputs {
+  /* Using Tailwind for border, padding, rounded already */
+  background-color: rgba(0,0,0, 0.2); /* Slight inset look */
+}
+
+.slider-thumb::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 20px;
+  height: 20px;
+  background: var(--accent-color, #4073ff);
+  border-radius: 50%;
+  cursor: pointer;
+  border: 2px solid white;
+  margin-top: -7px; /* Adjust to center thumb on the track */
+  box-shadow: 0 0 5px rgba(0,0,0,0.5);
+}
+
+.slider-thumb::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  background: var(--accent-color, #4073ff);
+  border-radius: 50%;
+  cursor: pointer;
+  border: 2px solid white;
+  box-shadow: 0 0 5px rgba(0,0,0,0.5);
+}
+
+/* Input field styling to match v23 (if Tailwind defaults are not enough) */
+.purchase-controls-container input[type=\"number\"],
+.purchase-controls-container input[type=\"checkbox\"] {
+  /* Tailwind classes are doing a good job, specific overrides if needed */
+  /* For example, if specific height or text color is needed beyond theme */
+}
+
+.purchase-controls-container input[type=\"checkbox\"] {
+  transform: scale(1.2); /* Slightly larger checkbox */
+}
+
+.purchase-controls-container label {
+  /* Tailwind for text color, size already applied in JSX */
+}
+
+/* Style for the actual range input track if default is not desired */
+.slider-thumb::-webkit-slider-runnable-track {
+  height: 6px;
+  background: #374151; /* bg-gray-700 from Tailwind */
+  border-radius: 3px;
+}
+
+.slider-thumb::-moz-range-track {
+  height: 6px;
+  background: #374151; /* bg-gray-700 from Tailwind */
+  border-radius: 3px;
+}
+
+/* Custom ZEYODA styles based on reference */
+
+/* Slider Styles */
+.custom-token-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 10px;
+  background: linear-gradient(to right, rgba(0, 0, 0, 0.3), rgba(212, 175, 55, 0.6)); /* var(--slider-bg) equivalent */
+  border-radius: 10px;
+  outline: none;
+  margin: 15px 0;
+  position: relative;
+  cursor: pointer;
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.3);
+}
+
+.custom-token-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: radial-gradient(circle at center, #ffef85 10%, #d4af37 60%, #b08d23 100%); /* Accent color based gradient */
+  border: 2px solid rgba(255, 255, 255, 0.4);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.6), 
+              inset 0 -2px 5px rgba(0, 0, 0, 0.3),
+              inset 0 2px 5px rgba(255, 255, 255, 0.8);
+  cursor: pointer;
+  position: relative;
+  z-index: 2;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.custom-token-slider::-moz-range-thumb {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: radial-gradient(circle at center, #ffef85 10%, #d4af37 60%, #b08d23 100%); /* Accent color based gradient */
+  border: 2px solid rgba(255, 255, 255, 0.4);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.6), 
+              inset 0 -2px 5px rgba(0, 0, 0, 0.3),
+              inset 0 2px 5px rgba(255, 255, 255, 0.8);
+  cursor: pointer;
+  position: relative;
+  z-index: 2;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.custom-token-slider:hover::-webkit-slider-thumb {
+  transform: scale(1.1);
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.7), 
+              inset 0 -2px 5px rgba(0, 0, 0, 0.3),
+              inset 0 2px 5px rgba(255, 255, 255, 0.8);
+}
+
+.custom-token-slider:hover::-moz-range-thumb {
+  transform: scale(1.1);
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.7), 
+              inset 0 -2px 5px rgba(0, 0, 0, 0.3),
+              inset 0 2px 5px rgba(255, 255, 255, 0.8);
+}
+
+/* Input Field Styles */
+.custom-token-input {
+  background: rgba(0, 0, 0, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.2); /* var(--input-border) */
+  border-radius: 8px; /* Tailwind 'rounded-md' is 6px, reference is 8px */
+  padding: 8px 12px; /* Tailwind 'p-2' is 8px */
+  color: #ffef85; /* Yellowish text for values */
+  font-weight: 600;
+  text-align: right;
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.3); /* var(--input-shadow) */
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.custom-token-input:focus {
+  outline: none;
+  border-color: rgba(var(--accent-color-rgb), 0.7); /* var(--input-focus-border) */
+  box-shadow: 0 0 0 2px rgba(var(--accent-color-rgb), 0.2), inset 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+
+/* Purchase Button Styles */
+.custom-buy-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  padding: 14px 24px; /* Tailwind p-3 is 12px */
+  margin-top: 20px;
+  border: none;
+  border-radius: 30px; /* Tailwind rounded-lg is 8px */
+  background: linear-gradient(to bottom, var(--button-gradient-start, #5c8eff), var(--button-gradient-end, #2850cc));
+  font-size: 1.05rem; /* Tailwind text-lg is 1.125rem */
+  font-weight: 600; /* Tailwind font-bold is 700 */
+  box-shadow: 0 2px 6px rgba(0,0,0,0.25), 
+              inset 0 1px 0 rgba(255,255,255,0.2),
+              inset 0 -2px 0 rgba(0,0,0,0.2);
+  text-align: center;
+  color: var(--button-text, white);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  text-shadow: var(--button-text-shadow, 0 1px 2px rgba(0, 0, 0, 0.4));
+  transition: all 0.2s ease-in-out;
+}
+
+.custom-buy-button:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 10px rgba(0,0,0,0.3), 
+              inset 0 1px 0 rgba(255,255,255,0.2),
+              inset 0 -2px 0 rgba(0,0,0,0.2);
+  filter: brightness(1.1);
+  background: linear-gradient(to bottom, var(--button-hover-gradient-start, #699aff), var(--button-hover-gradient-end, #3461e8));
+}
+
+.custom-buy-button:active {
+  transform: translateY(1px);
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.4),
+              inset 0 1px 2px rgba(0, 0, 0, 0.3);
+}
+
+.custom-buy-button:focus {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--button-focus-ring, rgba(92, 142, 255, 0.6)), 
+              0 4px 8px rgba(0, 0, 0, 0.3);
+}
+
+.custom-buy-button:disabled {
+  background: #4A5568; /* gray-600 */
+  cursor: not-allowed;
+  opacity: 0.7;
+  transform: none;
+  box-shadow: none;
+  filter: none;
+}
+
+/* Ensure CSS variables used by custom classes are defined if not already global */
+:root {
+  /* Define these based on your theme or the reference if not already set by artistConfig */
+  /* Example: from the reference _theme.css */
+  --button-gradient-start: #5c8eff;
+  --button-gradient-end: #2850cc;
+  --button-hover-gradient-start: #699aff;
+  --button-hover-gradient-end: #3461e8;
+  --button-focus-ring: rgba(92, 142, 255, 0.6);
+  --button-text: white;
+  --button-text-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+  /* --accent-color-rgb will be set by JS from artistConfig.theme.accentColor */
+}
+
+/* Style for the content unlock toggle to match reference more closely */
+.custom-content-unlock-toggle {
+  background-color: rgba(0, 0, 0, 0.2); /* var(--section-bg) can be darker */
+  border-radius: 8px;
+  padding: 15px;
+  margin-bottom: 20px; /* Reference has margin-bottom:5px on toggle, but overall section looks like more spacing */
+}
+
+.custom-content-unlock-toggle .price-highlight {
+  /* color: #ffef85; Reference style */
+  /* Using accentColor from theme for consistency with other highlights */
+  font-size: 1.5rem; /* Reference is 2rem, adjusted for space */
+  font-weight: 700;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.6);
+  margin-right: 8px;
+}
+
+.custom-content-unlock-toggle .secondary-text {
+  /* color: rgba(255, 255, 255, 0.8); Reference style */
+  font-size: 0.9rem; /* Reference is 0.95rem */
+}
+
+.custom-token-preview-section {
+  /* background-color: var(--section-bg); */ /* From reference, Tailwind bg-gray-800 is similar */
+  border: 1px solid rgba(var(--accent-color-rgb), 0.2); /* var(--section-border) with theme color */
+  /* box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3); */ /* Tailwind shadow-xl is similar */
+  backdrop-filter: blur(5px); /* Reference has blur(10px) on .token-preview-section */
+  /* padding: 1.5rem; */ /* Tailwind p-6 is 24px, reference is 1.5rem (24px) */
+  /* border-radius: 8px; */ /* Tailwind rounded-lg */
 }
