@@ -34,6 +34,13 @@ interface UserTokenBalances {
   [tokenSymbol: string]: number;
 }
 
+interface PurchasedDownloadInfo {
+  artistId: string;
+  artworkTitle: string;
+  artistDisplayName: string;
+  ipfsHash: string | null;
+}
+
 export default function HomePage() {
   const searchParams = useSearchParams();
   const artistIdFromUrl = searchParams.get('artist') || 'gosheesh';
@@ -61,6 +68,8 @@ export default function HomePage() {
   const [isLoading, setIsLoading] = useState(false);
   const [showAssetsPanel, setShowAssetsPanel] = useState<boolean>(false);
   const [downloadIpfsHash, setDownloadIpfsHash] = useState<string | null>(null);
+  const [globalSafewordVerified, setGlobalSafewordVerified] = useState(false);
+  const [allPurchasedDownloads, setAllPurchasedDownloads] = useState<PurchasedDownloadInfo[]>([]);
 
   // Ref for the video container to dynamically adjust orbit
   const videoContainerRef = useRef<HTMLDivElement | null>(null);
@@ -92,6 +101,7 @@ export default function HomePage() {
     const currentArtistId = artistIdFromUrl;
     setHasPurchasedDownload(false);
     setDownloadIpfsHash(null);
+    setSafewordVerified(false);
 
     const storedEmail = localStorage.getItem('zeyodaUserEmail');
     if (storedEmail) {
@@ -109,14 +119,25 @@ export default function HomePage() {
       }
 
       const storedUnlockedArtists = localStorage.getItem('zeyodaUnlockedArtists');
+      let initialUnlockedStates: { [key: string]: boolean } = {};
+      let anyArtistUnlocked = false;
       if (storedUnlockedArtists) {
         try {
-          setUnlockedArtistStates(JSON.parse(storedUnlockedArtists));
+          initialUnlockedStates = JSON.parse(storedUnlockedArtists);
+          // Check if any artist in the stored object is true
+          for (const artistKey in initialUnlockedStates) {
+            if (initialUnlockedStates.hasOwnProperty(artistKey) && initialUnlockedStates[artistKey]) {
+              anyArtistUnlocked = true;
+              break;
+            }
+          }
         } catch (e) {
           console.error("Error parsing unlocked artists from localStorage", e);
-          setUnlockedArtistStates({});
+          setUnlockedArtistStates({}); // Reset to empty if error
         }
       }
+      setUnlockedArtistStates(initialUnlockedStates);
+      setGlobalSafewordVerified(anyArtistUnlocked);
 
       const storedDownloadStatus = localStorage.getItem('zeyodaHasPurchasedDownload_' + currentArtistId);
       if (storedDownloadStatus === 'true') {
@@ -129,12 +150,33 @@ export default function HomePage() {
       } else {
         console.log(`[Wallet] No stored hasPurchasedDownload for ${currentArtistId} or not true.`);
       }
+
+      if (allArtistsConfig) {
+        const downloads: PurchasedDownloadInfo[] = [];
+        for (const id in allArtistsConfig) {
+          if (localStorage.getItem('zeyodaHasPurchasedDownload_' + id) === 'true') {
+            downloads.push({
+              artistId: id,
+              artworkTitle: allArtistsConfig[id].artworkTitle,
+              artistDisplayName: allArtistsConfig[id].displayName,
+              ipfsHash: localStorage.getItem('zeyodaIpfsHash_' + id) || null,
+            });
+          }
+        }
+        setAllPurchasedDownloads(downloads);
+        console.log('[WalletData] Populated allPurchasedDownloads:', downloads);
+      } else {
+        console.log('[WalletData] allArtistsConfig not yet available to populate allPurchasedDownloads');
+        setAllPurchasedDownloads([]); // Clear if config is not ready
+      }
     } else {
       setIsLoggedIn(false);
       setUserTokenBalances({});
       setUnlockedArtistStates({});
+      setGlobalSafewordVerified(false); // Reset if not logged in
+      setAllPurchasedDownloads([]); // Clear if not logged in
     }
-  }, [searchParams, artistIdFromUrl]);
+  }, [searchParams, artistIdFromUrl, allArtistsConfig]);
 
   useEffect(() => {
     if (isLoggedIn && artistConfig && hasPurchasedDownload) {
@@ -470,6 +512,7 @@ export default function HomePage() {
     if (safewordInput.toLowerCase() === expectedSafeword) {
       console.log("Safeword CORRECT for artist:", artistIdFromUrl);
       setSafewordVerified(true);
+      setGlobalSafewordVerified(true);
 
       const newUnlockedStates = { ...unlockedArtistStates, [artistIdFromUrl]: true };
       setUnlockedArtistStates(newUnlockedStates);
@@ -551,6 +594,7 @@ export default function HomePage() {
     if (isLoggedIn && artistConfig && artistConfig.name && artistConfig.tokenPrice > 0 && !unlockedArtistStates[artistIdFromUrl]) {
       if (newValue.toLowerCase().includes("artistocks")) {
         console.log(`"artistocks" keyword detected, unlocking for artist: ${artistIdFromUrl}`);
+        setGlobalSafewordVerified(true);
         
         const newUnlockedStates = { ...unlockedArtistStates, [artistIdFromUrl]: true };
         setUnlockedArtistStates(newUnlockedStates);
@@ -831,8 +875,11 @@ export default function HomePage() {
 
   if (artistConfig) {
     if (!isLoggedIn) {
+      // Login prompt logic (buyButtonText might be set to 'LOGIN TO PURCHASE' or similar, and disabled)
+      // This part seems okay as per current structure, focusing on the logged-in state.
     } else {
-      if (unlockedArtistStates[artistIdFromUrl]) {
+      // If globally verified, enable purchase functionality
+      if (globalSafewordVerified) { 
         buyButtonAction = handlePrimaryAction;
             
         const purchasingDownloadNow = includeDownload && !hasPurchasedDownload;
@@ -840,11 +887,15 @@ export default function HomePage() {
 
         if (!purchasingDownloadNow && !purchasingTokensNow) {
             buyButtonDisabled = true;
-            if (alreadyOwnsEverything) {
+            // Clarify button text based on what is already owned for the CURRENT artist
+            const currentArtistOwnsTokens = userTokenBalances[artistTokenName] && userTokenBalances[artistTokenName] > 0;
+            if (hasPurchasedDownload && currentArtistOwnsTokens) { // Owns download AND tokens for current artist
                 buyButtonText = `GET MORE ${artistTokenName || 'TOKENS'}`;
-            } else if (hasPurchasedDownload) {
+            } else if (hasPurchasedDownload) { // Owns download, but not tokens for current artist (or 0)
                 buyButtonText = `GET ${artistTokenName || 'TOKENS'}`;
-            } else {
+            } else if (currentArtistOwnsTokens) { // Owns tokens, but not download for current artist
+                 buyButtonText = `GET DOWNLOAD + MORE ${artistTokenName || 'TOKENS'}`;
+            } else { // Owns neither for current artist
                 buyButtonText = "SELECT DOWNLOAD OR AMOUNT";
             }
         } else {
@@ -859,8 +910,9 @@ export default function HomePage() {
             buyButtonText = `GET ${textParts.join(' + ')} ($${totalPurchasePrice.toFixed(2)})`;
         }
       } else {
+        // If not globally verified, prompt to unlock with safeword for the current artist
         buyButtonText = `UNLOCK ${artistTokenName.toUpperCase()} SWAP`; 
-        buyButtonDisabled = true;
+        buyButtonDisabled = true; // Button is disabled, action would be safeword submission via input field
       }
     }
   }
@@ -873,12 +925,11 @@ export default function HomePage() {
       {isLoggedIn && (
         <Wallet
           artistConfig={artistConfig}
+          allArtistsConfig={allArtistsConfig}
           userTokenBalances={userTokenBalances}
-          hasPurchasedDownload={hasPurchasedDownload}
+          allPurchasedDownloads={allPurchasedDownloads}
           showAssetsPanel={showAssetsPanel}
           onClose={() => setShowAssetsPanel(false)}
-          artistIdFromUrl={artistIdFromUrl}
-          downloadIpfsHash={downloadIpfsHash}
         />
       )}
 
@@ -997,7 +1048,7 @@ export default function HomePage() {
           </div>
         </div>
 
-        {!hasPurchasedDownload && (!isLoggedIn || (isLoggedIn && !unlockedArtistStates[artistIdFromUrl])) && (
+        {!hasPurchasedDownload && (!isLoggedIn || (isLoggedIn && !globalSafewordVerified)) && (
           <div className="my-4 w-full max-w-md mx-auto">
             <button
               onClick={() => {
@@ -1019,9 +1070,9 @@ export default function HomePage() {
           </div>
         )}
 
-        {isLoggedIn && unlockedArtistStates[artistIdFromUrl] && !purchaseConfirmationData && artistConfig && (
-          <div className="my-4 w-full max-w-md mx-auto p-4 border rounded-lg bg-gray-800 bg-opacity-70 shadow-xl backdrop-blur-sm">
-            <h3 className="text-xl font-semibold mb-6 text-center text-white">Purchase Options</h3>
+        {isLoggedIn && globalSafewordVerified && !purchaseConfirmationData && artistConfig && (
+          <div className="purchase-slider-section mock-ui-section p-4 md:p-6 bg-gray-800 bg-opacity-70 shadow-xl rounded-lg border border-gray-700 backdrop-blur-md mb-8 max-w-2xl mx-auto">
+            <h3 className="text-xl font-semibold mb-3 text-center text-white">Purchase Options</h3>
             
             <div className="mb-4">
               <label className="block text-sm font-medium text-gray-300 mb-1">FROM</label>
@@ -1233,9 +1284,11 @@ export default function HomePage() {
             </div>
           )}
 
-          {isLoggedIn && artistConfig && !unlockedArtistStates[artistIdFromUrl] && showExploreButton && !purchaseConfirmationData && (
-            <div className="text-center my-6">
-              {alreadyOwnsEverything && <p className="text-lg mb-3 text-green-400">You own all items by {displayName}!</p>}
+          {isLoggedIn && artistConfig && !globalSafewordVerified && showExploreButton && !purchaseConfirmationData && (
+            <div className="text-center p-4 my-6 bg-yellow-500 bg-opacity-20 rounded-lg max-w-md mx-auto">
+              <p className="text-lg mb-3 text-white">
+                You do not have permanent access to this artist's content.
+              </p>
               <button 
                 onClick={handleExploreOtherArtist}
                 className="custom-buy-button explore-artists-button"
