@@ -1,8 +1,9 @@
 "use client";
 import Image from "next/image";
-import { useEffect, useState, useRef } from "react";
-import { useSearchParams } from 'next/navigation';
+import { useEffect, useState, useRef, useCallback } from "react";
+import { useSearchParams, useRouter } from 'next/navigation';
 import Wallet from './components/Wallet';
+import dynamic from 'next/dynamic';
 
 interface ArtistConfig {
   name: string;
@@ -41,6 +42,9 @@ interface PurchasedDownloadInfo {
   ipfsHash: string | null;
 }
 
+const ORBIT_SPEED = 0.3; // Radians per second - adjust as needed
+const PERSPECTIVE_BASE = 1000; // For perspective calculations
+
 export default function HomePage() {
   const searchParams = useSearchParams();
   const artistIdFromUrl = searchParams.get('artist') || 'gosheesh';
@@ -72,7 +76,10 @@ export default function HomePage() {
   const [allPurchasedDownloads, setAllPurchasedDownloads] = useState<PurchasedDownloadInfo[]>([]);
 
   // Ref for the video container to dynamically adjust orbit
-  const videoContainerRef = useRef<HTMLDivElement | null>(null);
+  const videoContainerRef = useRef<HTMLDivElement>(null);
+  const tokenElementRefs = useRef<(HTMLDivElement | null)[]>([]);
+  const animationFrameIdRef = useRef<number | null>(null);
+  const isOrbitAnimationPaused = useRef(false);
 
   // State for the Swap Interface
   const [swapFromAsset, setSwapFromAsset] = useState<string>("USD");
@@ -83,19 +90,16 @@ export default function HomePage() {
   // State for Video Player
   const [isVideoError, setIsVideoError] = useState(false);
 
-  // State for Orbital Token Dragging
-  const orbitalTokensContainerRef = useRef<HTMLDivElement | null>(null);
-  const [isDraggingOrbit, setIsDraggingOrbit] = useState(false);
+  // State for dynamically generated orbital tokens based on user's assets
+  const [dynamicOrbitalTokens, setDynamicOrbitalTokens] = useState<ArtistConfig['orbitalTokens']>([]);
+
+  // Ensured: orbitAngleOffset is ONLY defined here as useState
   const [orbitAngleOffset, setOrbitAngleOffset] = useState(() => {
     if (typeof window !== 'undefined') {
       return parseFloat(localStorage.getItem('zeyodaOrbitAngleOffset') || '0');
     }
     return 0;
   });
-  const dragStartCoords = useRef<{ x: number; y: number } | null>(null);
-  const lastDragCoords = useRef<{ x: number; y: number } | null>(null);
-  const animationFrameIdRef = useRef<number | null>(null); // To store animation frame ID
-  const isOrbitAnimationPaused = useRef(false); // To pause animation during drag
 
   // === BEGIN NEW useEffect: Sync USD amount with token calculation ===
   useEffect(() => {
@@ -255,7 +259,7 @@ export default function HomePage() {
           console.log(`[fetchConfig] Successfully found config for '${currentArtistKey}'.`);
           const initializedTokens = config.orbitalTokens.map((token: any) => ({ 
             ...token, 
-            x: 0, y: 0, z: 0, opacity: 0.85, scale: 1, blur: 5, isVisible: true 
+            x: 0, y: 0, z: 0, opacity: 1, scale: 1, blur: 0, isVisible: true 
           }));
           setArtistConfig({...config, orbitalTokens: initializedTokens });
         } else {
@@ -282,119 +286,106 @@ export default function HomePage() {
     fetchConfig();
   }, [searchParams, artistIdFromUrl]);
 
+  // This is the animation useEffect block. We are refining its initial guard clauses.
   useEffect(() => {
-    if (!artistConfig || !artistConfig.orbitalTokens) {
+    const videoElement = videoContainerRef.current;
+    if (!artistConfig || !artistConfig.orbitalTokens || artistConfig.orbitalTokens.length === 0 || !videoElement) {
       if (animationFrameIdRef.current) {
         cancelAnimationFrame(animationFrameIdRef.current);
         animationFrameIdRef.current = null;
       }
+      tokenElementRefs.current.forEach(el => {
+        if (el) {
+          el.style.transform = 'translate3d(0px,0px,-10000px) scale(0)';
+          el.style.opacity = '0';
+        }
+      });
+      console.log("[AnimateOrbit] Bailing: Missing artistConfig, tokens, or videoElement.");
       return;
     }
+    console.log("[AnimateOrbit] Proceeding with animation. Tokens from artistConfig count:", artistConfig.orbitalTokens.length);
 
-    const videoElement = videoContainerRef.current;
-    if (!videoElement) {
-      if (animationFrameIdRef.current) {
-        cancelAnimationFrame(animationFrameIdRef.current);
-        animationFrameIdRef.current = null;
-      } 
-      return; // Don't animate if video container isn't there yet
-    }
-
+    let lastTimestamp = 0;
     const animate = (timestamp: number) => {
-      if (isOrbitAnimationPaused.current && !isDraggingOrbit) { // Pause if requested and not actively dragging
+      if (!lastTimestamp) {
+        lastTimestamp = timestamp;
+        animationFrameIdRef.current = requestAnimationFrame(animate);
+        return;
+      }
+      const deltaTime = (timestamp - lastTimestamp) * 0.001; 
+      lastTimestamp = timestamp;
+
+      if (!isOrbitAnimationPaused.current) {
+        setOrbitAngleOffset(prevOffset => (prevOffset + ORBIT_SPEED * deltaTime));
+      }
+
+      // Get the actual content element (video or fallback)
+      let contentElement: HTMLElement | null = document.getElementById('artistVideo');
+      if (!contentElement || contentElement.offsetParent === null) { // Check if displayed
+        contentElement = document.querySelector('.video-fallback');
+      }
+
+      if (!contentElement) { // If no content element is found, bail on this frame
         animationFrameIdRef.current = requestAnimationFrame(animate);
         return;
       }
 
-      // Update the shared orbitAngleOffset state for persistence and manual interaction feedback
-      // The actual animation speed is primarily driven by timestamp in the style calculation below
-      if (!isDraggingOrbit) { // Only let automatic animation update offset if not dragging
-        setOrbitAngleOffset(prevOffset => (prevOffset + 0.05) % 360); // Slow continuous drift for the state offset
+      const contentWidth = contentElement.offsetWidth;
+      const contentHeight = contentElement.offsetHeight;
+      
+      let radiusX, radiusY;
+      const padding = 30; // Adjusted padding for a tighter fit
+
+      if (contentWidth > 0 && contentHeight > 0) {
+        radiusX = (contentWidth / 2) + padding;
+        radiusY = (contentHeight / 2) + padding;
+      } else {
+        // Fallback if content dimensions are zero (e.g. not loaded yet)
+        const fallbackRadius = 200; // Smaller fallback radius
+        radiusX = fallbackRadius;
+        radiusY = fallbackRadius;
       }
 
-      setArtistConfig(prevConfig => {
-        if (!prevConfig || !prevConfig.orbitalTokens) return prevConfig;
+      const currentGlobalAngleOffset = orbitAngleOffset; 
+      const tokensToAnimate = artistConfig.orbitalTokens; 
+
+      tokensToAnimate.forEach((tokenData, index) => {
+        const tokenElement = tokenElementRefs.current[index] as HTMLElement;
+        if (!tokenElement) {
+            return;
+        }
+
+        const tokenSpecificInitialAngle = (typeof tokenData.angle === 'number' ? tokenData.angle : 0) * (Math.PI / 180); 
+        const angle = currentGlobalAngleOffset + tokenSpecificInitialAngle;
+
+        // Use radiusX and radiusY for elliptical orbit
+        const x = radiusX * Math.cos(angle);
+        const y = radiusY * Math.sin(angle);
+        const z = -20; 
+
+        const baseScale = 0.9; 
+        const perspectiveValue = PERSPECTIVE_BASE; 
+        const perspectiveFactor = perspectiveValue / (perspectiveValue - z); 
+        const scaleFactor = baseScale * perspectiveFactor;
         
-        const rect = videoElement.getBoundingClientRect();
-        const videoWidth = rect.width;
-        const videoHeight = rect.height;
-
-        // Log dimensions for debugging orbit
-        if (timestamp % 300 < 16) { // Log roughly every 5 seconds (assuming 60fps)
-            console.log(`[AnimateOrbit] Video dimensions: width=${videoWidth}, height=${videoHeight}`);
-        }
-
-        const orbitPadding = 60; 
-        let dynamicOrbitRadius = Math.max(videoWidth, videoHeight) / 2 + orbitPadding;
-
-        if (videoWidth === 0 && videoHeight === 0) { // Fallback if video dimensions are not yet available
-            dynamicOrbitRadius = 200; // Default radius
-            if (timestamp % 300 < 16) {
-                console.warn("[AnimateOrbit] Video dimensions are 0. Using fallback orbit radius:", dynamicOrbitRadius);
-            }
-        } else {
-            if (timestamp % 300 < 16) {
-                console.log("[AnimateOrbit] Calculated dynamicOrbitRadius:", dynamicOrbitRadius);
-            }
-        }
-
-        const animationSpeed = 0.0005;
-
-        const currentGlobalAngleOffsetRad = orbitAngleOffset * (Math.PI / 180);
-
-        const updatedTokens = prevConfig.orbitalTokens.map((token, index) => {
-          const initialAngleRad = (token.angle || 0) * (Math.PI / 180);
-          const timeBasedAngleRad = !isDraggingOrbit ? (animationSpeed * timestamp) : 0;
-          
-          const currentAngleRad = initialAngleRad + timeBasedAngleRad + currentGlobalAngleOffsetRad;
-          
-          const x = dynamicOrbitRadius * Math.cos(currentAngleRad);
-          // Make y circular, not elliptical
-          const y = dynamicOrbitRadius * Math.sin(currentAngleRad);
-          // Keep z-effect for perspective if desired, or simplify
-          const z = dynamicOrbitRadius * Math.sin(currentAngleRad) * Math.cos(currentAngleRad) * 0.1; // Reduced z influence for less distortion
-          
-          const perspectiveFactor = 1 + z / (dynamicOrbitRadius * 2); // Adjust perspective calculation if z changes
-          const scale = Math.max(0.5, Math.min(1.5, perspectiveFactor));
-          const opacity = Math.max(0.3, Math.min(1, ( (z + dynamicOrbitRadius*0.3) / (dynamicOrbitRadius*0.6) * 0.7 + 0.3)));
-          const blur = Math.max(0, Math.min(4, 2 - (z / (dynamicOrbitRadius * 0.4)) * 2));
-          return {
-            ...token,
-            x,
-            y,
-            z,
-            opacity,
-            scale,
-            blur,
-            isVisible: true
-          };
-        });
-        return { ...prevConfig, orbitalTokens: updatedTokens };
+        tokenElement.style.transform = `translate3d(${x.toFixed(1)}px, ${y.toFixed(1)}px, ${z.toFixed(1)}px) scale(${scaleFactor.toFixed(2)})`;
+        tokenElement.style.opacity = '1';
+        tokenElement.style.filter = 'blur(0px)';
+        tokenElement.style.zIndex = '15'; 
       });
+
       animationFrameIdRef.current = requestAnimationFrame(animate);
     };
 
-    if (!isDraggingOrbit) { // Start animation if not currently dragging
-        isOrbitAnimationPaused.current = false;
-        if (animationFrameIdRef.current) cancelAnimationFrame(animationFrameIdRef.current);
-        animationFrameIdRef.current = requestAnimationFrame(animate);
-    } else {
-        isOrbitAnimationPaused.current = true;
-    }
+    animationFrameIdRef.current = requestAnimationFrame(animate);
 
     return () => {
       if (animationFrameIdRef.current) {
         cancelAnimationFrame(animationFrameIdRef.current);
+        animationFrameIdRef.current = null;
       }
     };
-  }, [artistConfig?.name, orbitAngleOffset, isDraggingOrbit]); // Add isDraggingOrbit and orbitAngleOffset dependencies
-
-  // Effect for saving orbitAngleOffset to localStorage
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('zeyodaOrbitAngleOffset', orbitAngleOffset.toString());
-    }
-  }, [orbitAngleOffset]);
+  }, [artistConfig, orbitAngleOffset]);
 
   useEffect(() => {
     if (artistConfig && artistConfig.theme) {
@@ -776,98 +767,77 @@ export default function HomePage() {
   }, [artistConfig, unlockedArtistStates, artistIdFromUrl, swapFromAmount]);
 
   const navigateToArtist = (artistId: string) => {
-    if (artistId) {
-      console.log(`[navigateToArtist] Navigating to artist: ${artistId}`);
-      window.location.search = `?artist=${artistId}`;
-    } else {
-      console.warn("[navigateToArtist] Attempted to navigate with undefined artistId");
-    }
+    console.log("[Navigation] Navigating to artist:", artistId);
+    // Full page navigation
+    window.location.href = `/?artist=${artistId}`;
   };
 
   // Orbital Token Drag Handlers
+  // const orbitalTokensContainerRef = useRef<HTMLDivElement | null>(null);
+  // const [isDraggingOrbit, setIsDraggingOrbit] = useState(false);
+  // const dragStartCoords = useRef<{ x: number; y: number } | null>(null);
+  // const lastDragCoords = useRef<{ x: number; y: number } | null>(null);
+  // const isOrbitAnimationPaused = useRef(false); // This is used by animation
+
+  // New useEffect to generate dynamic orbital tokens based on user assets
   useEffect(() => {
-    const container = orbitalTokensContainerRef.current;
-    if (!container) return;
+    if (!allArtistsConfig || !isLoggedIn) {
+      setDynamicOrbitalTokens([]);
+      return;
+    }
 
-    // Helper to get coordinates from either mouse or touch event
-    const getCoords = (e: MouseEvent | TouchEvent): { x: number; y: number } | null => {
-      if (e instanceof MouseEvent) return { x: e.clientX, y: e.clientY };
-      if ('touches' in e && e.touches && e.touches.length > 0) return { x: e.touches[0].clientX, y: e.touches[0].clientY };
-      return null;
-    };
+    const ownedArtistIds = new Set<string>();
 
-    const handleDragStart = (e: MouseEvent | TouchEvent) => {
-      const coords = getCoords(e);
-      if (!coords) return;
-
-      setIsDraggingOrbit(true);
-      // isOrbitAnimationPaused.current is set by the animation useEffect when isDraggingOrbit is true
-      dragStartCoords.current = coords;
-      lastDragCoords.current = coords;
-      
-      // For touch events, prevent default if we are indeed starting a drag on the orbit container
-      // This helps distinguish from page scroll.
-      if (e.target === container && 'touches' in e) {
-         // No explicit preventDefault here, let touchmove handle it if it's a drag
+    // Add artists from token balances
+    if (userTokenBalances && Object.keys(userTokenBalances).length > 0) {
+      for (const artistId in allArtistsConfig) {
+        const artist = allArtistsConfig[artistId];
+        if (artist.tokenName && userTokenBalances[artist.tokenName] && userTokenBalances[artist.tokenName] > 0) {
+          if (artistId !== artistIdFromUrl) {
+            ownedArtistIds.add(artistId);
+          }
+        }
       }
-    };
+    }
 
-    const handleDragMove = (e: MouseEvent | TouchEvent) => {
-      if (!isDraggingOrbit || !dragStartCoords.current || !lastDragCoords.current) return;
-      
-      const coords = getCoords(e);
-      if (!coords) return;
-
-      // Only prevent default and update angle if actually dragging
-      if (e.cancelable && ('touches' in e)) {
-        e.preventDefault(); 
-      }
-
-      const deltaX = coords.x - lastDragCoords.current.x;
-      const angleChangeFactor = 0.5; // Adjust sensitivity
-      
-      setOrbitAngleOffset(prevOffset => {
-        const newOffset = (prevOffset - deltaX * angleChangeFactor);
-        // Normalize to 0-360 if desired, though raw accumulation also works for transform
-        return (newOffset % 360 + 360) % 360; 
+    // Add artists from purchased downloads
+    if (allPurchasedDownloads && allPurchasedDownloads.length > 0) {
+      allPurchasedDownloads.forEach(download => {
+        if (download.artistId !== artistIdFromUrl) {
+          ownedArtistIds.add(download.artistId);
+        }
       });
+    }
 
-      lastDragCoords.current = coords;
-    };
+    const newOrbitalTokensData: ArtistConfig['orbitalTokens'] = [];
+    const totalOwnedArtists = ownedArtistIds.size;
+    let angleIncrement = totalOwnedArtists > 0 ? 360 / totalOwnedArtists : 0;
+    let currentAngle = 0;
 
-    const handleDragEnd = () => {
-      if (!isDraggingOrbit) return; // Only act if a drag was in progress
-      setIsDraggingOrbit(false);
-      // isOrbitAnimationPaused.current will be set to false by the animation useEffect
-      dragStartCoords.current = null;
-      lastDragCoords.current = null;
-      // orbitAngleOffset is saved to localStorage by its own useEffect
-    };
+    ownedArtistIds.forEach(id => {
+      const artist = allArtistsConfig[id];
+      if (artist) {
+        newOrbitalTokensData.push({
+          name: artist.displayName || artist.name,
+          artistId: id,
+          angle: currentAngle,
+          // x, y, z, etc., will be calculated by the animation effect
+        });
+        currentAngle += angleIncrement;
+      }
+    });
+    
+    console.log('[DynamicOrbit] Generated dynamic orbital tokens:', newOrbitalTokensData);
+    setDynamicOrbitalTokens(newOrbitalTokensData);
 
-    // Mouse events
-    container.addEventListener('mousedown', handleDragStart as EventListener);
-    document.addEventListener('mousemove', handleDragMove as EventListener); // Listen on document for wider drag area
-    document.addEventListener('mouseup', handleDragEnd); // Listen on document
-    document.addEventListener('mouseleave', handleDragEnd); // If mouse leaves window while dragging
+  }, [allArtistsConfig, userTokenBalances, allPurchasedDownloads, isLoggedIn, artistIdFromUrl]);
 
-    // Touch events
-    // passive: false for touchmove to allow preventDefault
-    container.addEventListener('touchstart', handleDragStart as EventListener, { passive: true });
-    container.addEventListener('touchmove', handleDragMove as EventListener, { passive: false });
-    container.addEventListener('touchend', handleDragEnd);
-    container.addEventListener('touchcancel', handleDragEnd);
-
-    return () => {
-      container.removeEventListener('mousedown', handleDragStart as EventListener);
-      document.removeEventListener('mousemove', handleDragMove as EventListener);
-      document.removeEventListener('mouseup', handleDragEnd);
-      document.removeEventListener('mouseleave', handleDragEnd);
-      container.removeEventListener('touchstart', handleDragStart as EventListener);
-      container.removeEventListener('touchmove', handleDragMove as EventListener);
-      container.removeEventListener('touchend', handleDragEnd);
-      container.removeEventListener('touchcancel', handleDragEnd);
-    };
-  }, [isDraggingOrbit]); // Re-setup if isDraggingOrbit changes (though it primarily gates internal logic)
+  // useEffect for saving orbitAngleOffset to localStorage (ensure this is present)
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('zeyodaOrbitAngleOffset', orbitAngleOffset.toString());
+    }
+  }, [orbitAngleOffset]);
 
   if (error) {
     return (
@@ -1004,7 +974,7 @@ export default function HomePage() {
           <h1 className="main-artist-title">{displayName?.toUpperCase()}</h1>
         </div>
 
-        <div className="video-container">
+        <div className="video-container" ref={videoContainerRef}>
           {videoSrc && !isVideoError ? (
             <video 
               id="artistVideo" 
@@ -1029,22 +999,35 @@ export default function HomePage() {
           
           <div className="orbit-glow"></div>
           
-          {currentOrbitalTokens && currentOrbitalTokens.length > 0 && (
+          {artistConfig && artistConfig.orbitalTokens && artistConfig.orbitalTokens.length > 0 && (
             <div 
               id="orbitalTokens" 
               className="orbital-tokens"
-              ref={orbitalTokensContainerRef}
             >
-              {currentOrbitalTokens.map((token, index) => {
+              {artistConfig.orbitalTokens.map((token, index) => {
                 const isClickable = token.artistId && allArtistsConfig && allArtistsConfig[token.artistId];
                 return (
                   <div 
-                    key={`${artistName}-token-${index}`}
+                    key={token.artistId ? `orbit-${token.artistId}` : `orbit-token-${index}`}
                     className={`orbit-token ${isClickable ? 'cursor-pointer' : ''}`}
+                    ref={el => {
+                      if (el) {
+                        tokenElementRefs.current[index] = el;
+                      } else {
+                        // On detach, React calls ref with null. We might need to clear the specific index if array length is managed elsewhere.
+                        // For now, this ensures the ref is updated.
+                        if (tokenElementRefs.current[index]) {
+                           tokenElementRefs.current[index] = null; // Explicitly nullify on detach
+                        }
+                      }
+                    }}
                     style={{
+                      // Initial style properties from the token data in artistConfig
+                      // These are set in fetchConfig: x:0, y:0, z:0, opacity:0.85, scale:1, blur:5
+                      // The animate function will override transform, opacity, filter, zIndex.
                       transform: `translate3d(${token.x || 0}px, ${token.y || 0}px, ${token.z || 0}px) scale(${token.scale || 1})`,
-                      opacity: token.opacity,
-                      filter: `blur(${token.blur || 0}px)`,
+                      opacity: token.opacity, // Use opacity from config
+                      filter: `blur(${token.blur || 0}px)`, // Use blur from config
                       zIndex: 5 + Math.floor(token.z || 0), 
                     }}
                     onClick={() => {

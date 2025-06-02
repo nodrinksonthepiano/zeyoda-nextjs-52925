@@ -392,7 +392,7 @@ body {
   aspect-ratio: 16 / 9; /* Maintain video aspect ratio */
   background-color: #000; /* Fallback if video doesn't load, or for glow */
   border-radius: 8px; /* Match other elements */
-  overflow: hidden; /* Ensures orbit glow doesn't spill if not desired */
+  overflow: visible; /* MODIFIED: Allow tokens to orbit outside this container's bounds */
   box-shadow: 0 10px 30px rgba(0,0,0,0.5); /* Add some depth */
 }
 
