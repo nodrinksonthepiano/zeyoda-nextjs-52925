@@ -77,7 +77,7 @@ export default function HomePage() {
   // State for the Swap Interface
   const [swapFromAsset, setSwapFromAsset] = useState<string>("USD");
   const [swapToAsset, setSwapToAsset] = useState<string>("");
-  const [swapFromAmount, setSwapFromAmount] = useState<string>("");
+  const [swapFromAmount, setSwapFromAmount] = useState<string>("20.00");
   const [swapToAmount, setSwapToAmount] = useState<string>("");
 
   // State for Video Player
@@ -96,6 +96,23 @@ export default function HomePage() {
   const lastDragCoords = useRef<{ x: number; y: number } | null>(null);
   const animationFrameIdRef = useRef<number | null>(null); // To store animation frame ID
   const isOrbitAnimationPaused = useRef(false); // To pause animation during drag
+
+  // === BEGIN NEW useEffect: Sync USD amount with token calculation ===
+  useEffect(() => {
+    if (artistConfig && artistConfig.tokenPrice > 0) {
+      const usdValue = parseFloat(swapFromAmount || '0');
+      const calculatedTokens = Math.floor(usdValue / artistConfig.tokenPrice);
+      setPurchaseAmountArtistocks(calculatedTokens);
+      setArtistocksInput(calculatedTokens > 0 ? calculatedTokens.toString() : (usdValue === 0 ? "0" : ""));
+      console.log(`[SyncEffect] Synced USD: $${usdValue} to ${calculatedTokens} tokens for ${artistConfig.name} (Price: ${artistConfig.tokenPrice})`);
+    } else if (artistConfig) {
+      // If token price is 0 or invalid, ensure tokens are 0
+      setPurchaseAmountArtistocks(0);
+      setArtistocksInput("0");
+      console.log(`[SyncEffect] Token price is 0 or invalid for ${artistConfig.name}. Setting tokens to 0.`);
+    }
+  }, [swapFromAmount, artistConfig]); // Runs when swapFromAmount or artistConfig changes
+  // === END NEW useEffect ===
 
   useEffect(() => {
     const currentArtistId = artistIdFromUrl;
@@ -488,6 +505,24 @@ export default function HomePage() {
     setUserTokenBalances(newBalances);
     localStorage.setItem('zeyodaUserTokenBalances', JSON.stringify(newBalances));
 
+    // === BEGIN MODIFICATION: Update allPurchasedDownloads immediately ===
+    if (allArtistsConfig) {
+      const updatedDownloads: PurchasedDownloadInfo[] = [];
+      for (const id in allArtistsConfig) {
+        if (localStorage.getItem('zeyodaHasPurchasedDownload_' + id) === 'true') {
+          updatedDownloads.push({
+            artistId: id,
+            artworkTitle: allArtistsConfig[id].artworkTitle,
+            artistDisplayName: allArtistsConfig[id].displayName,
+            ipfsHash: localStorage.getItem('zeyodaIpfsHash_' + id) || null,
+          });
+        }
+      }
+      setAllPurchasedDownloads(updatedDownloads);
+      console.log('[handleConfirmPurchase] Manually updated allPurchasedDownloads:', updatedDownloads);
+    }
+    // === END MODIFICATION ===
+
     const confirmationMessage = `Purchase Confirmed! Items: ${itemsPurchasedMessage.join(', ')}. Total Price: $${totalPurchasePrice.toFixed(2)}. Payment Method: ${paymentMethod || 'Confirmed'}. Your new ${artistConfig.tokenName} balance: ${newBalances[artistConfig.tokenName] || 0}.`;
     setPurchaseConfirmationData(confirmationMessage);
     
@@ -731,15 +766,11 @@ export default function HomePage() {
   useEffect(() => {
     if (artistConfig && unlockedArtistStates[artistIdFromUrl] && artistConfig.tokenPrice > 0) {
       if (swapFromAmount.trim() === "" || parseFloat(swapFromAmount || "0") === 0) {
-        console.log(`Setting $20 default for already unlocked artist: ${artistIdFromUrl}`);
+        console.log(`Setting $20 default for already unlocked artist: ${artistIdFromUrl} (swapFromAmount was empty or zero)`);
         const defaultUsdAmount = "20.00";
-        setSwapFromAsset("USD");
+        // setSwapFromAsset("USD"); // Not strictly needed here if it's already USD
         setSwapFromAmount(defaultUsdAmount);
-
-        const usdValue = parseFloat(defaultUsdAmount);
-        const calculatedTokens = Math.floor(usdValue / artistConfig.tokenPrice);
-        setPurchaseAmountArtistocks(calculatedTokens);
-        setArtistocksInput(calculatedTokens > 0 ? calculatedTokens.toString() : "0");
+        // Token calculation will now be handled by the new useEffect above
       }
     }
   }, [artistConfig, unlockedArtistStates, artistIdFromUrl, swapFromAmount]);
