@@ -41,8 +41,8 @@
         "fontFamily": "Bungee, cursive"
       },
       "orbitalTokens": [
-        { "name": "jaitea", "angle": 0 },
-        { "name": "yourartistid", "angle": 72 }
+        { "name": "jaitea", "angle": 0, "artistId": "jaitea" },
+        { "name": "yourartistid", "angle": 72, "artistId": "yourartistid" }
       ]
     },
     "jaitea": {
@@ -62,8 +62,8 @@
         "fontFamily": "Bungee, cursive"
       },
       "orbitalTokens": [
-        { "name": "gosheesh", "angle": 0 },
-        { "name": "yourartistid", "angle": 180 }
+        { "name": "gosheesh", "angle": 0, "artistId": "gosheesh" },
+        { "name": "yourartistid", "angle": 180, "artistId": "yourartistid" }
       ]
     }
   }

@@ -47,6 +47,7 @@ const PERSPECTIVE_BASE = 1000; // For perspective calculations
 
 export default function HomePage() {
   const searchParams = useSearchParams();
+  const router = useRouter();
   const artistIdFromUrl = searchParams.get('artist') || 'gosheesh';
   const [artistConfig, setArtistConfig] = useState<ArtistConfig | null>(null);
   const [allArtistsConfig, setAllArtistsConfig] = useState<{[key: string]: ArtistConfig} | null>(null);
@@ -334,16 +335,18 @@ export default function HomePage() {
       const contentHeight = contentElement.offsetHeight;
       
       let radiusX, radiusY;
-      const padding = 30; // Adjusted padding for a tighter fit
+      const horizontalPadding = 120; // For a wider horizontal orbit
+      const verticalPadding = 70;   // Keep vertical padding, creates elliptical effect
 
       if (contentWidth > 0 && contentHeight > 0) {
-        radiusX = (contentWidth / 2) + padding;
-        radiusY = (contentHeight / 2) + padding;
+        radiusX = (contentWidth / 2) + horizontalPadding;
+        radiusY = (contentHeight / 2) + verticalPadding;
       } else {
         // Fallback if content dimensions are zero (e.g. not loaded yet)
-        const fallbackRadius = 200; // Smaller fallback radius
-        radiusX = fallbackRadius;
-        radiusY = fallbackRadius;
+        const fallbackRadiusX = 250; // Wider fallback
+        const fallbackRadiusY = 180;
+        radiusX = fallbackRadiusX;
+        radiusY = fallbackRadiusY;
       }
 
       const currentGlobalAngleOffset = orbitAngleOffset; 
@@ -363,13 +366,20 @@ export default function HomePage() {
         const y = radiusY * Math.sin(angle);
         const z = -20; 
 
-        const baseScale = 0.9; 
+        const baseScale = 0.8; // Base scale of tokens
+        const hoverEffectScaleMultiplier = 1.25; // Multiplier for hover effect
+
+        let currentScaleTarget = baseScale;
+        if (tokenElement.getAttribute('data-hovered') === 'true') {
+          currentScaleTarget = baseScale * hoverEffectScaleMultiplier;
+        }
+        
         const perspectiveValue = PERSPECTIVE_BASE; 
         const perspectiveFactor = perspectiveValue / (perspectiveValue - z); 
-        const scaleFactor = baseScale * perspectiveFactor;
+        const finalScaleToApply = currentScaleTarget * perspectiveFactor;
         
-        tokenElement.style.transform = `translate3d(${x.toFixed(1)}px, ${y.toFixed(1)}px, ${z.toFixed(1)}px) scale(${scaleFactor.toFixed(2)})`;
-        tokenElement.style.opacity = '1';
+        tokenElement.style.transform = `translate3d(${x.toFixed(1)}px, ${y.toFixed(1)}px, ${z.toFixed(1)}px) scale(${finalScaleToApply.toFixed(2)})`;
+        tokenElement.style.opacity = '1'; // Ensure full opacity during animation
         tokenElement.style.filter = 'blur(0px)';
         tokenElement.style.zIndex = '15'; 
       });
@@ -1006,10 +1016,44 @@ export default function HomePage() {
             >
               {artistConfig.orbitalTokens.map((token, index) => {
                 const isClickable = token.artistId && allArtistsConfig && allArtistsConfig[token.artistId];
+                
+                const handleTokenClick = () => {
+                  console.log('[TokenClick] Initiated. Token raw data:', JSON.stringify(token));
+                  console.log('[TokenClick] Token Name:', token.name, '| Artist ID from token object:', token.artistId);
+                  console.log('[TokenClick] allArtistsConfig is available:', !!allArtistsConfig);
+                  
+                  if (token.artistId && allArtistsConfig) {
+                    console.log('[TokenClick] Config for target artistId (' + token.artistId + '):', JSON.stringify(allArtistsConfig[token.artistId]));
+                  }
+                  
+                  const isActuallyClickable = token.artistId && allArtistsConfig && allArtistsConfig[token.artistId];
+                  console.log('[TokenClick] Determination for isActuallyClickable:', isActuallyClickable);
+
+                  if (isActuallyClickable && token.artistId) {
+                    console.log('[TokenClick] NAVIGATION APPROVED: Attempting navigation to /?artist=' + token.artistId);
+                    // Pause orbit animation before navigation
+                    if (animationFrameIdRef.current) {
+                      cancelAnimationFrame(animationFrameIdRef.current);
+                      animationFrameIdRef.current = null;
+                    }
+                    isOrbitAnimationPaused.current = true; // Explicitly pause
+                    
+                    // TEMPORARY: Using window.location.href for testing navigation
+                    window.location.href = `/?artist=${token.artistId}`;
+                    // router.push(`/?artist=${token.artistId}`); // Original line
+                  } else {
+                    // console.log('[TokenClick] Navigation conditions not met. isClickable:', isClickable, 'token.artistId:', token.artistId);
+                    console.warn('[TokenClick] NAVIGATION DENIED. Conditions not met. isActuallyClickable:', isActuallyClickable, 'token.artistId:', token.artistId, 'Potentially missing in allArtistsConfig or artistId field empty on token.');
+                  }
+                };
+
                 return (
                   <div 
                     key={token.artistId ? `orbit-${token.artistId}` : `orbit-token-${index}`}
                     className={`orbit-token ${isClickable ? 'cursor-pointer' : ''}`}
+                    onClick={handleTokenClick}
+                    onMouseEnter={(e) => e.currentTarget.setAttribute('data-hovered', 'true')}
+                    onMouseLeave={(e) => e.currentTarget.removeAttribute('data-hovered')}
                     ref={el => {
                       if (el) {
                         tokenElementRefs.current[index] = el;
@@ -1030,12 +1074,6 @@ export default function HomePage() {
                       filter: `blur(${token.blur || 0}px)`, // Use blur from config
                       zIndex: 5 + Math.floor(token.z || 0), 
                     }}
-                    onClick={() => {
-                      if (isClickable && token.artistId) {
-                        navigateToArtist(token.artistId);
-                      }
-                    }}
-                    {...(isClickable && token.artistId && { 'data-artist-id': token.artistId })}
                     title={isClickable && token.artistId ? `Explore ${allArtistsConfig?.[token.artistId]?.displayName || token.name}` : token.name}
                   >
                     {token.name}

@@ -37,10 +37,10 @@ footer {
     width: 100%;
     max-width: 560px;
     margin-bottom: 2rem;
-    z-index: 5; /* Higher than tokens when they orbit behind */
     border-radius: 8px;
     overflow: visible; /* Allow orbital tokens to extend outside the container */
     aspect-ratio: 16/9;
+    transform-style: preserve-3d; /* For 3D context */
 }
 
 video {
@@ -52,6 +52,7 @@ video {
     object-fit: cover;
     aspect-ratio: 16/9;
     transition: opacity 0.5s ease;
+    transform: translateZ(0px);
 }
 
 /* Orbit glow effect */

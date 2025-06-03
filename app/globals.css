@@ -206,7 +206,6 @@ body {
     height: 100%; /* Ensure it takes full height of its reference parent */
     transform: translate(-50%, -50%); /* Center it on its reference parent */
     pointer-events: none;
-    z-index: 10; /* Ensure it's above content if tokens are in front, or adjust if they can go behind */
     transform-style: preserve-3d;
     perspective: 1200px; /* Or value from artist config if dynamic */
 }
@@ -249,7 +248,7 @@ body {
 /* Hover effect for orbit tokens */
 .orbit-token:hover {
     z-index: 30 !important; /* Higher z-index to ensure it appears on top */
-    transform: translate3d(0, 0, 150px) scale(1.25) !important; /* Push forward on hover */
+    /* transform: scale(1.25) !important; */ /* REMOVED to let JS handle hover scale */
     opacity: 1 !important;
     filter: blur(0px) !important;
     border-color: var(--accent-color);
@@ -260,8 +259,8 @@ body {
 
 /* Active effect for orbit tokens */
 .orbit-token:active {
-    transform: translate3d(0, 0, 140px) scale(1.15) !important; /* Slightly less push and scale on active */
-    transition-duration: 0.1s;
+    /* transform: scale(1.15) !important; */ /* REMOVED to let JS handle active scale */
+    transition-duration: 0.1s; /* Keep transition for other properties if any are added for active state */
 }
 
 /* Specific styling for tokens that are links to other artists */
