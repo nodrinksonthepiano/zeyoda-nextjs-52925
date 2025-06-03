@@ -74,18 +74,6 @@ video {
     pointer-events: none;
 }
 
-/* Orbital tokens container positioning */
-.orbital-tokens {
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    width: 0;
-    height: 0;
-    z-index: 3;
-    pointer-events: none;
-    touch-action: none;
-}
-
 /* Artwork info positioning */
 .artwork-info {
     position: absolute;
