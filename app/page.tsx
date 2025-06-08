@@ -4,6 +4,7 @@ import { useEffect, useState, useRef, useCallback } from "react";
 import { useSearchParams, useRouter } from 'next/navigation';
 import Wallet from './components/Wallet';
 import dynamic from 'next/dynamic';
+import { useWallet } from './components/MagicProvider';
 
 interface ArtistConfig {
   name: string;
@@ -46,6 +47,9 @@ const ORBIT_SPEED = 0.3; // Radians per second - adjust as needed
 const PERSPECTIVE_BASE = 1000; // For perspective calculations
 
 export default function HomePage() {
+  const { magic, user } = useWallet();
+  const [email, setEmail] = useState('');
+
   const searchParams = useSearchParams();
   const router = useRouter();
   const artistIdFromUrl = searchParams.get('artist') || 'gosheesh';
@@ -849,6 +853,21 @@ export default function HomePage() {
     }
   }, [orbitAngleOffset]);
 
+  async function login() {
+    if (!magic) return;
+    try {
+      await magic.auth.loginWithEmailOTP({ email });
+      const meta = await magic.user.getInfo();
+      if (meta.publicAddress) {
+        alert('Logged in as ' + meta.publicAddress);
+        window.location.reload();
+      }
+    } catch (error) {
+      console.error("magic login failed", error);
+      alert('Login failed, see console for details.');
+    }
+  }
+
   if (error) {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center p-8 bg-red-900 text-white">
@@ -930,471 +949,495 @@ export default function HomePage() {
   if (showPurchaseModal) buyButtonDisabled = true; 
 
   return (
-    <>
-      <div id="particles" className="cosmic-particles"></div>
-
-      {isLoggedIn && (
-        <Wallet
-          artistConfig={artistConfig}
-          allArtistsConfig={allArtistsConfig}
-          userTokenBalances={userTokenBalances}
-          allPurchasedDownloads={allPurchasedDownloads}
-          showAssetsPanel={showAssetsPanel}
-          onClose={() => setShowAssetsPanel(false)}
-        />
-      )}
-
-      <header className="app-header">
-        {isLoggedIn && artistConfig ? (
-          <div className="header-user-info flex items-center justify-between w-full">
-            <div className="flex items-center">
-              <button 
-                onClick={() => setShowAssetsPanel(!showAssetsPanel)} 
-                className="wallet-button mr-4"
-                style={{
-                  padding: '8px 12px',
-                  background: 'linear-gradient(to bottom, #5c8eff, #2850cc)',
-                  border: 'none',
-                  borderRadius: '30px',
-                  color: 'white',
-                  fontSize: '0.8rem',
-                  fontWeight: 600,
-                  cursor: 'pointer',
-                  boxShadow: '0 2px 6px rgba(0,0,0,0.25), inset 0 1px 0 rgba(255,255,255,0.2), inset 0 -2px 0 rgba(0,0,0,0.2)',
-                  textShadow: '0 1px 2px rgba(0,0,0,0.4)'
-                }}
-              >
-                {showAssetsPanel ? 'Hide Assets' : 'Your Assets'}
-              </button>
-            </div>
-            
-            <div className="flex items-center">
-              <button onClick={handleLogout} className="logout-button">
-                LOG OUT / RESET
-              </button>
-            </div>
-          </div>
+    <main className="flex min-h-screen flex-col items-center justify-between p-24 relative bg-primary text-white font-sans">
+      <div className="absolute top-4 right-4 z-50">
+        {user ? (
+          <p>✅ Connected {user.slice(0, 6)}…</p>
         ) : (
-          <span className="login-prompt-header">Login to engage</span>
-        )}
-      </header>
-
-      <main className="app-main">
-        <div className="main-title-container">
-          <h1 className="main-artist-title">{displayName?.toUpperCase()}</h1>
-        </div>
-
-        <div className="video-container" ref={videoContainerRef}>
-          {videoSrc && !isVideoError ? (
-            <video 
-              id="artistVideo" 
-              autoPlay 
-              loop 
-              muted={isMuted} 
-              playsInline 
-              key={videoSrc} 
-              onError={() => setIsVideoError(true)}
-              onCanPlay={() => setIsVideoError(false)} // Reset error if video becomes playable
-            >
-              <source src={videoSrc} type="video/mp4" />
-              Your browser does not support the video tag.
-            </video>
-          ) : (
-            <div className="video-fallback" style={{display: 'flex'}}>
-                <div className="fallback-icon">📺</div>
-                <h3>{displayName}\'s content preview</h3>
-                <p className="fallback-note">Video content {isVideoError ? 'could not be loaded' : 'temporarily unavailable'}</p>
-            </div>
-          )}
-          
-          <div className="orbit-glow"></div>
-          
-          {artistConfig && artistConfig.orbitalTokens && artistConfig.orbitalTokens.length > 0 && (
-            <div 
-              id="orbitalTokens" 
-              className="orbital-tokens"
-            >
-              {artistConfig.orbitalTokens.map((token, index) => {
-                const isClickable = token.artistId && allArtistsConfig && allArtistsConfig[token.artistId];
-                
-                const handleTokenClick = () => {
-                  console.log('[TokenClick] Initiated. Token raw data:', JSON.stringify(token));
-                  console.log('[TokenClick] Token Name:', token.name, '| Artist ID from token object:', token.artistId);
-                  console.log('[TokenClick] allArtistsConfig is available:', !!allArtistsConfig);
-                  
-                  if (token.artistId && allArtistsConfig) {
-                    console.log('[TokenClick] Config for target artistId (' + token.artistId + '):', JSON.stringify(allArtistsConfig[token.artistId]));
-                  }
-                  
-                  const isActuallyClickable = token.artistId && allArtistsConfig && allArtistsConfig[token.artistId];
-                  console.log('[TokenClick] Determination for isActuallyClickable:', isActuallyClickable);
-
-                  if (isActuallyClickable && token.artistId) {
-                    console.log('[TokenClick] NAVIGATION APPROVED: Attempting navigation to /?artist=' + token.artistId);
-                    // Pause orbit animation before navigation
-                    if (animationFrameIdRef.current) {
-                      cancelAnimationFrame(animationFrameIdRef.current);
-                      animationFrameIdRef.current = null;
-                    }
-                    isOrbitAnimationPaused.current = true; // Explicitly pause
-                    
-                    // TEMPORARY: Using window.location.href for testing navigation
-                    window.location.href = `/?artist=${token.artistId}`;
-                    // router.push(`/?artist=${token.artistId}`); // Original line
-                  } else {
-                    // console.log('[TokenClick] Navigation conditions not met. isClickable:', isClickable, 'token.artistId:', token.artistId);
-                    console.warn('[TokenClick] NAVIGATION DENIED. Conditions not met. isActuallyClickable:', isActuallyClickable, 'token.artistId:', token.artistId, 'Potentially missing in allArtistsConfig or artistId field empty on token.');
-                  }
-                };
-
-                return (
-                  <div 
-                    key={token.artistId ? `orbit-${token.artistId}` : `orbit-token-${index}`}
-                    className={`orbit-token ${isClickable ? 'cursor-pointer' : ''}`}
-                    onClick={handleTokenClick}
-                    onMouseEnter={(e) => e.currentTarget.setAttribute('data-hovered', 'true')}
-                    onMouseLeave={(e) => e.currentTarget.removeAttribute('data-hovered')}
-                    ref={el => {
-                      if (el) {
-                        tokenElementRefs.current[index] = el;
-                      } else {
-                        // On detach, React calls ref with null. We might need to clear the specific index if array length is managed elsewhere.
-                        // For now, this ensures the ref is updated.
-                        if (tokenElementRefs.current[index]) {
-                           tokenElementRefs.current[index] = null; // Explicitly nullify on detach
-                        }
-                      }
-                    }}
-                    style={{
-                      // Initial style properties from the token data in artistConfig
-                      // These are set in fetchConfig: x:0, y:0, z:0, opacity:0.85, scale:1, blur:5
-                      // The animate function will override transform, opacity, filter, zIndex.
-                      transform: `translate3d(${token.x || 0}px, ${token.y || 0}px, ${token.z || 0}px) scale(${token.scale || 1})`,
-                      opacity: token.opacity, // Use opacity from config
-                      filter: `blur(${token.blur || 0}px)`, // Use blur from config
-                      zIndex: 5 + Math.floor(token.z || 0), 
-                    }}
-                    title={isClickable && token.artistId ? `Explore ${allArtistsConfig?.[token.artistId]?.displayName || token.name}` : token.name}
-                  >
-                    {token.name}
-                  </div>
-                );
-              })}
-            </div>
-          )}
-          
-          <div className="artwork-and-controls">
-            <div className="artwork-info">
-              <h3 id="artworkTitle" className="artwork-title">{artworkTitle}</h3>
-              <small className="artwork-description">&copy; {artworkYear}</small>
-            </div>
-
-            <div className="video-controls">
-              <button id="muteToggle" className="video-control-btn" aria-label={isMuted ? "Unmute" : "Mute"} onClick={toggleMute}>
-                {isMuted ? <span className="muted-icon">🔇</span> : <span className="unmuted-icon">🔊</span>}
-              </button>
-              <button id="fullscreenToggle" className="video-control-btn" aria-label="Fullscreen" onClick={toggleFullscreen}>
-                <span className="fullscreen-icon">⛶</span>
-              </button>
-            </div>
-          </div>
-        </div>
-
-        {!hasPurchasedDownload && (!isLoggedIn || (isLoggedIn && !globalSafewordVerified)) && (
-          <div className="my-4 w-full max-w-md mx-auto">
-            <button
-              onClick={() => {
-                if (!isLoggedIn) {
-                  setShakeActive(true);
-                  setTimeout(() => setShakeActive(false), 500);
-                  emailInputRef.current?.focus();
-                } else {
-                  handleDollarPurchase();
-                }
-              }}
-              disabled={isLoading && isLoggedIn}
-              className={`w-full font-bold py-3 px-6 rounded-lg text-lg shadow-md transition duration-150 ease-in-out transform hover:scale-105 
-                ${!isLoggedIn ? 'bg-blue-600 hover:bg-blue-700' : 'bg-green-500 hover:bg-green-600'} text-white`}
-            >
-              {isLoading && isLoggedIn ? 'Processing...' : 
-                !isLoggedIn ? '$1.00 INCLUDES PERMANENT ACCESS (SIGN IN TO SELECT)' : `GET DOWNLOAD ($${(1).toFixed(2)})`}
+          <div className="flex gap-2">
+            <input
+              type="email"
+              value={email}
+              onChange={e => setEmail(e.target.value)}
+              placeholder="you@example.com"
+              className="border p-2 rounded text-black"
+            />
+            <button onClick={login} className="bg-blue-600 text-white px-4 py-2 rounded">
+              Login with Email
             </button>
           </div>
         )}
+      </div>
 
-        {isLoggedIn && globalSafewordVerified && !purchaseConfirmationData && artistConfig && (
-          <div className="purchase-slider-section mock-ui-section p-4 md:p-6 bg-gray-800 bg-opacity-70 shadow-xl rounded-lg border border-gray-700 backdrop-blur-md mb-8 max-w-2xl mx-auto">
-            <h3 className="text-xl font-semibold mb-3 text-center text-white">Purchase Options</h3>
-            
-            <div className="mb-4">
-              <label className="block text-sm font-medium text-gray-300 mb-1">FROM</label>
-              <div className="flex items-center space-x-2">
-                <select 
-                  id="fromAsset"
-                  value={swapFromAsset} 
-                  onChange={(e) => {
-                    setSwapFromAsset(e.target.value);
-                  }}
-                  className="w-2/5 p-2 border border-gray-600 rounded-md bg-gray-700 text-white focus:ring-accentColor focus:border-accentColor"
-                >
-                  <option value="USD">USD (Cash)</option>
-                  {artistConfig && allArtistsConfig && (
-                    unlockedArtistStates[artistIdFromUrl] ? (
-                      Object.entries(allArtistsConfig).map(([id, artist]) => {
-                        const isOwned = userTokenBalances[artist.tokenName] && userTokenBalances[artist.tokenName] > 0;
-                        if (isOwned || id === artistIdFromUrl) {
-                          return <option key={artist.tokenName} value={artist.tokenName}>{artist.tokenName}</option>;
-                        }
-                        return null;
-                      })
-                    ) : (
-                      (userTokenBalances[artistConfig.tokenName] && userTokenBalances[artistConfig.tokenName] > 0 || artistIdFromUrl === artistConfig.name.toLowerCase()) && (
-                         <option key={artistConfig.tokenName} value={artistConfig.tokenName}>{artistConfig.tokenName}</option>
-                      )
-                    )
-                  )}
-                </select>
-                <input
-                  type="number"
-                  value={swapFromAmount}
-                  onChange={handleSwapFromAmountChange}
-                  placeholder="0.00"
-                  className="w-3/5 p-2 border border-gray-600 rounded-md bg-gray-700 text-white focus:ring-accentColor focus:border-accentColor"
-                  aria-label="Amount of asset to swap from"
-                />
-              </div>
-            </div>
+      {artistConfig && (
+        <>
+          {/* Video Background */}
+          <div id="particles" className="cosmic-particles"></div>
 
-            {swapFromAsset === "USD" && (
-              <div className="mb-6">
-                <label htmlFor="usdSlider" className="block text-sm font-medium text-gray-300 mb-1">
-                  Adjust USD Amount (Slider)
-                </label>
-                <input
-                  type="range"
-                  id="usdSlider"
-                  min="0"
-                  max="500"
-                  step="1"
-                  value={swapFromAmount || '0'}
-                  onChange={handleSliderChange}
-                  className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-accentColor"
-                />
-                <div className="text-xs text-gray-400 mt-1 text-center">
-                  Current: ${parseFloat(swapFromAmount || '0').toFixed(2)}
-                </div>
-              </div>
-            )}
-
-            <div className="mb-4">
-              <label className="block text-sm font-medium text-gray-300 mb-1">TO</label>
-              <div className="flex items-center space-x-2">
-                <span className="px-3 py-2 bg-gray-700 text-white rounded-md text-sm">{artistConfig.tokenName}</span>
-                <input
-                  type="number"
-                  value={artistocksInput}
-                  onChange={handleArtistocksInputChange}
-                  min="0"
-                  step="1"
-                  placeholder="0"
-                  className="w-full p-2 border border-gray-600 rounded-md bg-gray-700 text-white focus:ring-accentColor focus:border-accentColor"
-                  aria-label={`Amount in ${artistConfig.tokenName}`}
-                />
-              </div>
-              {artistConfig.tokenPrice > 0 && purchaseAmountDollars > 0 && (
-                <p className="text-xs text-gray-400 mt-1">
-                  (Current Price: ${artistConfig.tokenPrice.toFixed(4)} per {artistConfig.tokenName})
-                </p>
-              )}
-            </div>
-            
-            <div className="mb-6 flex items-center">
-              {hasPurchasedDownload ? (
-                <>
-                  <input 
-                    type="checkbox" 
-                    id="downloadOwned" 
-                    checked 
-                    disabled 
-                    className="h-4 w-4 text-green-600 border-gray-500 rounded focus:ring-green-500 bg-gray-700 cursor-not-allowed"
-                  />
-                  <label 
-                    htmlFor="downloadOwned" 
-                    className="ml-2 text-sm font-medium text-green-400"
-                  >
-                    Featured Download (Already Owned)
-                  </label>
-                </>
-              ) : (
-                <>
-                  <input
-                    type="checkbox"
-                    id="includeDownload"
-                    name="includeDownload"
-                    checked={includeDownload}
-                    onChange={handleIncludeDownloadChange}
-                    className="h-4 w-4 text-accentColor border-gray-500 rounded focus:ring-accentColor bg-gray-700"
-                  />
-                  <label 
-                    htmlFor="includeDownload" 
-                    className="ml-2 text-sm font-medium text-gray-300"
-                  >
-                    Include Featured Download ($1.00)
-                  </label>
-                </>
-              )}
-            </div>
-            
-            <button
-              onClick={buyButtonAction}
-              disabled={buyButtonDisabled}
-              className={`w-full font-bold py-3 px-6 rounded-lg text-lg shadow-md transition duration-150 ease-in-out transform hover:scale-105
-                ${buyButtonDisabled ? 'bg-gray-600 cursor-not-allowed' : 'custom-buy-button bg-green-500 hover:bg-green-600'} text-white`}
-            >
-              {buyButtonText}
-            </button>
-          </div>
-        )}
-
-        <div className="action-section text-center mb-4">
-          {!isLoggedIn && (
-            <div id="login-prompts-container" className="login-prompts mt-6">
-              <h3 id="accessHeadline" className="access-headline">
-                Sign in to purchase {artistTokenName}
-              </h3>
-              <div className="social-login-container mt-3">
-                <p className="login-separator">or continue with</p>
-                <div className="social-buttons">
-                  <button className="login-btn twitter" onClick={() => alert('Twitter login coming soon!')}>X (Twitter)</button>
-                  <button className="login-btn gmail" onClick={() => alert('Gmail login coming soon!')}>Gmail</button>
-                  <button className="login-btn phone" onClick={() => alert('Phone login coming soon!')}>Phone</button>
-                  <button className="login-btn facebook" onClick={() => alert('Facebook login coming soon!')}>Facebook</button>
-                </div>
-              </div>
-            </div>
+          {isLoggedIn && (
+            <Wallet
+              artistConfig={artistConfig}
+              allArtistsConfig={allArtistsConfig}
+              userTokenBalances={userTokenBalances}
+              allPurchasedDownloads={allPurchasedDownloads}
+              showAssetsPanel={showAssetsPanel}
+              onClose={() => setShowAssetsPanel(false)}
+            />
           )}
 
-          {isLoggedIn && showPurchaseModal && priceDetails && artistConfig && (
-            <div className="purchase-modal-overlay">
-              <div className="purchase-modal p-6 bg-gray-800 bg-opacity-80 backdrop-blur-md shadow-2xl rounded-xl border border-gray-700">
-                <h2 className="text-2xl font-bold mb-3 text-center text-white">CONFIRM PURCHASE: <span className="text-accentColor">{artistConfig.tokenName.toUpperCase()}</span></h2>
-                <p className="text-center text-gray-300 mb-6 text-sm">
-                  You are about to acquire {includeDownload && !hasPurchasedDownload ? <><span className="font-semibold text-white">1 x Featured Download</span> and </> : ''}
-                  {purchaseAmountArtistocks > 0 ? <><span className="font-semibold text-white">{purchaseAmountArtistocks} {artistConfig.tokenName}s</span> </> : (includeDownload && !hasPurchasedDownload ? '' : 'items')}
-                  for the digital asset: <strong className="text-white">{artistConfig.artworkTitle}</strong>.
-                </p>
-                <div className="price-breakdown mb-6 p-4 bg-gray-900 bg-opacity-70 rounded-lg">
-                  <p className="text-center text-xl font-semibold text-white">TOTAL PRICE: <span className="text-green-400">${totalPurchasePrice.toFixed(2)}</span></p>
-                </div>
-                <div className="mock-payment-options mt-4 mb-6">
-                  <h4 className="text-lg font-semibold mb-4 text-center text-gray-200">CHOOSE PAYMENT METHOD:</h4>
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                    {[
-                      { name: 'Venmo', icon: 'V' }, 
-                      { name: 'PayPal', icon: 'P' }, 
-                      { name: 'Crypto', icon: '₿' }, 
-                      { name: 'Credit/Debit', icon: '💳' }
-                    ].map(method => (
-                      <button 
-                        key={method.name}
-                        onClick={() => handleConfirmPurchase(method.name)} 
-                        className="payment-option-btn group flex flex-col items-center justify-center p-3 bg-gray-700 hover:bg-accentColor text-white rounded-lg transition-all duration-150 ease-in-out transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-accentColor focus:ring-opacity-50 shadow-md hover:shadow-lg"
-                      >
-                        <span className="text-2xl mb-1 group-hover:text-white">{method.icon}</span>
-                        <span className="text-xs sm:text-sm group-hover:text-white">{method.name}</span>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-                <div className="purchase-actions mt-6 text-center">
+          <header className="app-header">
+            {isLoggedIn && artistConfig ? (
+              <div className="header-user-info flex items-center justify-between w-full">
+                <div className="flex items-center">
                   <button 
-                    onClick={() => setShowPurchaseModal(false)} 
-                    className="cancel-purchase-btn px-8 py-3 bg-gray-600 hover:bg-gray-500 text-white font-semibold rounded-lg transition-colors duration-150 shadow-md hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-gray-400 focus:ring-opacity-50"
+                    onClick={() => setShowAssetsPanel(!showAssetsPanel)} 
+                    className="wallet-button mr-4"
+                    style={{
+                      padding: '8px 12px',
+                      background: 'linear-gradient(to bottom, #5c8eff, #2850cc)',
+                      border: 'none',
+                      borderRadius: '30px',
+                      color: 'white',
+                      fontSize: '0.8rem',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      boxShadow: '0 2px 6px rgba(0,0,0,0.25), inset 0 1px 0 rgba(255,255,255,0.2), inset 0 -2px 0 rgba(0,0,0,0.2)',
+                      textShadow: '0 1px 2px rgba(0,0,0,0.4)'
+                    }}
                   >
-                    Cancel
+                    {showAssetsPanel ? 'Hide Assets' : 'Your Assets'}
+                  </button>
+                </div>
+                
+                <div className="flex items-center">
+                  <button onClick={handleLogout} className="logout-button">
+                    LOG OUT / RESET
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <span className="login-prompt-header">Login to engage</span>
+            )}
+          </header>
+
+          <main className="app-main">
+            <div className="main-title-container">
+              <h1 className="main-artist-title">{displayName?.toUpperCase()}</h1>
+            </div>
+
+            <div className="video-container" ref={videoContainerRef}>
+              {videoSrc && !isVideoError ? (
+                <video 
+                  id="artistVideo" 
+                  autoPlay 
+                  loop 
+                  muted={isMuted} 
+                  playsInline 
+                  key={videoSrc} 
+                  onError={() => setIsVideoError(true)}
+                  onCanPlay={() => setIsVideoError(false)} // Reset error if video becomes playable
+                >
+                  <source src={videoSrc} type="video/mp4" />
+                  Your browser does not support the video tag.
+                </video>
+              ) : (
+                <div className="video-fallback" style={{display: 'flex'}}>
+                    <div className="fallback-icon">📺</div>
+                    <h3>{displayName}\'s content preview</h3>
+                    <p className="fallback-note">Video content {isVideoError ? 'could not be loaded' : 'temporarily unavailable'}</p>
+                </div>
+              )}
+              
+              <div className="orbit-glow"></div>
+              
+              {artistConfig && artistConfig.orbitalTokens && artistConfig.orbitalTokens.length > 0 && (
+                <div 
+                  id="orbitalTokens" 
+                  className="orbital-tokens"
+                >
+                  {artistConfig.orbitalTokens.map((token, index) => {
+                    const isClickable = token.artistId && allArtistsConfig && allArtistsConfig[token.artistId];
+                    
+                    const handleTokenClick = () => {
+                      console.log('[TokenClick] Initiated. Token raw data:', JSON.stringify(token));
+                      console.log('[TokenClick] Token Name:', token.name, '| Artist ID from token object:', token.artistId);
+                      console.log('[TokenClick] allArtistsConfig is available:', !!allArtistsConfig);
+                      
+                      if (token.artistId && allArtistsConfig) {
+                        console.log('[TokenClick] Config for target artistId (' + token.artistId + '):', JSON.stringify(allArtistsConfig[token.artistId]));
+                      }
+                      
+                      const isActuallyClickable = token.artistId && allArtistsConfig && allArtistsConfig[token.artistId];
+                      console.log('[TokenClick] Determination for isActuallyClickable:', isActuallyClickable);
+
+                      if (isActuallyClickable && token.artistId) {
+                        console.log('[TokenClick] NAVIGATION APPROVED: Attempting navigation to /?artist=' + token.artistId);
+                        // Pause orbit animation before navigation
+                        if (animationFrameIdRef.current) {
+                          cancelAnimationFrame(animationFrameIdRef.current);
+                          animationFrameIdRef.current = null;
+                        }
+                        isOrbitAnimationPaused.current = true; // Explicitly pause
+                        
+                        // TEMPORARY: Using window.location.href for testing navigation
+                        window.location.href = `/?artist=${token.artistId}`;
+                        // router.push(`/?artist=${token.artistId}`); // Original line
+                      } else {
+                        // console.log('[TokenClick] Navigation conditions not met. isClickable:', isClickable, 'token.artistId:', token.artistId);
+                        console.warn('[TokenClick] NAVIGATION DENIED. Conditions not met. isActuallyClickable:', isActuallyClickable, 'token.artistId:', token.artistId, 'Potentially missing in allArtistsConfig or artistId field empty on token.');
+                      }
+                    };
+
+                    return (
+                      <div 
+                        key={token.artistId ? `orbit-${token.artistId}` : `orbit-token-${index}`}
+                        className={`orbit-token ${isClickable ? 'cursor-pointer' : ''}`}
+                        onClick={handleTokenClick}
+                        onMouseEnter={(e) => e.currentTarget.setAttribute('data-hovered', 'true')}
+                        onMouseLeave={(e) => e.currentTarget.removeAttribute('data-hovered')}
+                        ref={el => {
+                          if (el) {
+                            tokenElementRefs.current[index] = el;
+                          } else {
+                            // On detach, React calls ref with null. We might need to clear the specific index if array length is managed elsewhere.
+                            // For now, this ensures the ref is updated.
+                            if (tokenElementRefs.current[index]) {
+                               tokenElementRefs.current[index] = null; // Explicitly nullify on detach
+                            }
+                          }
+                        }}
+                        style={{
+                          // Initial style properties from the token data in artistConfig
+                          // These are set in fetchConfig: x:0, y:0, z:0, opacity:0.85, scale:1, blur:5
+                          // The animate function will override transform, opacity, filter, zIndex.
+                          transform: `translate3d(${token.x || 0}px, ${token.y || 0}px, ${token.z || 0}px) scale(${token.scale || 1})`,
+                          opacity: token.opacity, // Use opacity from config
+                          filter: `blur(${token.blur || 0}px)`, // Use blur from config
+                          zIndex: 5 + Math.floor(token.z || 0), 
+                        }}
+                        title={isClickable && token.artistId ? `Explore ${allArtistsConfig?.[token.artistId]?.displayName || token.name}` : token.name}
+                      >
+                        {token.name}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+              
+              <div className="artwork-and-controls">
+                <div className="artwork-info">
+                  <h3 id="artworkTitle" className="artwork-title">{artworkTitle}</h3>
+                  <small className="artwork-description">&copy; {artworkYear}</small>
+                </div>
+
+                <div className="video-controls">
+                  <button id="muteToggle" className="video-control-btn" aria-label={isMuted ? "Unmute" : "Mute"} onClick={toggleMute}>
+                    {isMuted ? <span className="muted-icon">🔇</span> : <span className="unmuted-icon">🔊</span>}
+                  </button>
+                  <button id="fullscreenToggle" className="video-control-btn" aria-label="Fullscreen" onClick={toggleFullscreen}>
+                    <span className="fullscreen-icon">⛶</span>
                   </button>
                 </div>
               </div>
             </div>
-          )}
 
-          {isLoggedIn && purchaseConfirmationData && (
-            <div className="purchase-confirmation-section mock-ui-section p-6 my-6 border border-gray-700 rounded-xl bg-gray-800 bg-opacity-80 backdrop-blur-md shadow-2xl max-w-lg mx-auto">
-              <h3 className="text-3xl font-bold mb-4 text-center text-green-400 glow-text-green">PURCHASE SUCCESSFUL!</h3>
-              <div className="text-left text-gray-300 space-y-2 text-sm bg-gray-900 bg-opacity-70 p-4 rounded-lg mb-6">
-                <p className="whitespace-pre-line leading-relaxed">{purchaseConfirmationData.replace("Purchase Confirmed! ", "")}</p>
+            {!hasPurchasedDownload && (!isLoggedIn || (isLoggedIn && !globalSafewordVerified)) && (
+              <div className="my-4 w-full max-w-md mx-auto">
+                <button
+                  onClick={() => {
+                    if (!isLoggedIn) {
+                      setShakeActive(true);
+                      setTimeout(() => setShakeActive(false), 500);
+                      emailInputRef.current?.focus();
+                    } else {
+                      handleDollarPurchase();
+                    }
+                  }}
+                  disabled={isLoading && isLoggedIn}
+                  className={`w-full font-bold py-3 px-6 rounded-lg text-lg shadow-md transition duration-150 ease-in-out transform hover:scale-105 
+                    ${!isLoggedIn ? 'bg-blue-600 hover:bg-blue-700' : 'bg-green-500 hover:bg-green-600'} text-white`}
+                >
+                  {isLoading && isLoggedIn ? 'Processing...' : 
+                    !isLoggedIn ? '$1.00 INCLUDES PERMANENT ACCESS (SIGN IN TO SELECT)' : `GET DOWNLOAD ($${(1).toFixed(2)})`}
+                </button>
               </div>
-              <button
-                onClick={() => {
-                  setPurchaseConfirmationData(null);
-                  handleExploreOtherArtist();
-                }}
-                className="mt-4 px-6 py-3 bg-accentColor hover:bg-opacity-80 text-white font-bold rounded-lg w-full custom-buy-button text-lg shadow-md hover:shadow-lg transition-all duration-150 ease-in-out transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-accentColor focus:ring-opacity-50"
-              >
-                Explore {artistName?.toLowerCase() === 'gosheesh' ? 'JAI TEA' : 'GOSHEESH'}
-              </button>
-            </div>
-          )}
+            )}
 
-          {isLoggedIn && artistConfig && !globalSafewordVerified && showExploreButton && !purchaseConfirmationData && (
-            <div className="text-center p-4 my-6 bg-yellow-500 bg-opacity-20 rounded-lg max-w-md mx-auto">
-              <p className="text-lg mb-3 text-white">
-                You do not have permanent access to this artist's content.
-              </p>
-              <button 
-                onClick={handleExploreOtherArtist}
-                className="custom-buy-button explore-artists-button"
-              >
-                Explore {artistName?.toLowerCase() === 'gosheesh' ? 'JAI TEA' : 'GOSHEESH'}
-              </button>
-            </div>
-          )}
-        </div>
+            {isLoggedIn && globalSafewordVerified && !purchaseConfirmationData && artistConfig && (
+              <div className="purchase-slider-section mock-ui-section p-4 md:p-6 bg-gray-800 bg-opacity-70 shadow-xl rounded-lg border border-gray-700 backdrop-blur-md mb-8 max-w-2xl mx-auto">
+                <h3 className="text-xl font-semibold mb-3 text-center text-white">Purchase Options</h3>
+                
+                <div className="mb-4">
+                  <label className="block text-sm font-medium text-gray-300 mb-1">FROM</label>
+                  <div className="flex items-center space-x-2">
+                    <select 
+                      id="fromAsset"
+                      value={swapFromAsset} 
+                      onChange={(e) => {
+                        setSwapFromAsset(e.target.value);
+                      }}
+                      className="w-2/5 p-2 border border-gray-600 rounded-md bg-gray-700 text-white focus:ring-accentColor focus:border-accentColor"
+                    >
+                      <option value="USD">USD (Cash)</option>
+                      {artistConfig && allArtistsConfig && (
+                        unlockedArtistStates[artistIdFromUrl] ? (
+                          Object.entries(allArtistsConfig).map(([id, artist]) => {
+                            const isOwned = userTokenBalances[artist.tokenName] && userTokenBalances[artist.tokenName] > 0;
+                            if (isOwned || id === artistIdFromUrl) {
+                              return <option key={artist.tokenName} value={artist.tokenName}>{artist.tokenName}</option>;
+                            }
+                            return null;
+                          })
+                        ) : (
+                          (userTokenBalances[artistConfig.tokenName] && userTokenBalances[artistConfig.tokenName] > 0 || artistIdFromUrl === artistConfig.name.toLowerCase()) && (
+                             <option key={artistConfig.tokenName} value={artistConfig.tokenName}>{artistConfig.tokenName}</option>
+                          )
+                        )
+                      )}
+                    </select>
+                    <input
+                      type="number"
+                      value={swapFromAmount}
+                      onChange={handleSwapFromAmountChange}
+                      placeholder="0.00"
+                      className="w-3/5 p-2 border border-gray-600 rounded-md bg-gray-700 text-white focus:ring-accentColor focus:border-accentColor"
+                      aria-label="Amount of asset to swap from"
+                    />
+                  </div>
+                </div>
 
-        <div 
-          className={`unified-input-container mock-ui-section p-4 border-t-2 border-gray-700 mt-8 ${!isLoggedIn && shakeActive ? 'shake' : ''}`}
-        >
-          {isLoggedIn && (
-            <h3 className="text-xl font-semibold mb-3 text-center">Chat / Command</h3>
-          )}
-          <div className="flex items-center max-w-xl mx-auto">
-            <input
-              ref={emailInputRef}
-              type="text"
-              value={safewordInput}
-              onChange={handleSafewordInputChange}
-              placeholder={
-                isLoggedIn 
-                  ? "Type command, search, or safeword..." 
-                  : "Enter your email address to continue"
-              }
-              className="flex-grow p-3 border border-gray-600 rounded-l-lg bg-gray-900 bg-opacity-70 text-white focus:ring-accentColor focus:border-accentColor backdrop-blur-sm"
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') {
-                  if (!isLoggedIn) {
-                    handleEmailLogin();
-                  } else {
-                    handleSafewordSubmit();
-                  }
-                }
-              }}
-              aria-label={isLoggedIn ? "Chat or command input" : "Email address input"}
-            />
-            <button
-              onClick={() => {
-                if (!isLoggedIn) {
-                  handleEmailLogin();
-                } else {
-                  handleSafewordSubmit();
-                }
-              }}
-              className="p-3 bg-accentColor text-white rounded-r-lg hover:bg-opacity-80 focus:outline-none focus:ring-2 focus:ring-accentColor focus:ring-opacity-50"
+                {swapFromAsset === "USD" && (
+                  <div className="mb-6">
+                    <label htmlFor="usdSlider" className="block text-sm font-medium text-gray-300 mb-1">
+                      Adjust USD Amount (Slider)
+                    </label>
+                    <input
+                      type="range"
+                      id="usdSlider"
+                      min="0"
+                      max="500"
+                      step="1"
+                      value={swapFromAmount || '0'}
+                      onChange={handleSliderChange}
+                      className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-accentColor"
+                    />
+                    <div className="text-xs text-gray-400 mt-1 text-center">
+                      Current: ${parseFloat(swapFromAmount || '0').toFixed(2)}
+                    </div>
+                  </div>
+                )}
+
+                <div className="mb-4">
+                  <label className="block text-sm font-medium text-gray-300 mb-1">TO</label>
+                  <div className="flex items-center space-x-2">
+                    <span className="px-3 py-2 bg-gray-700 text-white rounded-md text-sm">{artistConfig.tokenName}</span>
+                    <input
+                      type="number"
+                      value={artistocksInput}
+                      onChange={handleArtistocksInputChange}
+                      min="0"
+                      step="1"
+                      placeholder="0"
+                      className="w-full p-2 border border-gray-600 rounded-md bg-gray-700 text-white focus:ring-accentColor focus:border-accentColor"
+                      aria-label={`Amount in ${artistConfig.tokenName}`}
+                    />
+                  </div>
+                  {artistConfig.tokenPrice > 0 && purchaseAmountDollars > 0 && (
+                    <p className="text-xs text-gray-400 mt-1">
+                      (Current Price: ${artistConfig.tokenPrice.toFixed(4)} per {artistConfig.tokenName})
+                    </p>
+                  )}
+                </div>
+                
+                <div className="mb-6 flex items-center">
+                  {hasPurchasedDownload ? (
+                    <>
+                      <input 
+                        type="checkbox" 
+                        id="downloadOwned" 
+                        checked 
+                        disabled 
+                        className="h-4 w-4 text-green-600 border-gray-500 rounded focus:ring-green-500 bg-gray-700 cursor-not-allowed"
+                      />
+                      <label 
+                        htmlFor="downloadOwned" 
+                        className="ml-2 text-sm font-medium text-green-400"
+                      >
+                        Featured Download (Already Owned)
+                      </label>
+                    </>
+                  ) : (
+                    <>
+                      <input
+                        type="checkbox"
+                        id="includeDownload"
+                        name="includeDownload"
+                        checked={includeDownload}
+                        onChange={handleIncludeDownloadChange}
+                        className="h-4 w-4 text-accentColor border-gray-500 rounded focus:ring-accentColor bg-gray-700"
+                      />
+                      <label 
+                        htmlFor="includeDownload" 
+                        className="ml-2 text-sm font-medium text-gray-300"
+                      >
+                        Include Featured Download ($1.00)
+                      </label>
+                    </>
+                  )}
+                </div>
+                
+                <button
+                  onClick={buyButtonAction}
+                  disabled={buyButtonDisabled}
+                  className={`w-full font-bold py-3 px-6 rounded-lg text-lg shadow-md transition duration-150 ease-in-out transform hover:scale-105
+                    ${buyButtonDisabled ? 'bg-gray-600 cursor-not-allowed' : 'custom-buy-button bg-green-500 hover:bg-green-600'} text-white`}
+                >
+                  {buyButtonText}
+                </button>
+              </div>
+            )}
+
+            <div className="action-section text-center mb-4">
+              {!isLoggedIn && (
+                <div id="login-prompts-container" className="login-prompts mt-6">
+                  <h3 id="accessHeadline" className="access-headline">
+                    Sign in to purchase {artistTokenName}
+                  </h3>
+                  <div className="social-login-container mt-3">
+                    <p className="login-separator">or continue with</p>
+                    <div className="social-buttons">
+                      <button className="login-btn twitter" onClick={() => alert('Twitter login coming soon!')}>X (Twitter)</button>
+                      <button className="login-btn gmail" onClick={() => alert('Gmail login coming soon!')}>Gmail</button>
+                      <button className="login-btn phone" onClick={() => alert('Phone login coming soon!')}>Phone</button>
+                      <button className="login-btn facebook" onClick={() => alert('Facebook login coming soon!')}>Facebook</button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {isLoggedIn && showPurchaseModal && priceDetails && artistConfig && (
+                <div className="purchase-modal-overlay">
+                  <div className="purchase-modal p-6 bg-gray-800 bg-opacity-80 backdrop-blur-md shadow-2xl rounded-xl border border-gray-700">
+                    <h2 className="text-2xl font-bold mb-3 text-center text-white">CONFIRM PURCHASE: <span className="text-accentColor">{artistConfig.tokenName.toUpperCase()}</span></h2>
+                    <p className="text-center text-gray-300 mb-6 text-sm">
+                      You are about to acquire {includeDownload && !hasPurchasedDownload ? <><span className="font-semibold text-white">1 x Featured Download</span> and </> : ''}
+                      {purchaseAmountArtistocks > 0 ? <><span className="font-semibold text-white">{purchaseAmountArtistocks} {artistConfig.tokenName}s</span> </> : (includeDownload && !hasPurchasedDownload ? '' : 'items')}
+                      for the digital asset: <strong className="text-white">{artistConfig.artworkTitle}</strong>.
+                    </p>
+                    <div className="price-breakdown mb-6 p-4 bg-gray-900 bg-opacity-70 rounded-lg">
+                      <p className="text-center text-xl font-semibold text-white">TOTAL PRICE: <span className="text-green-400">${totalPurchasePrice.toFixed(2)}</span></p>
+                    </div>
+                    <div className="mock-payment-options mt-4 mb-6">
+                      <h4 className="text-lg font-semibold mb-4 text-center text-gray-200">CHOOSE PAYMENT METHOD:</h4>
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                        {[
+                          { name: 'Venmo', icon: 'V' }, 
+                          { name: 'PayPal', icon: 'P' }, 
+                          { name: 'Crypto', icon: '₿' }, 
+                          { name: 'Credit/Debit', icon: '💳' }
+                        ].map(method => (
+                          <button 
+                            key={method.name}
+                            onClick={() => handleConfirmPurchase(method.name)} 
+                            className="payment-option-btn group flex flex-col items-center justify-center p-3 bg-gray-700 hover:bg-accentColor text-white rounded-lg transition-all duration-150 ease-in-out transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-accentColor focus:ring-opacity-50 shadow-md hover:shadow-lg"
+                          >
+                            <span className="text-2xl mb-1 group-hover:text-white">{method.icon}</span>
+                            <span className="text-xs sm:text-sm group-hover:text-white">{method.name}</span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="purchase-actions mt-6 text-center">
+                      <button 
+                        onClick={() => setShowPurchaseModal(false)} 
+                        className="cancel-purchase-btn px-8 py-3 bg-gray-600 hover:bg-gray-500 text-white font-semibold rounded-lg transition-colors duration-150 shadow-md hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-gray-400 focus:ring-opacity-50"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {isLoggedIn && purchaseConfirmationData && (
+                <div className="purchase-confirmation-section mock-ui-section p-6 my-6 border border-gray-700 rounded-xl bg-gray-800 bg-opacity-80 backdrop-blur-md shadow-2xl max-w-lg mx-auto">
+                  <h3 className="text-3xl font-bold mb-4 text-center text-green-400 glow-text-green">PURCHASE SUCCESSFUL!</h3>
+                  <div className="text-left text-gray-300 space-y-2 text-sm bg-gray-900 bg-opacity-70 p-4 rounded-lg mb-6">
+                    <p className="whitespace-pre-line leading-relaxed">{purchaseConfirmationData.replace("Purchase Confirmed! ", "")}</p>
+                  </div>
+                  <button
+                    onClick={() => {
+                      setPurchaseConfirmationData(null);
+                      handleExploreOtherArtist();
+                    }}
+                    className="mt-4 px-6 py-3 bg-accentColor hover:bg-opacity-80 text-white font-bold rounded-lg w-full custom-buy-button text-lg shadow-md hover:shadow-lg transition-all duration-150 ease-in-out transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-accentColor focus:ring-opacity-50"
+                  >
+                    Explore {artistName?.toLowerCase() === 'gosheesh' ? 'JAI TEA' : 'GOSHEESH'}
+                  </button>
+                </div>
+              )}
+
+              {isLoggedIn && artistConfig && !globalSafewordVerified && showExploreButton && !purchaseConfirmationData && (
+                <div className="text-center p-4 my-6 bg-yellow-500 bg-opacity-20 rounded-lg max-w-md mx-auto">
+                  <p className="text-lg mb-3 text-white">
+                    You do not have permanent access to this artist's content.
+                  </p>
+                  <button 
+                    onClick={handleExploreOtherArtist}
+                    className="custom-buy-button explore-artists-button"
+                  >
+                    Explore {artistName?.toLowerCase() === 'gosheesh' ? 'JAI TEA' : 'GOSHEESH'}
+                  </button>
+                </div>
+              )}
+            </div>
+
+            <div 
+              className={`unified-input-container mock-ui-section p-4 border-t-2 border-gray-700 mt-8 ${!isLoggedIn && shakeActive ? 'shake' : ''}`}
             >
-              {isLoggedIn ? "Send" : "Continue"}
-            </button>
-          </div>
-        </div>
-      </main>
-    </>
+              {isLoggedIn && (
+                <h3 className="text-xl font-semibold mb-3 text-center">Chat / Command</h3>
+              )}
+              <div className="flex items-center max-w-xl mx-auto">
+                <input
+                  ref={emailInputRef}
+                  type="text"
+                  value={safewordInput}
+                  onChange={handleSafewordInputChange}
+                  placeholder={
+                    isLoggedIn 
+                      ? "Type command, search, or safeword..." 
+                      : "Enter your email address to continue"
+                  }
+                  className="flex-grow p-3 border border-gray-600 rounded-l-lg bg-gray-900 bg-opacity-70 text-white focus:ring-accentColor focus:border-accentColor backdrop-blur-sm"
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      if (!isLoggedIn) {
+                        handleEmailLogin();
+                      } else {
+                        handleSafewordSubmit();
+                      }
+                    }
+                  }}
+                  aria-label={isLoggedIn ? "Chat or command input" : "Email address input"}
+                />
+                <button
+                  onClick={() => {
+                    if (!isLoggedIn) {
+                      handleEmailLogin();
+                    } else {
+                      handleSafewordSubmit();
+                    }
+                  }}
+                  className="p-3 bg-accentColor text-white rounded-r-lg hover:bg-opacity-80 focus:outline-none focus:ring-2 focus:ring-accentColor focus:ring-opacity-50"
+                >
+                  {isLoggedIn ? "Send" : "Continue"}
+                </button>
+              </div>
+            </div>
+          </main>
+        </>
+      )}
+    </main>
   );
 }

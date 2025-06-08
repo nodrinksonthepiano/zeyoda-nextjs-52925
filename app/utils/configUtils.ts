@@ -38,7 +38,7 @@ export interface ArtistConfigEntry {
 }
 
 // This is the structure of the `artists` map after processing
-export interface ProcessedArtistConfig extends Omit<ArtistConfigEntry, 'variables' | 'artistId'> {
+export interface ProcessedArtistConfig extends Omit<ArtistConfigEntry, 'variables' | 'artistId' | 'artistName'> {
   name: string; // Maps from artistName
   theme: ArtistTheme; // Ensured by processing
 }
