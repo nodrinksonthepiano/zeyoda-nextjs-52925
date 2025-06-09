@@ -5,6 +5,7 @@ interface ArtistConfig {
   displayName: string;
   tokenName: string;
   artworkTitle: string;
+  contract?: string;
   theme: {
     primaryColor: string;
     accentColor: string;
@@ -40,6 +41,7 @@ const Wallet: React.FC<WalletProps> = ({
   showAssetsPanel,
   onClose,
 }) => {
+
   if (!showAssetsPanel) {
     return null;
   }

@@ -5,6 +5,8 @@ import { useSearchParams, useRouter } from 'next/navigation';
 import Wallet from './components/Wallet';
 import dynamic from 'next/dynamic';
 import { useWallet } from './components/MagicProvider';
+import { ethers } from "ethers";
+import erc20Abi from '../contracts/Artistock.json';
 
 interface ArtistConfig {
   name: string;
@@ -14,6 +16,7 @@ interface ArtistConfig {
   artworkYear: string;
   tokenPrice: number;
   videoSrc: string;
+  contract?: string;
   theme: {
     primaryColor: string;
     accentColor: string;
@@ -415,16 +418,14 @@ export default function HomePage() {
   }, [artistConfig?.theme]);
 
   useEffect(() => {
-    const dollarValueForTokens = (unlockedArtistStates[artistIdFromUrl] && swapFromAsset === 'USD')
-                                     ? parseFloat(swapFromAmount || '0')
-                                     : purchaseAmountDollars;
+    const dollarValueForTokens = parseFloat(swapFromAmount || '0');
 
     let calculatedTotal = dollarValueForTokens;
     if (includeDownload && !hasPurchasedDownload) {
       calculatedTotal += 1;
     }
     setTotalPurchasePrice(calculatedTotal);
-  }, [swapFromAmount, swapFromAsset, unlockedArtistStates, artistIdFromUrl, purchaseAmountDollars, includeDownload, hasPurchasedDownload]);
+  }, [swapFromAmount, includeDownload, hasPurchasedDownload]);
 
   const toggleMute = () => {
     const video = document.getElementById('artistVideo') as HTMLVideoElement;
@@ -498,6 +499,7 @@ export default function HomePage() {
     }
 
     if (purchaseAmountArtistocks > 0) {
+      handleBuy(purchaseAmountArtistocks);
       itemsPurchasedMessage.push(`${purchaseAmountArtistocks} ${artistConfig.tokenName}s`);
       newBalances[artistConfig.tokenName] = (newBalances[artistConfig.tokenName] || 0) + purchaseAmountArtistocks;
     }
@@ -865,6 +867,21 @@ export default function HomePage() {
     } catch (error) {
       console.error("magic login failed", error);
       alert('Login failed, see console for details.');
+    }
+  }
+
+  async function handleBuy(amount: number) {
+    if (!magic || !magic.provider || !artistConfig || !artistConfig.contract) return;
+    try {
+      const provider = new ethers.BrowserProvider(magic.provider as any);
+      const signer = await provider.getSigner();
+      const art = new ethers.Contract(artistConfig.contract, erc20Abi.abi, signer);
+      const tx = await art.mint(signer.address, ethers.parseUnits(amount.toString(), 18));
+      await tx.wait();
+      alert("Mint successful!");
+    } catch (error) {
+      console.error("minting failed", error);
+      alert("Mint failed, see console for details.");
     }
   }
 

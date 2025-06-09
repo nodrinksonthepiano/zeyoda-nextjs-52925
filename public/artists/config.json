@@ -30,7 +30,7 @@
       "tokenName": "GOSH TOKENS",
       "artworkTitle": "Gosheesh Collection X",
       "artworkYear": "2025",
-      "tokenPrice": 0.001,
+      "tokenPrice": 0.0005,
       "videoSrc": "/assets/1GOSHEESH copy.mp4",
       "theme": {
         "primaryColor": "#1a0a3b",
@@ -51,7 +51,7 @@
       "tokenName": "JAI TOKENS",
       "artworkTitle": "Jai Tea Collection Y",
       "artworkYear": "2025",
-      "tokenPrice": 0.0008,
+      "tokenPrice": 0.0005,
       "videoSrc": "/assets/2JAITEA.mp4",
       "theme": {
         "primaryColor": "#3b0a1a",
