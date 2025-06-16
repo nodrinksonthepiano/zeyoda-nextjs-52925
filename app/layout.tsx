@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono, Bungee } from "next/font/google";
 import "./globals.css";
 import { MagicProvider } from './components/MagicProvider'
+import { ToastProvider } from './contexts/ToastContext';
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -36,7 +37,9 @@ export default function RootLayout({
         className={`${geistSans.variable} ${geistMono.variable} ${bungee.variable} antialiased`}
       >
         <MagicProvider>
-          {children}
+          <ToastProvider>
+            {children}
+          </ToastProvider>
         </MagicProvider>
       </body>
     </html>

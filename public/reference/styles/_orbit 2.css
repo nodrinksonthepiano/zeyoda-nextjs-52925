@@ -1,0 +1,123 @@
+/* _orbit.css - Orbital token animations and stylings */
+
+/* Orbital tokens container */
+.orbital-tokens {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 100%; /* Make it take the full width of its parent */
+    height: 100%; /* Make it take the full height of its parent */
+    transform: translate(-50%, -50%); /* Center it within its parent */
+    pointer-events: none;
+    z-index: 10;
+    transform-style: preserve-3d;
+    perspective: 1200px; /* Keep or adjust based on desired 3D effect */
+}
+
+/* Orbit token styling (extends base .token style) */
+.orbit-token {
+    position: absolute;
+    /* The top/left will be set by JS for animation. 
+       Initial position should be the center of the .orbital-tokens container before JS translates. */
+    top: 50%; 
+    left: 50%;
+    /* Apply a negative margin equal to half the token's size to truly center it before transform */
+    margin-top: -45px; /* Assuming 90px height */
+    margin-left: -45px; /* Assuming 90px width */
+    width: 90px;
+    height: 90px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.7rem;
+    font-weight: 700;
+    pointer-events: auto;
+    transition: transform 0.2s ease-out, opacity 0.3s ease, filter 0.3s ease;
+    will-change: transform, opacity, z-index, filter;
+    backface-visibility: hidden;
+    transform-origin: center center;
+    z-index: 5;
+    opacity: 1;
+    filter: none;
+    box-shadow: 0 0 15px rgba(0, 0, 0, 0.5),
+                inset 0 0 15px rgba(255, 255, 255, 0.2);
+    background-color: var(--token-bg);
+    border: 1px solid var(--token-border);
+    padding: 5px;
+    word-break: break-word;
+    line-height: 1.1;
+    letter-spacing: -0.2px;
+    white-space: pre-line; /* Preserves line breaks */
+    text-align: center;
+    cursor: default;
+}
+
+/* Hover effect for orbit tokens */
+.orbit-token:hover {
+    z-index: 30 !important; /* Higher z-index to ensure it appears on top */
+    transform: scale(1.25) !important; 
+    opacity: 1 !important;
+    filter: blur(0) !important; /* No blur on hover */
+    box-shadow: 0 0 25px var(--accent-color),
+                inset 0 0 15px rgba(255, 255, 255, 0.3);
+    background-color: var(--token-hover-bg);
+}
+
+/* Active effect for orbit tokens */
+.orbit-token:active {
+    transform: scale(0.95) !important;
+    box-shadow: 0 0 15px var(--accent-color),
+                inset 0 0 5px rgba(255, 255, 255, 0.3);
+}
+
+/* Specific styling for linkable artist tokens */
+.orbit-token[data-artist-id] {
+    cursor: pointer;
+    animation: pulse 2s infinite ease-in-out;
+    box-shadow: 0 0 15px var(--accent-color),
+                inset 0 0 15px rgba(255, 255, 255, 0.3);
+}
+
+/* Pulse animation for clickable artist tokens */
+@keyframes pulse {
+    0% {
+        box-shadow: 0 0 15px var(--accent-color),
+                    inset 0 0 15px rgba(255, 255, 255, 0.3);
+    }
+    50% {
+        box-shadow: 0 0 25px var(--accent-color),
+                    inset 0 0 20px rgba(255, 255, 255, 0.5);
+    }
+    100% {
+        box-shadow: 0 0 15px var(--accent-color),
+                    inset 0 0 15px rgba(255, 255, 255, 0.3);
+    }
+}
+
+/* Small screen adjustments */
+@media (max-width: 768px) {
+    .orbit-token {
+        width: 70px;
+        height: 70px;
+        font-size: 0.6rem;
+        margin-top: -35px; /* Adjust for new size */
+        margin-left: -35px; /* Adjust for new size */
+    }
+}
+
+/* Very small screen adjustments */
+@media (max-width: 480px) {
+    .orbit-token {
+        width: 60px;
+        height: 60px;
+        font-size: 0.55rem;
+        margin-top: -30px; /* Adjust for new size */
+        margin-left: -30px; /* Adjust for new size */
+    }
+    
+    /* More compact orbit for smaller screens */
+    .orbital-tokens {
+        perspective: 800px;
+    }
+} 

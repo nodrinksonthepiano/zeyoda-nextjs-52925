@@ -5,6 +5,7 @@ import { useSearchParams, useRouter } from 'next/navigation';
 import Wallet from './components/Wallet';
 import dynamic from 'next/dynamic';
 import { useWallet } from './components/MagicProvider';
+import { useToast } from './contexts/ToastContext';
 import { ethers } from "ethers";
 import erc20Abi from '../contracts/Artistock.json';
 
@@ -51,6 +52,7 @@ const PERSPECTIVE_BASE = 1000; // For perspective calculations
 
 export default function HomePage() {
   const { magic, user } = useWallet();
+  const { showToast } = useToast();
   const [email, setEmail] = useState('');
 
   const searchParams = useSearchParams();
@@ -60,9 +62,7 @@ export default function HomePage() {
   const [allArtistsConfig, setAllArtistsConfig] = useState<{[key: string]: ArtistConfig} | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isMuted, setIsMuted] = useState(true);
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [shakeActive, setShakeActive] = useState(false);
-  const emailInputRef = useRef<HTMLInputElement>(null);
   const [priceDetails, setPriceDetails] = useState<PriceDetails | null>(null);
   const [showPurchaseModal, setShowPurchaseModal] = useState(false);
   const [userTokenBalances, setUserTokenBalances] = useState<UserTokenBalances>({});
@@ -130,11 +130,9 @@ export default function HomePage() {
     const currentArtistId = artistIdFromUrl;
     setHasPurchasedDownload(false);
     setDownloadIpfsHash(null);
-    setSafewordVerified(false);
 
     const storedEmail = localStorage.getItem('zeyodaUserEmail');
     if (storedEmail) {
-      setIsLoggedIn(true);
       const storedBalances = localStorage.getItem('zeyodaUserTokenBalances');
       if (storedBalances) {
         try {
@@ -199,7 +197,6 @@ export default function HomePage() {
         setAllPurchasedDownloads([]); // Clear if config is not ready
       }
     } else {
-      setIsLoggedIn(false);
       setUserTokenBalances({});
       setUnlockedArtistStates({});
       setGlobalSafewordVerified(false); // Reset if not logged in
@@ -208,7 +205,7 @@ export default function HomePage() {
   }, [searchParams, artistIdFromUrl, allArtistsConfig]);
 
   useEffect(() => {
-    if (isLoggedIn && artistConfig && hasPurchasedDownload) {
+    if (user && artistConfig && hasPurchasedDownload) {
       if (userTokenBalances[artistConfig.tokenName] && userTokenBalances[artistConfig.tokenName] > 0) {
         setShowExploreButton(true);
       } else {
@@ -217,7 +214,7 @@ export default function HomePage() {
     } else {
       setShowExploreButton(false);
     }
-  }, [isLoggedIn, artistConfig, hasPurchasedDownload, userTokenBalances]);
+  }, [user, artistConfig, hasPurchasedDownload, userTokenBalances]);
 
   useEffect(() => {
     async function fetchConfig() {
@@ -427,6 +424,30 @@ export default function HomePage() {
     setTotalPurchasePrice(calculatedTotal);
   }, [swapFromAmount, includeDownload, hasPurchasedDownload]);
 
+  const handleSafewordAutosubmit = () => {
+    const currentArtistId = artistIdFromUrl;
+
+    // Ensure we have what we need to avoid running on initial load or with bad data
+    if (user && artistConfig && safewordInput.trim().toLowerCase() === 'artistocks') {
+      console.log(`[Safeword] Correct safeword detected for artist ${currentArtistId}`);
+      
+      // Trigger unlock logic
+      setSafewordVerified(true);
+      const newUnlockedStates = { ...unlockedArtistStates, [currentArtistId]: true };
+      setUnlockedArtistStates(newUnlockedStates);
+      setGlobalSafewordVerified(true);
+      localStorage.setItem('zeyodaUnlockedArtists', JSON.stringify(newUnlockedStates));
+      
+      // Provide feedback and clear input
+      showToast(`Artist "${artistConfig.displayName}" unlocked!`, 'success');
+      setSafewordInput('');
+    }
+  };
+
+  useEffect(() => {
+    handleSafewordAutosubmit();
+  }, [safewordInput, user, artistConfig, artistIdFromUrl, unlockedArtistStates]);
+
   const toggleMute = () => {
     const video = document.getElementById('artistVideo') as HTMLVideoElement;
     if (video) {
@@ -451,170 +472,168 @@ export default function HomePage() {
     return { currentDisplayPrice, artistShare: 0, platformShare: 0, investorShare: 0 };
   };
   const handleDownloadVideo = () => {
-    if (!isLoggedIn) {
-      setShakeActive(true);
-      setTimeout(() => setShakeActive(false), 500);
-      emailInputRef.current?.focus();
+    if (!user) {
+      showToast('Please sign in to download.', 'info');
+      const commandInput = document.querySelector('input[placeholder="Enter your email address to continue"]') as HTMLInputElement;
+      commandInput?.focus();
       return;
     }
-    if (artistConfig) {
-      const details = calculatePriceDetails(artistConfig.tokenPrice);
-      setPriceDetails(details);
-      setShowPurchaseModal(true);
+    if (downloadIpfsHash) {
+        const url = `https://ipfs.io/ipfs/${downloadIpfsHash}`;
+        window.open(url, '_blank');
+    } else {
+        showToast("Download is not available at this time.", "error");
     }
   };
 
   const handlePrimaryAction = () => {
-    if (!isLoggedIn) {
-      setShakeActive(true);
-      setTimeout(() => setShakeActive(false), 500);
-      emailInputRef.current?.focus();
-      return;
-    }
-    if (artistConfig) {
-      const details = calculatePriceDetails(totalPurchasePrice);
-      setPriceDetails(details);
-      setShowPurchaseModal(true);
-    }
+      if (!user) {
+        showToast('Please sign in to continue.', 'info');
+        const commandInput = document.querySelector('input[placeholder="Enter your email address to continue"]') as HTMLInputElement;
+        commandInput?.focus();
+        return;
+      }
+  
+      // Determine if the user has unlocked this specific artist
+      const isUnlocked = artistConfig && unlockedArtistStates[artistConfig.name];
+  
+      if (isUnlocked) {
+          // If unlocked, the primary action should be to show the purchase/swap modal
+          handlePreviewSwap();
+      } else {
+          // If not unlocked, prompt them with the safeword input
+          const safewordInputEl = document.querySelector('input[placeholder*="safeword"]') as HTMLInputElement;
+          safewordInputEl?.focus();
+          showToast(`To swap for ${artistConfig?.tokenName}, enter the safeword.`, 'info');
+      }
   };
 
-  const handleConfirmPurchase = (paymentMethod?: string) => {
-    setShowPurchaseModal(false);
-    if (!artistConfig) return;
-
-    let itemsPurchasedMessage = [];
-    let newBalances = { ...userTokenBalances };
-    const artistId = searchParams.get('artist') || 'gosheesh';
-    let purchasedDownloadThisTransaction = false;
-
-    if (includeDownload && !hasPurchasedDownload) {
-      itemsPurchasedMessage.push(`1 x Featured Download for "${artistConfig.artworkTitle}"`);
-      setHasPurchasedDownload(true);
-      localStorage.setItem('zeyodaHasPurchasedDownload_' + artistId, 'true');
-      const placeholderHash = "QmSyXs8d2jzAH79Fn1ZBPnp7FqcasunHkT9qTrpcbu5HdX";
-      setDownloadIpfsHash(placeholderHash);
-      localStorage.setItem('zeyodaIpfsHash_' + artistId, placeholderHash);
-      purchasedDownloadThisTransaction = true;
-      console.log(`[Purchase] Set hasPurchasedDownload for ${artistId} to true in localStorage during confirm.`);
-    }
-
-    if (purchaseAmountArtistocks > 0) {
-      handleBuy(purchaseAmountArtistocks);
-      itemsPurchasedMessage.push(`${purchaseAmountArtistocks} ${artistConfig.tokenName}s`);
-      newBalances[artistConfig.tokenName] = (newBalances[artistConfig.tokenName] || 0) + purchaseAmountArtistocks;
+  const handleConfirmPurchase = async (paymentMethod?: string) => {
+    if (!user || !artistConfig?.contract) {
+      showToast("User or artist details are missing. Cannot proceed.", "error");
+      return;
     }
     
-    if (itemsPurchasedMessage.length === 0) {
-        setPurchaseConfirmationData("No new items were selected for purchase.");
-        return;
-    }
+    console.log(`Attempting purchase with ${paymentMethod}. Total: $${totalPurchasePrice.toFixed(2)}`);
+    setIsLoading(true);
 
-    setUserTokenBalances(newBalances);
-    localStorage.setItem('zeyodaUserTokenBalances', JSON.stringify(newBalances));
+    try {
+      const response = await fetch('/api/mint', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contractAddress: artistConfig.contract,
+          userAddress: user,
+          amount: purchaseAmountArtistocks,
+        }),
+      });
 
-    // === BEGIN MODIFICATION: Update allPurchasedDownloads immediately ===
-    if (allArtistsConfig) {
-      const updatedDownloads: PurchasedDownloadInfo[] = [];
-      for (const id in allArtistsConfig) {
-        if (localStorage.getItem('zeyodaHasPurchasedDownload_' + id) === 'true') {
-          updatedDownloads.push({
-            artistId: id,
-            artworkTitle: allArtistsConfig[id].artworkTitle,
-            artistDisplayName: allArtistsConfig[id].displayName,
-            ipfsHash: localStorage.getItem('zeyodaIpfsHash_' + id) || null,
-          });
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.message || 'An unknown error occurred during minting.');
+      }
+
+      // SUCCESS CASE
+      console.log(`Mint successful! Tx: ${data.txHash}`);
+      const artistTokenName = artistConfig.tokenName || 'ARTISTOCK';
+      let confirmationMessage = `${purchaseAmountArtistocks.toLocaleString()} ${artistTokenName}`;
+      
+      showToast('Purchase successful!', 'success');
+
+      // Update balance
+      const newBalances = { ...userTokenBalances };
+      newBalances[artistTokenName] = (newBalances[artistTokenName] || 0) + purchaseAmountArtistocks;
+      setUserTokenBalances(newBalances);
+      localStorage.setItem('zeyodaUserTokenBalances', JSON.stringify(newBalances));
+
+      // Handle download if included
+      if (includeDownload && !hasPurchasedDownload) {
+        setHasPurchasedDownload(true);
+        const ipfsHash = "bafybeigodx24h6vchaybce32klc4rnzsvlqg2ks6n7nbp6lowkvh734wcu"; // Replace with actual hash
+        setDownloadIpfsHash(ipfsHash);
+        const currentArtistId = artistIdFromUrl;
+        localStorage.setItem('zeyodaHasPurchasedDownload_' + currentArtistId, 'true');
+        localStorage.setItem('zeyodaIpfsHash_' + currentArtistId, ipfsHash);
+        confirmationMessage += " + Permanent Download";
+        
+        const newDownloadInfo: PurchasedDownloadInfo = {
+          artistId: currentArtistId,
+          artworkTitle: artistConfig?.artworkTitle || 'Unknown Title',
+          artistDisplayName: artistConfig?.displayName || 'Unknown Artist',
+          ipfsHash: ipfsHash,
+        };
+        
+        // Avoid adding duplicates
+        if (!allPurchasedDownloads.some(d => d.artistId === currentArtistId)) {
+          setAllPurchasedDownloads([...allPurchasedDownloads, newDownloadInfo]);
         }
       }
-      setAllPurchasedDownloads(updatedDownloads);
-      console.log('[handleConfirmPurchase] Manually updated allPurchasedDownloads:', updatedDownloads);
-    }
-    // === END MODIFICATION ===
+      
+      setPurchaseConfirmationData(confirmationMessage);
 
-    const confirmationMessage = `Purchase Confirmed! Items: ${itemsPurchasedMessage.join(', ')}. Total Price: $${totalPurchasePrice.toFixed(2)}. Payment Method: ${paymentMethod || 'Confirmed'}. Your new ${artistConfig.tokenName} balance: ${newBalances[artistConfig.tokenName] || 0}.`;
-    setPurchaseConfirmationData(confirmationMessage);
-    
-    setShowExploreButton(true);
-    if (purchasedDownloadThisTransaction || purchaseAmountArtistocks > 0) {
-      setShowAssetsPanel(true);
+    } catch (error: any) {
+      console.error("Minting failed", error);
+      showToast(`Minting failed: ${error.message}`, "error");
+    } finally {
+      setIsLoading(false);
+      setShowPurchaseModal(false);
     }
-
-    setPurchaseAmountDollars(20);
-    setIncludeDownload(true);
   };
 
   const handleSafewordSubmit = () => {
-    if (!artistConfig || !artistConfig.name) {
-      alert("Artist data is still loading. Please wait a moment and try submitting the safeword again.");
+    const input = safewordInput.trim().toLowerCase();
+    if (!input) return; // Do nothing if the user submits an empty string
+
+    // Command: Navigate to Create Profile page
+    if (input === 'zeyoda') {
+      router.push('/create');
+      setSafewordInput('');
       return;
     }
-    console.log("Attempting safeword submission...");
-    const expectedSafeword = artistConfig.name.toLowerCase() + "unlock";
-    console.log("Safeword input:", safewordInput, "Expected:", expectedSafeword, "Artist ID:", artistIdFromUrl);
+    
+    // Command: Show/Hide Portfolio
+    if (input === '/wallet' || input === '/portfolio') {
+      setShowAssetsPanel(true);
+      setSafewordInput('');
+      return;
+    }
+    if (input === '/exit' || input === '/close') {
+      setShowAssetsPanel(false);
+      setSafewordInput('');
+      return;
+    }
 
-    if (safewordInput.toLowerCase() === expectedSafeword) {
-      console.log("Safeword CORRECT for artist:", artistIdFromUrl);
+    // Fallback for safeword if Enter is pressed quickly
+    const correctSafeword = "artistocks";
+    if (input === correctSafeword) {
+      // The useEffect handles the main success case with the alert.
+      // This is just a silent fallback to prevent an error message on a race condition.
+      console.log(`[Safeword] Correct safeword submitted via Enter for artist ${artistIdFromUrl}`);
       setSafewordVerified(true);
-      setGlobalSafewordVerified(true);
-
       const newUnlockedStates = { ...unlockedArtistStates, [artistIdFromUrl]: true };
       setUnlockedArtistStates(newUnlockedStates);
+      setGlobalSafewordVerified(true);
       localStorage.setItem('zeyodaUnlockedArtists', JSON.stringify(newUnlockedStates));
-      
       setSafewordInput('');
-      setPurchaseConfirmationData(null);
-
-      setSwapFromAsset("USD");
-      const defaultUsdAmount = "20.00";
-      setSwapFromAmount(defaultUsdAmount);
-
-      if (artistConfig.tokenPrice > 0) {
-        const usdValue = parseFloat(defaultUsdAmount);
-        const calculatedTokens = Math.floor(usdValue / artistConfig.tokenPrice);
-        setPurchaseAmountArtistocks(calculatedTokens);
-        setArtistocksInput(calculatedTokens > 0 ? calculatedTokens.toString() : (usdValue === 0 ? "0" : ""));
-      } else {
-        setPurchaseAmountArtistocks(0);
-        setArtistocksInput("");
-      }
-    } else {
-      console.log("Safeword INCORRECT or artistConfig not fully loaded for check.");
-      alert("Incorrect safeword. Please try again.");
-      setSafewordVerified(false); 
+      return;
     }
+
+    // If no command or safeword matches, show a generic message
+    showToast(`Command not recognized: "${safewordInput}"`, 'error');
+    setSafewordInput('');
   };
 
-  const handleEmailLogin = () => {
-    const email = emailInputRef.current?.value;
-    if (email && email.trim() !== "" && email.includes('@')) {
-      localStorage.setItem('zeyodaUserEmail', email);
-      setIsLoggedIn(true);
-      const storedBalances = localStorage.getItem('zeyodaUserTokenBalances');
-      if (storedBalances) {
-        try {
-          setUserTokenBalances(JSON.parse(storedBalances));
-        } catch (e) {
-          console.error("Error parsing token balances from localStorage", e);
-          setUserTokenBalances({});
-        }
-      }
-      setShowPurchaseModal(false);
-      setSafewordInput('');
-    } else {
-      alert("Please enter a valid email address.");
-      setShakeActive(true);
-      setTimeout(() => setShakeActive(false), 500);
-      emailInputRef.current?.focus();
+  const handleLogout = async () => {
+    if (magic) {
+      await magic.user.logout();
     }
-  };
-
-  const handleLogout = () => {
     localStorage.removeItem('zeyodaUserEmail');
     localStorage.removeItem('zeyodaUserTokenBalances');
     localStorage.removeItem('zeyodaHasPurchasedDownload_gosheesh');
     localStorage.removeItem('zeyodaHasPurchasedDownload_jaitea');
     localStorage.removeItem('zeyodaUnlockedArtists');
 
-    setIsLoggedIn(false);
     setUnlockedArtistStates({});
     setUserTokenBalances({});
     setHasPurchasedDownload(false);
@@ -626,34 +645,13 @@ export default function HomePage() {
     setArtistocksInput("");
     setPurchaseAmountArtistocks(0);
     setPurchaseAmountDollars(20);
-    alert("You have been logged out. Your token balance has been reset.");
+    showToast("You have been logged out.", "info");
+    // Small delay to allow toast to be seen before reload
+    setTimeout(() => window.location.reload(), 1000);
   };
 
   const handleSafewordInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const newValue = e.target.value;
-    setSafewordInput(newValue);
-
-    if (isLoggedIn && artistConfig && artistConfig.name && artistConfig.tokenPrice > 0 && !unlockedArtistStates[artistIdFromUrl]) {
-      if (newValue.toLowerCase().includes("artistocks")) {
-        console.log(`"artistocks" keyword detected, unlocking for artist: ${artistIdFromUrl}`);
-        setGlobalSafewordVerified(true);
-        
-        const newUnlockedStates = { ...unlockedArtistStates, [artistIdFromUrl]: true };
-        setUnlockedArtistStates(newUnlockedStates);
-        localStorage.setItem('zeyodaUnlockedArtists', JSON.stringify(newUnlockedStates));
-        
-        setSwapFromAsset("USD");
-        const defaultUsdAmount = "20.00";
-        setSwapFromAmount(defaultUsdAmount);
-
-        const usdValue = parseFloat(defaultUsdAmount);
-        const calculatedTokens = Math.floor(usdValue / artistConfig.tokenPrice);
-        setPurchaseAmountArtistocks(calculatedTokens);
-        setArtistocksInput(calculatedTokens > 0 ? calculatedTokens.toString() : (usdValue === 0 ? "0" : ""));
-
-        setPurchaseConfirmationData(null);
-      }
-    }
+    setSafewordInput(e.target.value);
   };
 
   const alreadyOwnsEverything = hasPurchasedDownload && artistConfig && userTokenBalances[artistConfig.tokenName] && userTokenBalances[artistConfig.tokenName] > 0;
@@ -797,7 +795,7 @@ export default function HomePage() {
 
   // New useEffect to generate dynamic orbital tokens based on user assets
   useEffect(() => {
-    if (!allArtistsConfig || !isLoggedIn) {
+    if (!allArtistsConfig || !user) {
       setDynamicOrbitalTokens([]);
       return;
     }
@@ -846,7 +844,7 @@ export default function HomePage() {
     console.log('[DynamicOrbit] Generated dynamic orbital tokens:', newOrbitalTokensData);
     setDynamicOrbitalTokens(newOrbitalTokensData);
 
-  }, [allArtistsConfig, userTokenBalances, allPurchasedDownloads, isLoggedIn, artistIdFromUrl]);
+  }, [allArtistsConfig, userTokenBalances, allPurchasedDownloads, user, artistIdFromUrl]);
 
   // useEffect for saving orbitAngleOffset to localStorage (ensure this is present)
   useEffect(() => {
@@ -858,30 +856,51 @@ export default function HomePage() {
   async function login() {
     if (!magic) return;
     try {
-      await magic.auth.loginWithEmailOTP({ email });
+      const didToken = await magic.auth.loginWithEmailOTP({ email });
       const meta = await magic.user.getInfo();
       if (meta.publicAddress) {
-        alert('Logged in as ' + meta.publicAddress);
-        window.location.reload();
+        showToast('Logged in as ' + meta.publicAddress, 'success');
+        // Add a small delay for the user to see the message before reload
+        setTimeout(() => window.location.reload(), 1500);
       }
     } catch (error) {
       console.error("magic login failed", error);
-      alert('Login failed, see console for details.');
+      showToast('Login failed. Please try again.', 'error');
     }
   }
 
   async function handleBuy(amount: number) {
-    if (!magic || !magic.provider || !artistConfig || !artistConfig.contract) return;
+    if (!user || !artistConfig || !artistConfig.contract) {
+      showToast("Please log in first.", "error");
+      return;
+    }
+    
     try {
-      const provider = new ethers.BrowserProvider(magic.provider as any);
-      const signer = await provider.getSigner();
-      const art = new ethers.Contract(artistConfig.contract, erc20Abi.abi, signer);
-      const tx = await art.mint(signer.address, ethers.parseUnits(amount.toString(), 18));
-      await tx.wait();
-      alert("Mint successful!");
+      const response = await fetch('/api/mint', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          contractAddress: artistConfig.contract,
+          userAddress: user, // The logged-in user's address
+          amount: amount,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.message || 'Minting failed.');
+      }
+
+      showToast(`Mint successful!`, 'success');
+      // Optionally, refresh user balance here
+      
     } catch (error) {
-      console.error("minting failed", error);
-      alert("Mint failed, see console for details.");
+      console.error("Minting failed", error);
+      const errorMessage = error instanceof Error ? error.message : "An unknown error occurred.";
+      showToast(`Minting failed: ${errorMessage}`, "error");
     }
   }
 
@@ -914,14 +933,14 @@ export default function HomePage() {
 
   const currentArtistBalance = userTokenBalances[artistTokenName] || 0;
 
-  const showActualSwapInterface = isLoggedIn && currentArtistBalance > 0 && artistConfig && unlockedArtistStates[artistIdFromUrl] && !purchaseConfirmationData;
+  const showActualSwapInterface = user && currentArtistBalance > 0 && artistConfig && unlockedArtistStates[artistIdFromUrl] && !purchaseConfirmationData;
 
   let buyButtonText = "LOADING...";
   let buyButtonDisabled = true; 
   let buyButtonAction: () => void = () => {};
 
   if (artistConfig) {
-    if (!isLoggedIn) {
+    if (!user) {
       // Login prompt logic (buyButtonText might be set to 'LOGIN TO PURCHASE' or similar, and disabled)
       // This part seems okay as per current structure, focusing on the logged-in state.
     } else {
@@ -991,7 +1010,7 @@ export default function HomePage() {
           {/* Video Background */}
           <div id="particles" className="cosmic-particles"></div>
 
-          {isLoggedIn && (
+          {user && (
             <Wallet
               artistConfig={artistConfig}
               allArtistsConfig={allArtistsConfig}
@@ -1003,37 +1022,14 @@ export default function HomePage() {
           )}
 
           <header className="app-header">
-            {isLoggedIn && artistConfig ? (
-              <div className="header-user-info flex items-center justify-between w-full">
-                <div className="flex items-center">
-                  <button 
-                    onClick={() => setShowAssetsPanel(!showAssetsPanel)} 
-                    className="wallet-button mr-4"
-                    style={{
-                      padding: '8px 12px',
-                      background: 'linear-gradient(to bottom, #5c8eff, #2850cc)',
-                      border: 'none',
-                      borderRadius: '30px',
-                      color: 'white',
-                      fontSize: '0.8rem',
-                      fontWeight: 600,
-                      cursor: 'pointer',
-                      boxShadow: '0 2px 6px rgba(0,0,0,0.25), inset 0 1px 0 rgba(255,255,255,0.2), inset 0 -2px 0 rgba(0,0,0,0.2)',
-                      textShadow: '0 1px 2px rgba(0,0,0,0.4)'
-                    }}
-                  >
-                    {showAssetsPanel ? 'Hide Assets' : 'Your Assets'}
-                  </button>
-                </div>
-                
-                <div className="flex items-center">
-                  <button onClick={handleLogout} className="logout-button">
-                    LOG OUT / RESET
-                  </button>
-                </div>
+            <h1 className="text-2xl font-bold" style={{ fontFamily: 'var(--artist-font)' }}>{artistConfig?.displayName?.toUpperCase()}</h1>
+            {user && (
+              <div className="flex items-center gap-4">
+                <a href="/create" className="logout-button">Create Profile</a>
+                <button onClick={handleLogout} className="logout-button">
+                  Data Reset
+                </button>
               </div>
-            ) : (
-              <span className="login-prompt-header">Login to engage</span>
             )}
           </header>
 
@@ -1158,29 +1154,30 @@ export default function HomePage() {
               </div>
             </div>
 
-            {!hasPurchasedDownload && (!isLoggedIn || (isLoggedIn && !globalSafewordVerified)) && (
+            {!hasPurchasedDownload && (!user || (user && !globalSafewordVerified)) && (
               <div className="my-4 w-full max-w-md mx-auto">
                 <button
                   onClick={() => {
-                    if (!isLoggedIn) {
+                    if (!user) {
                       setShakeActive(true);
                       setTimeout(() => setShakeActive(false), 500);
-                      emailInputRef.current?.focus();
+                      const commandInput = document.querySelector<HTMLInputElement>('input[placeholder="Enter your email address to continue"]');
+                      commandInput?.focus();
                     } else {
                       handleDollarPurchase();
                     }
                   }}
-                  disabled={isLoading && isLoggedIn}
+                  disabled={isLoading && !!user}
                   className={`w-full font-bold py-3 px-6 rounded-lg text-lg shadow-md transition duration-150 ease-in-out transform hover:scale-105 
-                    ${!isLoggedIn ? 'bg-blue-600 hover:bg-blue-700' : 'bg-green-500 hover:bg-green-600'} text-white`}
+                    ${!user ? 'bg-blue-600 hover:bg-blue-700' : 'bg-green-500 hover:bg-green-600'} text-white`}
                 >
-                  {isLoading && isLoggedIn ? 'Processing...' : 
-                    !isLoggedIn ? '$1.00 INCLUDES PERMANENT ACCESS (SIGN IN TO SELECT)' : `GET DOWNLOAD ($${(1).toFixed(2)})`}
+                  {isLoading && !!user ? 'Processing...' : 
+                    !user ? '$1.00 INCLUDES PERMANENT ACCESS (SIGN IN TO SELECT)' : `GET DOWNLOAD ($${(1).toFixed(2)})`}
                 </button>
               </div>
             )}
 
-            {isLoggedIn && globalSafewordVerified && !purchaseConfirmationData && artistConfig && (
+            {user && globalSafewordVerified && !purchaseConfirmationData && artistConfig && (
               <div className="purchase-slider-section mock-ui-section p-4 md:p-6 bg-gray-800 bg-opacity-70 shadow-xl rounded-lg border border-gray-700 backdrop-blur-md mb-8 max-w-2xl mx-auto">
                 <h3 className="text-xl font-semibold mb-3 text-center text-white">Purchase Options</h3>
                 
@@ -1315,7 +1312,7 @@ export default function HomePage() {
             )}
 
             <div className="action-section text-center mb-4">
-              {!isLoggedIn && (
+              {!user && (
                 <div id="login-prompts-container" className="login-prompts mt-6">
                   <h3 id="accessHeadline" className="access-headline">
                     Sign in to purchase {artistTokenName}
@@ -1332,7 +1329,7 @@ export default function HomePage() {
                 </div>
               )}
 
-              {isLoggedIn && showPurchaseModal && priceDetails && artistConfig && (
+              {user && showPurchaseModal && priceDetails && artistConfig && (
                 <div className="purchase-modal-overlay">
                   <div className="purchase-modal p-6 bg-gray-800 bg-opacity-80 backdrop-blur-md shadow-2xl rounded-xl border border-gray-700">
                     <h2 className="text-2xl font-bold mb-3 text-center text-white">CONFIRM PURCHASE: <span className="text-accentColor">{artistConfig.tokenName.toUpperCase()}</span></h2>
@@ -1376,7 +1373,7 @@ export default function HomePage() {
                 </div>
               )}
 
-              {isLoggedIn && purchaseConfirmationData && (
+              {user && purchaseConfirmationData && (
                 <div className="purchase-confirmation-section mock-ui-section p-6 my-6 border border-gray-700 rounded-xl bg-gray-800 bg-opacity-80 backdrop-blur-md shadow-2xl max-w-lg mx-auto">
                   <h3 className="text-3xl font-bold mb-4 text-center text-green-400 glow-text-green">PURCHASE SUCCESSFUL!</h3>
                   <div className="text-left text-gray-300 space-y-2 text-sm bg-gray-900 bg-opacity-70 p-4 rounded-lg mb-6">
@@ -1394,7 +1391,7 @@ export default function HomePage() {
                 </div>
               )}
 
-              {isLoggedIn && artistConfig && !globalSafewordVerified && showExploreButton && !purchaseConfirmationData && (
+              {user && artistConfig && !globalSafewordVerified && showExploreButton && !purchaseConfirmationData && (
                 <div className="text-center p-4 my-6 bg-yellow-500 bg-opacity-20 rounded-lg max-w-md mx-auto">
                   <p className="text-lg mb-3 text-white">
                     You do not have permanent access to this artist's content.
@@ -1410,45 +1407,44 @@ export default function HomePage() {
             </div>
 
             <div 
-              className={`unified-input-container mock-ui-section p-4 border-t-2 border-gray-700 mt-8 ${!isLoggedIn && shakeActive ? 'shake' : ''}`}
+              className={`unified-input-container mock-ui-section p-4 border-t-2 border-gray-700 mt-8 ${!user && shakeActive ? 'shake' : ''}`}
             >
-              {isLoggedIn && (
+              {user && (
                 <h3 className="text-xl font-semibold mb-3 text-center">Chat / Command</h3>
               )}
               <div className="flex items-center max-w-xl mx-auto">
                 <input
-                  ref={emailInputRef}
-                  type="text"
-                  value={safewordInput}
-                  onChange={handleSafewordInputChange}
+                  type={user ? "text" : "email"}
+                  value={user ? safewordInput : email}
+                  onChange={user ? handleSafewordInputChange : (e) => setEmail(e.target.value)}
                   placeholder={
-                    isLoggedIn 
+                    user 
                       ? "Type command, search, or safeword..." 
                       : "Enter your email address to continue"
                   }
                   className="flex-grow p-3 border border-gray-600 rounded-l-lg bg-gray-900 bg-opacity-70 text-white focus:ring-accentColor focus:border-accentColor backdrop-blur-sm"
                   onKeyDown={(e) => {
                     if (e.key === 'Enter') {
-                      if (!isLoggedIn) {
-                        handleEmailLogin();
+                      if (!user) {
+                        login();
                       } else {
                         handleSafewordSubmit();
                       }
                     }
                   }}
-                  aria-label={isLoggedIn ? "Chat or command input" : "Email address input"}
+                  aria-label={user ? "Chat or command input" : "Email address input"}
                 />
                 <button
                   onClick={() => {
-                    if (!isLoggedIn) {
-                      handleEmailLogin();
+                    if (!user) {
+                      login();
                     } else {
                       handleSafewordSubmit();
                     }
                   }}
                   className="p-3 bg-accentColor text-white rounded-r-lg hover:bg-opacity-80 focus:outline-none focus:ring-2 focus:ring-accentColor focus:ring-opacity-50"
                 >
-                  {isLoggedIn ? "Send" : "Continue"}
+                  {user ? "Send" : "Continue"}
                 </button>
               </div>
             </div>
