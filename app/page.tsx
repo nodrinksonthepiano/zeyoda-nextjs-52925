@@ -8,6 +8,7 @@ import { useWallet } from './components/MagicProvider';
 import { useToast } from './contexts/ToastContext';
 import { ethers } from "ethers";
 import erc20Abi from '../contracts/Artistock.json';
+import ArtistockArtifact from '../artifacts/contracts/Artistock.sol/Artistock.json';
 
 interface ArtistConfig {
   name: string;
@@ -82,6 +83,9 @@ export default function HomePage() {
   const [downloadIpfsHash, setDownloadIpfsHash] = useState<string | null>(null);
   const [globalSafewordVerified, setGlobalSafewordVerified] = useState(false);
   const [allPurchasedDownloads, setAllPurchasedDownloads] = useState<PurchasedDownloadInfo[]>([]);
+  const [showFullAddress, setShowFullAddress] = useState(false);
+  const [isOwner, setIsOwner] = useState(false);
+  const [isMinting, setIsMinting] = useState(false);
 
   // Ref for the video container to dynamically adjust orbit
   const videoContainerRef = useRef<HTMLDivElement>(null);
@@ -904,6 +908,59 @@ export default function HomePage() {
     }
   }
 
+  // NEW: Check for ownership to display mint button
+  useEffect(() => {
+    const checkOwnership = async () => {
+      if (user && magic && artistConfig && artistConfig.contract) {
+        const provider = new ethers.BrowserProvider(magic.rpcProvider as any);
+        const contract = new ethers.Contract(artistConfig.contract, ArtistockArtifact.abi, provider);
+        try {
+          const owner = await contract.owner();
+          setIsOwner(owner.toLowerCase() === user.toLowerCase());
+        } catch (e) {
+          console.error("Could not check contract ownership:", e);
+          setIsOwner(false);
+        }
+      } else {
+        setIsOwner(false);
+      }
+    };
+    checkOwnership();
+  }, [user, magic, artistConfig]);
+
+  const handleInitialMint = async () => {
+    if (!user || !magic || !artistConfig || !artistConfig.contract) {
+      showToast("Cannot mint: Missing user or contract details.", "error");
+      return;
+    }
+
+    setIsMinting(true);
+    try {
+      const provider = new ethers.BrowserProvider(magic.rpcProvider as any);
+      const signer = await provider.getSigner();
+      const contract = new ethers.Contract(artistConfig.contract, ArtistockArtifact.abi, signer);
+      
+      const initialSupply = ethers.parseUnits("1000000000", 18); // 1 billion tokens
+      
+      showToast("Sending mint transaction... Please confirm in the wallet popup.", "info");
+      const mintTx = await contract.mint(user, initialSupply);
+      
+      showToast("Waiting for mint confirmation...", "info");
+      await mintTx.wait();
+      
+      showToast("1 Billion tokens minted successfully!", "success");
+      
+      // Force a reload to refresh balances and UI state
+      setTimeout(() => window.location.reload(), 2000);
+
+    } catch (e: any) {
+      console.error("Initial mint failed:", e);
+      showToast(`Error: ${e.message}`, "error");
+    } finally {
+      setIsMinting(false);
+    }
+  };
+
   if (error) {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center p-8 bg-red-900 text-white">
@@ -986,25 +1043,6 @@ export default function HomePage() {
 
   return (
     <main className="flex min-h-screen flex-col items-center justify-between p-24 relative bg-primary text-white font-sans">
-      <div className="absolute top-4 right-4 z-50">
-        {user ? (
-          <p>✅ Connected {user.slice(0, 6)}…</p>
-        ) : (
-          <div className="flex gap-2">
-            <input
-              type="email"
-              value={email}
-              onChange={e => setEmail(e.target.value)}
-              placeholder="you@example.com"
-              className="border p-2 rounded text-black"
-            />
-            <button onClick={login} className="bg-blue-600 text-white px-4 py-2 rounded">
-              Login with Email
-            </button>
-          </div>
-        )}
-      </div>
-
       {artistConfig && (
         <>
           {/* Video Background */}
@@ -1023,11 +1061,32 @@ export default function HomePage() {
 
           <header className="app-header">
             <h1 className="text-2xl font-bold" style={{ fontFamily: 'var(--artist-font)' }}>{artistConfig?.displayName?.toUpperCase()}</h1>
-            {user && (
+            {user ? (
               <div className="flex items-center gap-4">
+                <div 
+                  className="text-sm cursor-pointer bg-gray-800 px-3 py-2 rounded-md hover:bg-gray-700"
+                  onClick={() => setShowFullAddress(!showFullAddress)}
+                >
+                  <p title={user}>
+                    ✅ Connected: {showFullAddress ? user : `${user.slice(0, 6)}...${user.slice(-4)}`}
+                  </p>
+                </div>
                 <a href="/create" className="logout-button">Create Profile</a>
                 <button onClick={handleLogout} className="logout-button">
                   Data Reset
+                </button>
+              </div>
+            ) : (
+              <div className="flex gap-2">
+                <input
+                  type="email"
+                  value={email}
+                  onChange={e => setEmail(e.target.value)}
+                  placeholder="you@example.com"
+                  className="border p-2 rounded text-black"
+                />
+                <button onClick={login} className="bg-blue-600 text-white px-4 py-2 rounded">
+                  Login
                 </button>
               </div>
             )}
@@ -1153,6 +1212,21 @@ export default function HomePage() {
                 </div>
               </div>
             </div>
+
+            {isOwner && (
+              <div className="owner-actions my-6 p-4 bg-yellow-900 bg-opacity-50 border border-yellow-600 rounded-lg text-center max-w-md mx-auto">
+                <h3 className="text-xl font-bold text-yellow-300">Artist Owner Control</h3>
+                <p className="text-yellow-400 my-2">You are the owner of this contract.</p>
+                <button
+                  onClick={handleInitialMint}
+                  disabled={isMinting}
+                  className="w-full font-bold py-3 px-6 rounded-lg text-lg shadow-md transition duration-150 ease-in-out transform hover:scale-105 
+                    bg-yellow-500 hover:bg-yellow-600 text-black disabled:bg-gray-500"
+                >
+                  {isMinting ? 'Minting...' : 'Mint Initial 1B Token Supply'}
+                </button>
+              </div>
+            )}
 
             {!hasPurchasedDownload && (!user || (user && !globalSafewordVerified)) && (
               <div className="my-4 w-full max-w-md mx-auto">

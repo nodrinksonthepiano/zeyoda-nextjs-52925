@@ -18,11 +18,26 @@
         "fontFamily": "Bungee, cursive"
       },
       "orbitalTokens": [
-        { "name": "OTHER ARTIST", "angle": 0 },
-        { "name": "ANOTHER ARTIST", "angle": 72 },
-        { "name": "THIRD ARTIST", "angle": 144 },
-        { "name": "FOURTH ARTIST", "angle": 216 },
-        { "name": "FIFTH ARTIST", "angle": 288 }
+        {
+          "name": "OTHER ARTIST",
+          "angle": 0
+        },
+        {
+          "name": "ANOTHER ARTIST",
+          "angle": 72
+        },
+        {
+          "name": "THIRD ARTIST",
+          "angle": 144
+        },
+        {
+          "name": "FOURTH ARTIST",
+          "angle": 216
+        },
+        {
+          "name": "FIFTH ARTIST",
+          "angle": 288
+        }
       ]
     },
     "gosheesh": {
@@ -33,7 +48,7 @@
       "artworkYear": "2025",
       "tokenPrice": 0.0005,
       "videoSrc": "/assets/1GOSHEESH copy.mp4",
-      "contract": "0xD227C8C02DD4Bac32F4CfCa47D11Db087D7A35B0",
+      "contract": "0x191840a2aeF67234a8E606741d4D1D8b3fCe0Ba3",
       "theme": {
         "primaryColor": "#1a0a3b",
         "accentColor": "#7f40ff",
@@ -43,8 +58,16 @@
         "fontFamily": "Bungee, cursive"
       },
       "orbitalTokens": [
-        { "name": "jaitea", "angle": 0, "artistId": "jaitea" },
-        { "name": "yourartistid", "angle": 72, "artistId": "yourartistid" }
+        {
+          "name": "jaitea",
+          "angle": 0,
+          "artistId": "jaitea"
+        },
+        {
+          "name": "yourartistid",
+          "angle": 72,
+          "artistId": "yourartistid"
+        }
       ]
     },
     "jaitea": {
@@ -55,7 +78,7 @@
       "artworkYear": "2025",
       "tokenPrice": 0.0005,
       "videoSrc": "/assets/2JAITEA.mp4",
-      "contract": "0xDCB9524FfE1Df3eB77aeE17251Ff9b4b90F0ebD3",
+      "contract": "0xD20f10F62ba564dA8D541231069E0EA114Df0114",
       "theme": {
         "primaryColor": "#3b0a1a",
         "accentColor": "#ff4073",
@@ -65,9 +88,17 @@
         "fontFamily": "Bungee, cursive"
       },
       "orbitalTokens": [
-        { "name": "gosheesh", "angle": 0, "artistId": "gosheesh" },
-        { "name": "yourartistid", "angle": 180, "artistId": "yourartistid" }
+        {
+          "name": "gosheesh",
+          "angle": 0,
+          "artistId": "gosheesh"
+        },
+        {
+          "name": "yourartistid",
+          "angle": 180,
+          "artistId": "yourartistid"
+        }
       ]
     }
   }
-} 
+}

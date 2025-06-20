@@ -43,6 +43,15 @@ export default function CreateProfilePage() {
       const contractAddress = await contract.getAddress();
       console.log("Contract deployed successfully at:", contractAddress);
 
+      // Create a new Contract instance with the ABI to get correct typings for the mint function
+      const artistock = new ethers.Contract(contractAddress, ArtistockArtifact.abi, signer);
+
+      console.log(`Minting initial supply of 1,000,000,000 ${tokenSymbol} to ${ownerAddress}...`);
+      const initialSupply = ethers.parseUnits("1000000000", 18); // 1 billion tokens
+      const mintTx = await artistock.mint(ownerAddress, initialSupply);
+      await mintTx.wait(); // Wait for the minting transaction to be confirmed
+      console.log("Initial supply minted successfully. Tx:", mintTx.hash);
+
       // 1. Create the full artist config object.
       const artistId = tokenSymbol.toLowerCase();
       const newProfile = {
