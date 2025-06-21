@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { ethers } from 'ethers';
 import { useWallet } from '../components/MagicProvider'; // Adjust path if needed
 import ArtistockArtifact from '../../artifacts/contracts/Artistock.sol/Artistock.json';
+import { supabase } from '../utils/supabaseClient';
 
 export default function CreateProfilePage() {
   const { provider } = useWallet();
@@ -56,41 +57,34 @@ export default function CreateProfilePage() {
       const artistId = tokenSymbol.toLowerCase();
       const newProfile = {
         id: artistId,
-        config: {
-          name: tokenName,
-          displayName: artistName,
-          tokenName: tokenName,
-          artworkTitle: artworkTitle,
-          artworkYear: new Date().getFullYear().toString(),
-          tokenPrice: 0.0005, // Default price, can be changed later
-          videoSrc: "", // Placeholder for video
-          contract: contractAddress,
-          theme: {
-            primaryColor: primaryColor,
-            accentColor: accentColor,
-            gradientStart: "#d4af37", // Default gradient
-            gradientMiddle: "#f9f295",
-            gradientEnd: "#d4af37",
-            fontFamily: "Bungee, cursive"
-          },
-          orbitalTokens: [] // Starts with no orbital tokens
-        }
+        name: tokenName,
+        displayName: artistName,
+        tokenName: tokenName,
+        artworkTitle: artworkTitle,
+        artworkYear: new Date().getFullYear().toString(),
+        tokenPrice: 0.0005,
+        videoSrc: "",
+        contract: contractAddress,
+        theme: {
+          primaryColor: primaryColor,
+          accentColor: accentColor,
+          gradientStart: "#d4af37",
+          gradientMiddle: "#f9f295",
+          gradientEnd: "#d4af37",
+          fontFamily: "Bungee, cursive"
+        },
+        orbitalTokens: []
       };
 
-      // 2. POST this data to our API endpoint.
-      const response = await fetch('/api/profiles', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(newProfile),
-      });
+      // 2. Insert this data into our Supabase table.
+      const { error: insertError } = await supabase
+        .from('artists')
+        .insert([newProfile]);
 
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.message || 'Failed to save profile.');
+      if (insertError) {
+        throw new Error(`Failed to save profile to Supabase: ${insertError.message}`);
       }
-
+      
       alert(`Profile for ${artistName} created and saved successfully!`);
       
       // Redirect to the new artist's page

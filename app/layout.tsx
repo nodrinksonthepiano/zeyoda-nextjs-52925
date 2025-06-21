@@ -34,6 +34,7 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body
+        suppressHydrationWarning={true}
         className={`${geistSans.variable} ${geistMono.variable} ${bungee.variable} antialiased`}
       >
         <MagicProvider>
