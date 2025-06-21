@@ -9,6 +9,16 @@ import { useToast } from './contexts/ToastContext';
 import { ethers } from "ethers";
 import ArtistockArtifact from '../artifacts/contracts/Artistock.sol/Artistock.json';
 import { useArtistConfig } from "./hooks/useArtistConfig";
+import OwnerControls from "./components/OwnerControls";
+import ArtistVideo from "./components/ArtistVideo";
+import ThemeOrbitRenderer from "./components/ThemeOrbitRenderer";
+import PurchaseFlow from "./components/PurchaseFlow";
+import {
+  ArtistConfig,
+  RenderableToken,
+  UserTokenBalances,
+  PurchasedDownloadInfo
+} from '../types/artist-types';
 
 interface OrbitalToken {
   name: string; 
@@ -16,53 +26,11 @@ interface OrbitalToken {
   artistId?: string;
 }
 
-interface RenderableToken extends OrbitalToken {
-  x?: number;
-  y?: number;
-  z?: number;
-  opacity?: number;
-  scale?: number;
-  blur?: number;
-  isVisible?: boolean;
-  element?: HTMLElement | null;
-}
-
-interface ArtistConfig {
-  name: string;
-  displayName: string;
-  tokenName: string;
-  artworkTitle: string;
-  artworkYear: string;
-  tokenPrice: number;
-  videoSrc: string;
-  contract?: string;
-  theme: {
-    primaryColor: string;
-    accentColor: string;
-    gradientStart: string;
-    gradientMiddle: string;
-    gradientEnd: string;
-    fontFamily: string;
-  };
-  orbitalTokens: OrbitalToken[];
-}
-
 interface PriceDetails {
   currentDisplayPrice: number;
   artistShare: number;
   platformShare: number;
   investorShare: number;
-}
-
-interface UserTokenBalances {
-  [tokenSymbol: string]: number;
-}
-
-interface PurchasedDownloadInfo {
-  artistId: string;
-  artworkTitle: string;
-  artistDisplayName: string;
-  ipfsHash: string | null;
 }
 
 const ORBIT_SPEED = 0.3;
@@ -679,29 +647,18 @@ export default function HomePage() {
     }
   };
 
-  if (isLoading || !artistConfig) {
-    return (
-      <div className="flex min-h-screen flex-col items-center justify-center p-8">
-        <div className="loading-spinner"></div>
-        <p className="ml-2">Loading ZEYODA experience for {artistIdFromUrl}...</p>
-      </div>
-    );
+  if (isLoading) {
+    return <div className="flex justify-center items-center h-screen">Loading artist profile...</div>;
   }
 
   if (error) {
-    return (
-      <div className="flex min-h-screen flex-col items-center justify-center p-8 bg-red-900 text-white">
-        <h2 className="text-2xl font-bold mb-4">Oops! Something went wrong.</h2>
-        <p className="text-lg">Error loading artist configuration:</p>
-        <p className="text-md mt-2 p-4 bg-red-800 rounded">{error}</p>
-        <p className="text-sm mt-4">Please check the artist ID in the URL or try again later.</p>
-        <button onClick={() => window.location.search = ''} className="mt-6 px-4 py-2 bg-blue-500 hover:bg-blue-700 text-white font-bold rounded">
-          Go to Default Artist
-        </button>
-      </div>
-    );
+    return <div className="flex justify-center items-center h-screen">Error: {error}</div>;
   }
-  
+
+  if (!artistConfig) {
+    return <div className="flex justify-center items-center h-screen">Artist not found.</div>;
+  }
+
   const { name: artistName, tokenName: artistTokenName, artworkTitle } = artistConfig;
 
   let buyButtonText = "LOADING...";
@@ -801,261 +758,56 @@ export default function HomePage() {
                   {artistConfig.displayName}
                 </h1>
   
-                <div ref={videoContainerRef} className="relative w-full max-w-4xl aspect-video rounded-xl shadow-2xl shadow-black/50 overflow-hidden mx-auto"
-                     onMouseEnter={() => isOrbitAnimationPaused.current = true}
-                     onMouseLeave={() => isOrbitAnimationPaused.current = false}
+                <ArtistVideo
+                  isMuted={isMuted}
+                  isVideoError={isVideoError}
+                  setIsVideoError={setIsVideoError}
+                  toggleMute={toggleMute}
+                  videoContainerRef={videoContainerRef}
                 >
-                  {artistConfig.videoSrc && !isVideoError ? (
-                    <video 
-                      id="artistVideo" 
-                      autoPlay 
-                      loop 
-                      muted={isMuted} 
-                      playsInline 
-                      key={artistConfig.videoSrc} 
-                      className="w-full h-full object-cover"
-                      onError={() => setIsVideoError(true)}
-                      onCanPlay={() => setIsVideoError(false)}
-                    >
-                      <source src={artistConfig.videoSrc} type="video/mp4" />
-                      Your browser does not support the video tag.
-                    </video>
-                  ) : (
-                    <div className="w-full h-full bg-black flex flex-col items-center justify-center text-gray-400">
-                        <div className="text-4xl">📺</div>
-                        <h3 className="mt-2 text-lg">{artistConfig.displayName}'s content preview</h3>
-                        <p className="text-sm">Video content {isVideoError ? 'could not be loaded' : 'is unavailable'}</p>
-                    </div>
-                  )}
-                  
-                  <div className="absolute top-1/2 left-1/2 w-full h-full" style={{ transform: 'translate(-50%, -50%)', pointerEvents: 'none' }}>
-                    {(([...(artistConfig?.orbitalTokens || []), ...dynamicOrbitalTokens] as RenderableToken[])
-                      .filter((token, index, self) => token.name && self.findIndex(t => t.name === token.name) === index)
-                      .map((token: RenderableToken, index: number) => {
-                        const isClickable = token.artistId && allArtistsConfig && allArtistsConfig[token.artistId];
-                        const handleTokenClick = () => {
-                            if (isClickable && token.artistId) {
-                                isOrbitAnimationPaused.current = true;
-                                setTimeout(() => {
-                                    router.push(`/?artist=${token.artistId}`);
-                                    isOrbitAnimationPaused.current = false;
-                                }, 300);
-                            }
-                        };
-                        return (
-                          <div 
-                            key={token.artistId ? `orbit-${token.artistId}` : `orbit-token-${index}`}
-                            ref={(el: HTMLDivElement | null) => {
-                              tokenElementRefs.current[index] = el;
-                            }}
-                            className={`absolute top-1/2 left-1/2 p-2 text-xs rounded-full shadow-lg bg-black bg-opacity-50 backdrop-blur-sm text-white font-bold ${isClickable ? 'cursor-pointer hover:bg-opacity-75' : 'cursor-default'}`}
-                            style={{
-                              willChange: 'transform, opacity',
-                              opacity: 0,
-                              pointerEvents: 'auto'
-                            }}
-                            onClick={handleTokenClick}
-                            onMouseEnter={(e) => e.currentTarget.setAttribute('data-hovered', 'true')}
-                            onMouseLeave={(e) => e.currentTarget.setAttribute('data-hovered', 'false')}
-                            title={isClickable && token.artistId ? `Explore ${allArtistsConfig?.[token.artistId]?.displayName || token.name}` : token.name}
-                          >
-                            {token.name}
-                          </div>
-                        );
-                     }))
-                    }
-                  </div>
-  
-                  <div className="absolute bottom-2 right-2 flex space-x-2">
-                      <button className="p-2 rounded-full bg-black bg-opacity-50 hover:bg-opacity-75" aria-label={isMuted ? "Unmute" : "Mute"} onClick={toggleMute}>
-                       {isMuted ? '🔇' : '🔊'}
-                     </button>
-                  </div>
-                </div>
+                  <ThemeOrbitRenderer
+                    artistConfig={artistConfig}
+                    dynamicOrbitalTokens={dynamicOrbitalTokens}
+                    videoContainerRef={videoContainerRef}
+                    isOrbitAnimationPaused={isOrbitAnimationPaused}
+                    allArtistsConfig={allArtistsConfig}
+                  />
+                </ArtistVideo>
               </>
           </div>
 
           {isOwner && (
-            <div className="bg-gray-800 bg-opacity-80 p-4 rounded-lg mt-4 w-full max-w-sm mx-auto text-white">
-              <h3 className="text-lg font-bold text-center mb-3">Owner Controls</h3>
-              <div className="flex flex-col space-y-2">
-                  <label htmlFor="mintAmount" className="text-sm font-medium">Amount to Mint</label>
-                  <input
-                      id="mintAmount"
-                      type="number"
-                      value={mintAmount}
-                      onChange={(e) => setMintAmount(e.target.value)}
-                      placeholder="e.g., 1000000"
-                      className="px-3 py-2 text-gray-300 bg-gray-700 border border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-accentColor"
-                      disabled={isMinting}
-                  />
-                  <button
-                      onClick={handleInitialMint}
-                      disabled={isMinting || !mintAmount}
-                      className="w-full px-4 py-2 font-bold text-white bg-green-600 rounded-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 disabled:bg-gray-500 disabled:cursor-not-allowed"
-                  >
-                      {isMinting ? 'Minting...' : 'Mint New Tokens'}
-                  </button>
-              </div>
-            </div>
+            <OwnerControls
+              isMinting={isMinting}
+              mintAmount={mintAmount}
+              setMintAmount={setMintAmount}
+              handleInitialMint={handleInitialMint}
+            />
           )}
 
-          {!hasPurchasedDownload && (!user || (user && !globalSafewordVerified)) && (
-            <div className="my-4 w-full max-w-md mx-auto">
-              <button
-                onClick={() => {
-                  if (!user) {
-                    setShakeActive(true);
-                    setTimeout(() => setShakeActive(false), 500);
-                    const commandInput = document.querySelector<HTMLInputElement>('input[placeholder="Enter your email address to continue"]');
-                    commandInput?.focus();
-                  } else {
-                    handleDollarPurchase();
-                  }
-                }}
-                disabled={isActionLoading && !!user}
-                className={`w-full font-bold py-3 px-6 rounded-lg text-lg shadow-md transition duration-150 ease-in-out transform hover:scale-105 
-                  ${!user ? 'bg-blue-600 hover:bg-blue-700' : 'bg-green-500 hover:bg-green-600'} text-white`}
-              >
-                {isActionLoading && !!user ? 'Processing...' : 
-                  !user ? '$1.00 INCLUDES PERMANENT ACCESS (SIGN IN TO SELECT)' : `GET DOWNLOAD ($${(1).toFixed(2)})`}
-              </button>
-            </div>
-          )}
-
-          {user && globalSafewordVerified && !purchaseConfirmationData && (
-            <div className="purchase-slider-section mock-ui-section p-4 md:p-6 bg-gray-800 bg-opacity-70 shadow-xl rounded-lg border border-gray-700 backdrop-blur-md mb-8 max-w-2xl mx-auto">
-              <h3 className="text-xl font-semibold mb-3 text-center text-white">Purchase Options</h3>
-              
-              <div className="mb-4">
-                <label className="block text-sm font-medium text-gray-300 mb-1">FROM</label>
-                <div className="flex items-center space-x-2">
-                  <select 
-                    id="fromAsset"
-                    value={swapFromAsset} 
-                    onChange={(e) => {
-                      setSwapFromAsset(e.target.value);
-                    }}
-                    className="w-2/5 p-2 border border-gray-600 rounded-md bg-gray-700 text-white focus:ring-accentColor focus:border-accentColor"
-                  >
-                    <option value="USD">USD (Cash)</option>
-                    {allArtistsConfig && (
-                      unlockedArtistStates[artistIdFromUrl] ? (
-                        Object.entries(allArtistsConfig).map(([id, artist]) => {
-                          const isOwned = userTokenBalances[artist.tokenName] && userTokenBalances[artist.tokenName] > 0;
-                          if (isOwned || id === artistIdFromUrl) {
-                            return <option key={artist.tokenName} value={artist.tokenName}>{artist.tokenName}</option>;
-                          }
-                          return null;
-                        })
-                      ) : (
-                        (userTokenBalances[artistConfig.tokenName] && userTokenBalances[artistConfig.tokenName] > 0 || artistIdFromUrl === artistConfig.name.toLowerCase()) && (
-                           <option key={artistConfig.tokenName} value={artistConfig.tokenName}>{artistConfig.tokenName}</option>
-                        )
-                      )
-                    )}
-                  </select>
-                  <input
-                    type="number"
-                    value={swapFromAmount}
-                    onChange={handleSwapFromAmountChange}
-                    placeholder="0.00"
-                    className="w-3/5 p-2 border border-gray-600 rounded-md bg-gray-700 text-white focus:ring-accentColor focus:border-accentColor"
-                    aria-label="Amount of asset to swap from"
-                  />
-                </div>
-              </div>
-
-              {swapFromAsset === "USD" && (
-                <div className="mb-6">
-                  <label htmlFor="usdSlider" className="block text-sm font-medium text-gray-300 mb-1">
-                    Adjust USD Amount (Slider)
-                  </label>
-                  <input
-                    type="range"
-                    id="usdSlider"
-                    min="0"
-                    max="500"
-                    step="1"
-                    value={swapFromAmount || '0'}
-                    onChange={handleSliderChange}
-                    className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-accentColor"
-                  />
-                  <div className="text-xs text-gray-400 mt-1 text-center">
-                    Current: ${parseFloat(swapFromAmount || '0').toFixed(2)}
-                  </div>
-                </div>
-              )}
-
-              <div className="mb-4">
-                <label className="block text-sm font-medium text-gray-300 mb-1">TO</label>
-                <div className="flex items-center space-x-2">
-                  <span className="px-3 py-2 bg-gray-700 text-white rounded-md text-sm">{artistConfig.tokenName}</span>
-                  <input
-                    type="number"
-                    value={artistocksInput}
-                    onChange={handleArtistocksInputChange}
-                    min="0"
-                    step="1"
-                    placeholder="0"
-                    className="w-full p-2 border border-gray-600 rounded-md bg-gray-700 text-white focus:ring-accentColor focus:border-accentColor"
-                    aria-label={`Amount in ${artistConfig.tokenName}`}
-                  />
-                </div>
-                {artistConfig.tokenPrice > 0 && purchaseAmountDollars > 0 && (
-                  <p className="text-xs text-gray-400 mt-1">
-                    (Current Price: ${artistConfig.tokenPrice.toFixed(4)} per {artistConfig.tokenName})
-                  </p>
-                )}
-              </div>
-              
-              <div className="mb-6 flex items-center">
-                {hasPurchasedDownload ? (
-                  <>
-                    <input 
-                      type="checkbox" 
-                      id="downloadOwned" 
-                      checked 
-                      disabled 
-                      className="h-4 w-4 text-green-600 border-gray-500 rounded focus:ring-green-500 bg-gray-700 cursor-not-allowed"
-                    />
-                    <label 
-                      htmlFor="downloadOwned" 
-                      className="ml-2 text-sm font-medium text-green-400"
-                    >
-                      Featured Download (Already Owned)
-                    </label>
-                  </>
-                ) : (
-                  <>
-                    <input
-                      type="checkbox"
-                      id="includeDownload"
-                      name="includeDownload"
-                      checked={includeDownload}
-                      onChange={handleIncludeDownloadChange}
-                      className="h-4 w-4 text-accentColor border-gray-500 rounded focus:ring-accentColor bg-gray-700"
-                    />
-                    <label 
-                      htmlFor="includeDownload" 
-                      className="ml-2 text-sm font-medium text-gray-300"
-                    >
-                      Include Featured Download ($1.00)
-                    </label>
-                  </>
-                )}
-              </div>
-              
-              <button
-                onClick={buyButtonAction}
-                disabled={buyButtonDisabled}
-                className={`w-full font-bold py-3 px-6 rounded-lg text-lg shadow-md transition duration-150 ease-in-out transform hover:scale-105
-                  ${buyButtonDisabled ? 'bg-gray-600 cursor-not-allowed' : 'custom-buy-button bg-green-500 hover:bg-green-600'} text-white`}
-              >
-                {buyButtonText}
-              </button>
-            </div>
-          )}
+          <PurchaseFlow
+            user={user}
+            artistConfig={artistConfig}
+            allArtistsConfig={allArtistsConfig}
+            isActionLoading={isActionLoading}
+            hasPurchasedDownload={hasPurchasedDownload}
+            globalSafewordVerified={globalSafewordVerified}
+            purchaseConfirmationData={purchaseConfirmationData}
+            swapFromAsset={swapFromAsset}
+            setSwapFromAsset={setSwapFromAsset}
+            unlockedArtistStates={unlockedArtistStates}
+            userTokenBalances={userTokenBalances}
+            swapFromAmount={swapFromAmount}
+            handleSwapFromAmountChange={handleSwapFromAmountChange}
+            artistocksInput={artistocksInput}
+            handleArtistocksInputChange={handleArtistocksInputChange}
+            includeDownload={includeDownload}
+            handleIncludeDownloadChange={handleIncludeDownloadChange}
+            totalPurchasePrice={totalPurchasePrice}
+            handlePreviewSwap={handlePreviewSwap}
+            handleDollarPurchase={handleDollarPurchase}
+            setShakeActive={setShakeActive}
+          />
 
           <div className="action-section text-center mb-4">
             {!user && (
