@@ -67,6 +67,7 @@ export function useArtistConfig(artistId: string): UseArtistConfigReturn {
         const currentArtistConfig = artistsData[artistId];
 
         if (currentArtistConfig) {
+          console.log(`[useArtistConfig DEBUG] Found config for '${artistId}'. Video src: '${currentArtistConfig.videoSrc}'`);
           setArtistConfig(currentArtistConfig);
         } else {
           throw new Error(`Artist '${artistId}' not found in the database.`);

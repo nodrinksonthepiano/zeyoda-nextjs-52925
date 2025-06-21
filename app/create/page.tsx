@@ -8,11 +8,12 @@ import ArtistockArtifact from '../../artifacts/contracts/Artistock.sol/Artistock
 import { supabase } from '../utils/supabaseClient';
 
 export default function CreateProfilePage() {
-  const { provider } = useWallet();
+  const { magic, provider: walletProvider } = useWallet(); // Renamed to avoid confusion
   const [artistName, setArtistName] = useState('');
   const [tokenName, setTokenName] = useState('');
   const [tokenSymbol, setTokenSymbol] = useState('');
   const [artworkTitle, setArtworkTitle] = useState('');
+  const [videoSrc, setVideoSrc] = useState('');
   const [primaryColor, setPrimaryColor] = useState('#1a0a3b');
   const [accentColor, setAccentColor] = useState('#7f40ff');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -22,7 +23,7 @@ export default function CreateProfilePage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!provider) {
+    if (!magic) { // Check for the magic instance instead
       setError("Wallet not connected. Please go back and log in.");
       return;
     }
@@ -30,6 +31,8 @@ export default function CreateProfilePage() {
     setError(null);
 
     try {
+      const provider = magic.rpcProvider;
+      
       const browserProvider = new ethers.BrowserProvider(provider as any);
       const signer = await browserProvider.getSigner();
       const ownerAddress = await signer.getAddress();
@@ -63,7 +66,7 @@ export default function CreateProfilePage() {
         artworkTitle: artworkTitle,
         artworkYear: new Date().getFullYear().toString(),
         tokenPrice: 0.0005,
-        videoSrc: "",
+        videoSrc: videoSrc,
         contract: contractAddress,
         theme: {
           primaryColor: primaryColor,
@@ -156,6 +159,20 @@ export default function CreateProfilePage() {
             />
           </div>
           
+          <div>
+            <label htmlFor="videoSrc" className="block text-sm font-medium text-gray-300">Video Path</label>
+            <input
+              id="videoSrc"
+              type="text"
+              value={videoSrc}
+              onChange={(e) => setVideoSrc(e.target.value)}
+              required
+              className="w-full px-3 py-2 mt-1 text-gray-300 bg-gray-700 border border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-accentColor"
+              placeholder="e.g., /1GOSHEESH.mp4"
+            />
+            <p className="text-xs text-gray-400 mt-1">Make sure the video file is in the /public folder.</p>
+          </div>
+
           <div className="flex space-x-4">
             <div className="w-1/2">
               <label htmlFor="primaryColor" className="block text-sm font-medium text-gray-300">Primary Color</label>
