@@ -101,11 +101,8 @@ const Wallet: React.FC<WalletProps> = ({
   const combinedBalances = { ...userTokenBalances, ...realTimeBalances };
 
   if (!showAssetsPanel) {
-    console.log("🚫 Wallet not showing because showAssetsPanel is:", showAssetsPanel);
     return null;
   }
-
-  console.log("✅ Wallet should be visible! showAssetsPanel:", showAssetsPanel);
 
   // Get artists with assets
   const artistsWithAssets = allArtistsConfig ? Object.entries(allArtistsConfig).filter(([id, config]) => {
@@ -115,85 +112,91 @@ const Wallet: React.FC<WalletProps> = ({
   }) : [];
 
   return (
-    <div className="fixed top-0 left-0 w-80 h-full bg-gray-900 shadow-xl z-40 overflow-y-auto">
-      {/* Header */}
-      <div className="flex justify-between items-center p-4 bg-gradient-to-r from-blue-600 to-purple-600 text-white">
-        <h2 className="text-lg font-bold">Your Assets</h2>
-        <button 
-          onClick={onClose}
-          className="p-1 hover:bg-white hover:bg-opacity-20 rounded transition-colors text-xl"
-        >
-          ✕
-        </button>
-      </div>
+    <>
+      {/* Bubble Popup - NO BACKDROP */}
+      <div className="fixed top-16 left-4 w-80 max-h-96 bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900 rounded-2xl shadow-2xl border border-purple-500 z-[9999] overflow-hidden">
+        {/* Header */}
+        <div className="flex justify-between items-center p-4 bg-gradient-to-r from-purple-600 to-blue-600 text-white">
+          <h2 className="text-lg font-bold">💰 Your Assets</h2>
+          <button 
+            onClick={onClose}
+            className="p-1 hover:bg-white hover:bg-opacity-20 rounded transition-colors text-xl"
+          >
+            ✕
+          </button>
+        </div>
 
-      {/* Content */}
-      <div className="p-4">
-        {isLoading ? (
-          <div className="text-center text-gray-400 py-8">
-            <div className="animate-spin w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full mx-auto mb-2"></div>
-            <p className="text-sm">Loading balances...</p>
-          </div>
-        ) : artistsWithAssets.length === 0 ? (
-          <div className="text-center text-gray-400 py-6">
-            <div className="text-3xl mb-2">🎨</div>
-            <p className="text-sm">No assets yet.</p>
-            <p className="text-xs text-gray-500">Start collecting artistocks!</p>
-          </div>
-        ) : (
-          artistsWithAssets.map(([artistId, config]) => {
-            const tokenBalance = combinedBalances[config.tokenName] || 0;
-            const downloads = allPurchasedDownloads.filter(d => d.artistId === artistId);
-            
-            return (
-              <div key={artistId} className="mb-4 bg-gray-800 rounded-lg p-3 border border-gray-700">
-                <h3 className="text-md font-bold text-white mb-2" style={{ color: config.theme.accentColor }}>
-                  {config.displayName}
-                </h3>
-                
-                {/* Token Balance */}
-                {tokenBalance > 0 && (
-                  <div className="flex items-center justify-between mb-2 bg-gray-700 rounded p-2">
-                    <div className="flex items-center">
-                      <span className="text-xl mr-2">⚡</span>
-                      <div>
-                        <div className="text-white font-medium text-sm">
-                          {tokenBalance.toLocaleString()} {config.tokenName}
+        {/* Content */}
+        <div className="p-4 max-h-80 overflow-y-auto">
+          {isLoading ? (
+            <div className="text-center text-gray-300 py-8">
+              <div className="animate-spin w-6 h-6 border-2 border-purple-500 border-t-transparent rounded-full mx-auto mb-2"></div>
+              <p className="text-sm">Loading balances...</p>
+            </div>
+          ) : artistsWithAssets.length === 0 ? (
+            <div className="text-center text-gray-300 py-6">
+              <div className="text-3xl mb-2">🎨</div>
+              <p className="text-sm">No assets yet.</p>
+              <p className="text-xs text-gray-400">Start collecting artistocks!</p>
+            </div>
+          ) : (
+            artistsWithAssets.map(([artistId, config]) => {
+              const tokenBalance = combinedBalances[config.tokenName] || 0;
+              const downloads = allPurchasedDownloads.filter(d => d.artistId === artistId);
+              
+              return (
+                <div key={artistId} className="mb-3 bg-black bg-opacity-30 rounded-lg p-3 border border-purple-400 border-opacity-50">
+                  <h3 className="text-md font-bold text-white mb-2" style={{ color: config.theme.accentColor }}>
+                    {config.displayName}
+                  </h3>
+                  
+                  {/* Token Balance */}
+                  {tokenBalance > 0 && (
+                    <div className="flex items-center justify-between mb-2 bg-purple-900 bg-opacity-50 rounded p-2">
+                      <div className="flex items-center">
+                        <span className="text-xl mr-2">⚡</span>
+                        <div>
+                          <div className="text-white font-medium text-sm">
+                            {tokenBalance.toLocaleString()} {config.tokenName}
+                          </div>
+                          <div className="text-purple-300 text-xs">Artistocks</div>
                         </div>
-                        <div className="text-gray-400 text-xs">Artistocks</div>
                       </div>
                     </div>
-                  </div>
-                )}
-                
-                {/* Downloads */}
-                {downloads.map((download, index) => (
-                  <div key={index} className="flex items-center justify-between bg-gray-700 rounded p-2 mt-2">
-                    <div className="flex items-center">
-                      <span className="text-xl mr-2">🎵</span>
-                      <div>
-                        <div className="text-white font-medium text-sm">{download.artworkTitle} #{index + 1}</div>
-                        <div className="text-gray-400 text-xs">Download</div>
+                  )}
+                  
+                  {/* Downloads */}
+                  {downloads.map((download, index) => (
+                    <div key={index} className="flex items-center justify-between bg-purple-900 bg-opacity-50 rounded p-2 mt-2">
+                      <div className="flex items-center">
+                        <span className="text-xl mr-2">🎵</span>
+                        <div>
+                          <div className="text-white font-medium text-sm">{download.artworkTitle} #{index + 1}</div>
+                          <div className="text-purple-300 text-xs">Download</div>
+                        </div>
                       </div>
+                      {download.ipfsHash && (
+                        <a 
+                          href={`https://ipfs.io/ipfs/${download.ipfsHash}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-purple-300 hover:text-purple-200 text-xs font-medium px-2 py-1 bg-purple-800 bg-opacity-50 rounded"
+                        >
+                          Download
+                        </a>
+                      )}
                     </div>
-                    {download.ipfsHash && (
-                      <a 
-                        href={`https://ipfs.io/ipfs/${download.ipfsHash}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-blue-400 hover:text-blue-300 text-xs font-medium px-2 py-1 bg-blue-900 bg-opacity-50 rounded"
-                      >
-                        Download
-                      </a>
-                    )}
-                  </div>
-                ))}
-              </div>
-            );
-          })
-        )}
+                  ))}
+                </div>
+              );
+            })
+          )}
+        </div>
+        
+        {/* Bubble pointer/arrow */}
+        <div className="absolute -top-2 left-8 w-4 h-4 bg-gradient-to-br from-purple-600 to-blue-600 transform rotate-45 border-l border-t border-purple-500"></div>
       </div>
-    </div>
+    </>
   );
 };
 

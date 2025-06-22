@@ -716,7 +716,7 @@ export default function HomePage() {
   if (showPurchaseModal) buyButtonDisabled = true;
 
   return (
-    <div className={`flex min-h-screen flex-col items-center justify-between p-24 relative bg-primary text-white font-sans transition-all duration-300 ${showAssetsPanel ? 'ml-80' : ''}`}>
+    <div className="flex min-h-screen flex-col items-center justify-between p-24 relative bg-primary text-white font-sans">
         <div id="particles" className="cosmic-particles"></div>
 
         {user && (
@@ -731,8 +731,6 @@ export default function HomePage() {
             magic={magic}
           />
         )}
-
-
 
         <header className="app-header">
           <h1 className="text-2xl font-bold">{artistConfig?.displayName?.toUpperCase()}</h1>
@@ -968,15 +966,12 @@ export default function HomePage() {
         {user && (
           <button
             onClick={(e) => {
-              console.log("🔘 Wallet button clicked!", { showAssetsPanel, user });
               e.preventDefault();
               e.stopPropagation();
               setShowAssetsPanel(!showAssetsPanel);
-              console.log("🔘 Setting showAssetsPanel to:", !showAssetsPanel);
             }}
             className="fixed top-4 left-4 z-[9999] bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded-md text-white font-medium transition-colors shadow-lg cursor-pointer"
             type="button"
-            style={{ pointerEvents: 'auto' }}
           >
             💰 {showAssetsPanel ? 'Close' : 'Wallet'}
           </button>
