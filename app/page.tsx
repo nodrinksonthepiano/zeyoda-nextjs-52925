@@ -7,7 +7,7 @@ import dynamic from 'next/dynamic';
 import { useWallet } from './components/MagicProvider';
 import { useToast } from './contexts/ToastContext';
 import { ethers } from "ethers";
-import ArtistockArtifact from '../artifacts/contracts/Artistock.sol/Artistock.json';
+import ArtistockArtifact from '../contracts/Artistock.json';
 import { useArtistConfig } from "./hooks/useArtistConfig";
 import OwnerControls from "./components/OwnerControls";
 import ArtistVideo from "./components/ArtistVideo";

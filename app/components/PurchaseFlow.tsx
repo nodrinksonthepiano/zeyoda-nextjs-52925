@@ -50,6 +50,16 @@ const PurchaseFlow: React.FC<PurchaseFlowProps> = ({
 }) => {
     if (!artistConfig) return null;
 
+    // Calculate slider value for proper positioning
+    const sliderValue = swapFromAsset === "USD" ? parseFloat(swapFromAmount || "0") : 0;
+    const maxSliderValue = 1000; // Maximum slider range
+    const minSliderValue = 1;    // Minimum slider range
+
+    const handleSliderChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const usdString = e.target.value;
+        handleSwapFromAmountChange({ target: { value: usdString } } as React.ChangeEvent<HTMLInputElement>);
+    };
+
     return (
         <>
             {!hasPurchasedDownload && (!user || (user && !globalSafewordVerified)) && (
@@ -78,6 +88,26 @@ const PurchaseFlow: React.FC<PurchaseFlowProps> = ({
             {user && globalSafewordVerified && !purchaseConfirmationData && (
                 <div className="purchase-slider-section mock-ui-section p-4 md:p-6 bg-gray-800 bg-opacity-70 shadow-xl rounded-lg border border-gray-700 backdrop-blur-md mb-8 max-w-2xl mx-auto">
                 <h3 className="text-xl font-semibold mb-3 text-center text-white">Purchase Options</h3>
+                
+                {/* Token Amount Slider - This was missing! */}
+                {swapFromAsset === "USD" && (
+                    <div className="mb-6">
+                        <label className="block text-sm font-medium text-gray-300 mb-2">Amount Slider</label>
+                        <input
+                            type="range"
+                            min={minSliderValue}
+                            max={maxSliderValue}
+                            value={sliderValue}
+                            onChange={handleSliderChange}
+                            className="custom-token-slider w-full"
+                            step="0.01"
+                        />
+                        <div className="flex justify-between text-xs text-gray-400 mt-1">
+                            <span>${minSliderValue}</span>
+                            <span>${maxSliderValue}</span>
+                        </div>
+                    </div>
+                )}
                 
                 <div className="mb-4">
                     <label className="block text-sm font-medium text-gray-300 mb-1">FROM</label>
@@ -112,7 +142,7 @@ const PurchaseFlow: React.FC<PurchaseFlowProps> = ({
                         id="fromAmount"
                         value={swapFromAmount}
                         onChange={handleSwapFromAmountChange}
-                        className="flex-grow p-2 border border-gray-600 rounded-md bg-gray-700 text-white focus:ring-accentColor focus:border-accentColor"
+                        className="flex-grow p-2 border border-gray-600 rounded-md bg-gray-700 text-white focus:ring-accentColor focus:border-accentColor custom-token-input"
                     />
                     </div>
                 </div>
@@ -133,11 +163,18 @@ const PurchaseFlow: React.FC<PurchaseFlowProps> = ({
                             id="toAmount"
                             value={artistocksInput}
                             onChange={handleArtistocksInputChange}
-                            className="flex-grow p-2 border border-gray-600 rounded-md bg-gray-700 text-white focus:ring-accentColor focus:border-accentColor"
+                            className="flex-grow p-2 border border-gray-600 rounded-md bg-gray-700 text-white focus:ring-accentColor focus:border-accentColor custom-token-input"
                             readOnly={swapFromAsset === 'USD'}
                         />
                     </div>
                 </div>
+
+                {/* Token Price Info */}
+                {artistConfig.tokenPrice && (
+                    <p className="text-center text-sm text-gray-400 mb-4">
+                        1 {artistConfig.tokenName} = ${artistConfig.tokenPrice.toFixed(4)} USD (Minimum purchase: $1.00)
+                    </p>
+                )}
 
                 <div className="flex items-center justify-between mt-6">
                     <div className="flex items-center">
@@ -155,7 +192,7 @@ const PurchaseFlow: React.FC<PurchaseFlowProps> = ({
                 </div>
                 <button 
                     onClick={handlePreviewSwap}
-                    className="w-full mt-4 px-6 py-2 font-bold text-white bg-blue-600 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:bg-gray-500"
+                    className="w-full mt-4 px-6 py-2 font-bold text-white bg-blue-600 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:bg-gray-500 custom-buy-button"
                     disabled={isActionLoading}
                 >
                 {isActionLoading ? 'Loading...' : `Get Download (${totalPurchasePrice > 0 ? `$${totalPurchasePrice.toFixed(2)}` : ''})`}
