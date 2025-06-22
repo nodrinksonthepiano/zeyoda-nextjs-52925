@@ -1,5 +1,7 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { ArtistConfig, UserTokenBalances } from '../../types/artist-types';
+import { SwapService, SwapQuote } from '../utils/swapUtils';
+import { useWallet } from './MagicProvider';
 
 interface PurchaseFlowProps {
   user: string | null;
@@ -48,6 +50,10 @@ const PurchaseFlow: React.FC<PurchaseFlowProps> = ({
   handleDollarPurchase,
   setShakeActive
 }) => {
+    const { magic } = useWallet();
+    const [swapQuote, setSwapQuote] = useState<SwapQuote | null>(null);
+    const [isSwapping, setIsSwapping] = useState(false);
+
     if (!artistConfig) return null;
 
     // Calculate slider value for proper positioning
@@ -58,6 +64,57 @@ const PurchaseFlow: React.FC<PurchaseFlowProps> = ({
     const handleSliderChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const usdString = e.target.value;
         handleSwapFromAmountChange({ target: { value: usdString } } as React.ChangeEvent<HTMLInputElement>);
+    };
+
+    const handleRealSwap = async () => {
+        if (!magic || !artistConfig?.contract) {
+            console.error('Magic or artist contract not available');
+            return;
+        }
+
+        setIsSwapping(true);
+        try {
+            const provider = magic.rpcProvider;
+            const browserProvider = new (await import('ethers')).BrowserProvider(provider as any);
+            const signer = await browserProvider.getSigner();
+            
+            const swapService = new SwapService(signer);
+            
+            if (swapFromAsset === "USD") {
+                // Convert USD to ETH (assuming 1 USD = some ETH for demo)
+                const ethAmount = (parseFloat(swapFromAmount) * 0.0004).toString(); // Mock conversion rate
+                
+                const tx = await swapService.swapEthForTokens(
+                    artistConfig.contract,
+                    ethAmount,
+                    artistocksInput
+                );
+                
+                await tx.wait();
+                console.log('Swap successful:', tx.hash);
+            } else {
+                // Token to token swap
+                const fromTokenConfig = Object.values(allArtistsConfig || {}).find(
+                    config => config.tokenName === swapFromAsset
+                );
+                
+                if (fromTokenConfig?.contract) {
+                    const tx = await swapService.swapTokens(
+                        fromTokenConfig.contract,
+                        artistConfig.contract,
+                        swapFromAmount,
+                        artistocksInput
+                    );
+                    
+                    await tx.wait();
+                    console.log('Token swap successful:', tx.hash);
+                }
+            }
+        } catch (error) {
+            console.error('Swap failed:', error);
+        } finally {
+            setIsSwapping(false);
+        }
     };
 
     return (
@@ -191,11 +248,11 @@ const PurchaseFlow: React.FC<PurchaseFlowProps> = ({
                     </div>
                 </div>
                 <button 
-                    onClick={handlePreviewSwap}
+                    onClick={handleRealSwap}
                     className="w-full mt-4 px-6 py-2 font-bold text-white bg-blue-600 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:bg-gray-500 custom-buy-button"
-                    disabled={isActionLoading}
+                    disabled={isSwapping || isActionLoading}
                 >
-                {isActionLoading ? 'Loading...' : `Get Download (${totalPurchasePrice > 0 ? `$${totalPurchasePrice.toFixed(2)}` : ''})`}
+                {isSwapping ? 'Swapping...' : isActionLoading ? 'Loading...' : `Get Download (${totalPurchasePrice > 0 ? `$${totalPurchasePrice.toFixed(2)}` : ''})`}
                 </button>
                 </div>
             )}
