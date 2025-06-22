@@ -7,7 +7,7 @@ import dynamic from 'next/dynamic';
 import { useWallet } from './components/MagicProvider';
 import { useToast } from './contexts/ToastContext';
 import { ethers } from "ethers";
-import ArtistockArtifact from '../contracts/Artistock.json';
+import ArtistockArtifact from '../artifacts/contracts/Artistock.sol/Artistock.json';
 import { useArtistConfig } from "./hooks/useArtistConfig";
 import OwnerControls from "./components/OwnerControls";
 import ArtistVideo from "./components/ArtistVideo";
@@ -255,18 +255,30 @@ export default function HomePage() {
 
   useEffect(() => {
     const checkOwnership = async () => {
+        console.log("🔍 Checking ownership...", { user, artistConfig: artistConfig?.contract, magic: !!magic });
+        
         if (user && artistConfig && artistConfig.contract && magic) {
-            const provider = new ethers.BrowserProvider(magic.rpcProvider as any);
-            const contract = new ethers.Contract(artistConfig.contract, ArtistockArtifact.abi, provider);
             try {
+                const provider = new ethers.BrowserProvider(magic.rpcProvider as any);
+                const contract = new ethers.Contract(artistConfig.contract, ArtistockArtifact.abi, provider);
+                
                 const owner = await contract.owner();
                 const isUserOwner = owner.toLowerCase() === user.toLowerCase();
+                
+                console.log("👑 Ownership check:", {
+                    contractOwner: owner,
+                    userAddress: user,
+                    isOwner: isUserOwner,
+                    contract: artistConfig.contract
+                });
+                
                 setIsOwner(isUserOwner);
             } catch (err) {
                 console.error("[checkOwnership] Error fetching contract owner:", err);
                 setIsOwner(false);
             }
         } else {
+            console.log("❌ Ownership check failed - missing requirements");
             setIsOwner(false);
         }
     };
@@ -704,7 +716,7 @@ export default function HomePage() {
   if (showPurchaseModal) buyButtonDisabled = true;
 
   return (
-    <div className="flex min-h-screen flex-col items-center justify-between p-24 relative bg-primary text-white font-sans">
+    <div className={`flex min-h-screen flex-col items-center justify-between p-24 relative bg-primary text-white font-sans transition-all duration-300 ${showAssetsPanel ? 'ml-80' : ''}`}>
         <div id="particles" className="cosmic-particles"></div>
 
         {user && (
@@ -715,8 +727,12 @@ export default function HomePage() {
             allPurchasedDownloads={allPurchasedDownloads}
             showAssetsPanel={showAssetsPanel}
             onClose={() => setShowAssetsPanel(false)}
+            userAddress={user}
+            magic={magic}
           />
         )}
+
+
 
         <header className="app-header">
           <h1 className="text-2xl font-bold">{artistConfig?.displayName?.toUpperCase()}</h1>
@@ -947,6 +963,24 @@ export default function HomePage() {
             </div>
           </div>
         </main>
+
+        {/* Top-left wallet button - MOVED TO END TO ENSURE TOP Z-INDEX */}
+        {user && (
+          <button
+            onClick={(e) => {
+              console.log("🔘 Wallet button clicked!", { showAssetsPanel, user });
+              e.preventDefault();
+              e.stopPropagation();
+              setShowAssetsPanel(!showAssetsPanel);
+              console.log("🔘 Setting showAssetsPanel to:", !showAssetsPanel);
+            }}
+            className="fixed top-4 left-4 z-[9999] bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded-md text-white font-medium transition-colors shadow-lg cursor-pointer"
+            type="button"
+            style={{ pointerEvents: 'auto' }}
+          >
+            💰 {showAssetsPanel ? 'Close' : 'Wallet'}
+          </button>
+        )}
     </div>
   );
 }
