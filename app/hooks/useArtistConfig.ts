@@ -15,6 +15,8 @@ interface ArtistConfig {
   hasLiquidityPool?: boolean;   // NEW: LP status
   videoSrc: string;
   contract?: string;
+  swapAddress?: string;         // TreasurySwapLite contract address
+  paused?: boolean;             // Emergency pause state
   theme: {
     primaryColor: string;
     accentColor: string;
@@ -125,7 +127,15 @@ export function useArtistConfig(artistId: string): UseArtistConfigReturn {
         }
 
         const artistsData = data.reduce((acc: {[key: string]: ArtistConfig}, artist: any) => {
-            acc[artist.id] = artist;
+            // Add environment variable fallbacks for swap addresses
+            const enhancedArtist = {
+              ...artist,
+              swapAddress: artist.swapAddress || 
+                          (artist.id === 'gosheesh' ? process.env.NEXT_PUBLIC_GOSHEESH_SWAP : 
+                           artist.id === 'jaitea' ? process.env.NEXT_PUBLIC_JAITEA_SWAP : undefined),
+              paused: artist.paused ?? false
+            };
+            acc[artist.id] = enhancedArtist;
             return acc;
         }, {});
 
@@ -142,6 +152,8 @@ export function useArtistConfig(artistId: string): UseArtistConfigReturn {
           console.log(`✅ Found config for '${artistId}':`, {
             name: currentArtistConfig.name,
             contract: currentArtistConfig.contract,
+            swapAddress: currentArtistConfig.swapAddress,
+            paused: currentArtistConfig.paused,
             supabasePrice: currentArtistConfig.tokenPrice,
             realTimePrice: currentArtistConfig.realTimePrice,
             hasLP: currentArtistConfig.hasLiquidityPool,

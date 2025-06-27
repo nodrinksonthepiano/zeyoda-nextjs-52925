@@ -92,30 +92,31 @@ export class TreasurySwapLiteService {
    * Get quote for buying tokens with USD
    * Master plan example: $20 USD → ~0.007 ETH at $3000/ETH → ~7000 tokens
    */
-  async getTokenQuoteUSD(usdAmount: number, ethPriceUSD: number = 2500): Promise<TreasurySwapQuote> {
-    try {
-      // Convert USD to ETH
-      const ethAmount = usdAmount / ethPriceUSD;
-      const ethAmountWei = ethers.parseEther(ethAmount.toString());
-      
-      // Get token quote from contract
-      const tokenAmountWei = await this.contract.getTokenQuote(ethAmountWei);
-      const tokenAmount = ethers.formatUnits(tokenAmountWei, 18);
-      
-      const slippage = 0.01; // 1% slippage tolerance
-      const minimumOutput = (parseFloat(tokenAmount) * (1 - slippage)).toString();
-      
-      return {
-        inputAmount: usdAmount.toString(),
-        outputAmount: tokenAmount,
-        rate: `1 ETH = ${TreasurySwapLiteService.TOKENS_PER_ETH.toLocaleString()} tokens`,
-        minimumOutput
-      };
-    } catch (error) {
-      console.error('Error getting USD token quote:', error);
-      throw error;
-    }
-  }
+     async getTokenQuoteUSD(usdAmount: number, ethPriceUSD: number = 2500): Promise<TreasurySwapQuote> {
+     try {
+       // Convert USD to ETH with proper precision handling
+       const ethAmount = usdAmount / ethPriceUSD;
+       const ethAmountFormatted = parseFloat(ethAmount.toFixed(18)); // Limit to 18 decimals
+       const ethAmountWei = ethers.parseEther(ethAmountFormatted.toString());
+       
+       // Get token quote from contract
+       const tokenAmountWei = await this.contract.getTokenQuote(ethAmountWei);
+       const tokenAmount = ethers.formatUnits(tokenAmountWei, 18);
+       
+       const slippage = 0.01; // 1% slippage tolerance
+       const minimumOutput = (parseFloat(tokenAmount) * (1 - slippage)).toString();
+       
+       return {
+         inputAmount: usdAmount.toString(),
+         outputAmount: tokenAmount,
+         rate: `1 ETH = ${TreasurySwapLiteService.TOKENS_PER_ETH.toLocaleString()} tokens`,
+         minimumOutput
+       };
+     } catch (error) {
+       console.error('Error getting USD token quote:', error);
+       throw error;
+     }
+   }
 
   /**
    * Get quote for selling tokens for ETH
@@ -141,40 +142,41 @@ export class TreasurySwapLiteService {
     }
   }
 
-  /**
-   * Buy tokens with USD (converts to ETH internally)
-   * Master plan: handleBuyETH functionality
-   */
-  async buyTokensWithUSD(
-    usdAmount: number, 
-    ethPriceUSD: number = 2500
-  ): Promise<ethers.TransactionResponse> {
-    try {
-      // Check if paused
-      const paused = await this.isPaused();
-      if (paused) {
-        throw new Error('Treasury swap is currently paused');
-      }
+     /**
+    * Buy tokens with USD (converts to ETH internally)
+    * Master plan: handleBuyETH functionality
+    */
+   async buyTokensWithUSD(
+     usdAmount: number, 
+     ethPriceUSD: number = 2500
+   ): Promise<ethers.TransactionResponse> {
+     try {
+       // Check if paused
+       const paused = await this.isPaused();
+       if (paused) {
+         throw new Error('Treasury swap is currently paused');
+       }
 
-      // Convert USD to ETH
-      const ethAmount = usdAmount / ethPriceUSD;
-      const ethAmountWei = ethers.parseEther(ethAmount.toString());
-      
-      console.log(`💰 Buying tokens with $${usdAmount} USD (${ethAmount.toFixed(6)} ETH)`);
-      
-      // Execute swap
-      const tx = await this.contract.swapIn({ 
-        value: ethAmountWei,
-        gasLimit: 300000 // Reasonable gas limit
-      });
-      
-      console.log('Swap transaction sent:', tx.hash);
-      return tx;
-    } catch (error) {
-      console.error('Error buying tokens with USD:', error);
-      throw error;
-    }
-  }
+       // Convert USD to ETH with proper precision handling
+       const ethAmount = usdAmount / ethPriceUSD;
+       const ethAmountFormatted = parseFloat(ethAmount.toFixed(18)); // Limit to 18 decimals
+       const ethAmountWei = ethers.parseEther(ethAmountFormatted.toString());
+       
+       console.log(`💰 Buying tokens with $${usdAmount} USD (${ethAmountFormatted.toFixed(6)} ETH)`);
+       
+       // Execute swap
+       const tx = await this.contract.swapIn({ 
+         value: ethAmountWei,
+         gasLimit: 300000 // Reasonable gas limit
+       });
+       
+       console.log('Swap transaction sent:', tx.hash);
+       return tx;
+     } catch (error) {
+       console.error('Error buying tokens with USD:', error);
+       throw error;
+     }
+   }
 
   /**
    * Sell tokens for ETH

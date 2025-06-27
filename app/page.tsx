@@ -158,34 +158,65 @@ export default function HomePage() {
   }, [artistConfig, dynamicOrbitalTokens, orbitAngleOffset]);
 
   useEffect(() => {
-    // Use realTimePrice if available, fallback to tokenPrice
-    const effectivePrice = artistConfig?.realTimePrice ?? artistConfig?.tokenPrice ?? 0;
+    if (!artistConfig) return;
     
-    if (artistConfig && effectivePrice > 0) {
-      const usdValue = parseFloat(swapFromAmount || '0');
-      const calculatedTokens = Math.floor(usdValue / effectivePrice);
-      console.log("🧮 Token calculation (LIVE PRICING):", {
+    const usdValue = parseFloat(swapFromAmount || '0');
+    
+    // Check if TreasurySwapLite is active (Day-0 MVP)
+    const useTreasurySwapLite = artistConfig.swapAddress && !artistConfig.paused;
+    
+    if (useTreasurySwapLite) {
+      // Use fixed rate: 1 ETH = 1,000,000 tokens
+      // At $2500 ETH: $1 = 400 tokens
+      const ethPrice = 2500; // Rough ETH price
+      const tokensPerUSD = 1_000_000 / ethPrice; // ~400 tokens per USD
+      const calculatedTokens = Math.floor(usdValue * tokensPerUSD);
+      
+      console.log("🎯 Token calculation (Day-0 MVP):", {
         usdValue,
-        realTimePrice: artistConfig.realTimePrice,
-        fallbackPrice: artistConfig.tokenPrice,
-        effectivePrice,
+        ethPrice,
+        tokensPerUSD: tokensPerUSD.toFixed(2),
         calculatedTokens,
         artist: artistConfig.name,
-        hasLiquidityPool: artistConfig.hasLiquidityPool
+        swapAddress: artistConfig.swapAddress,
+        system: "TreasurySwapLite"
       });
+      
       setPurchaseAmountArtistocks(calculatedTokens);
       setArtistocksInput(calculatedTokens > 0 ? calculatedTokens.toString() : (usdValue === 0 ? "0" : ""));
-    } else if (artistConfig) {
-      console.log("❌ Token calculation failed:", {
-        realTimePrice: artistConfig?.realTimePrice,
-        tokenPrice: artistConfig?.tokenPrice,
-        effectivePrice,
-        swapFromAmount,
-        artist: artistConfig?.name,
-        hasLiquidityPool: artistConfig?.hasLiquidityPool
-      });
-      setPurchaseAmountArtistocks(0);
-      setArtistocksInput("0");
+      
+    } else {
+      // Use realTimePrice if available, fallback to tokenPrice (existing LP system)
+      const effectivePrice = artistConfig?.realTimePrice ?? artistConfig?.tokenPrice ?? 0;
+      
+      if (effectivePrice > 0) {
+        const calculatedTokens = Math.floor(usdValue / effectivePrice);
+        console.log("🏊 Token calculation (AMM/LP PRICING):", {
+          usdValue,
+          realTimePrice: artistConfig.realTimePrice,
+          fallbackPrice: artistConfig.tokenPrice,
+          effectivePrice,
+          calculatedTokens,
+          artist: artistConfig.name,
+          hasLiquidityPool: artistConfig.hasLiquidityPool,
+          system: "AMM/Fallback"
+        });
+        setPurchaseAmountArtistocks(calculatedTokens);
+        setArtistocksInput(calculatedTokens > 0 ? calculatedTokens.toString() : (usdValue === 0 ? "0" : ""));
+      } else {
+        console.log("❌ Token calculation failed:", {
+          realTimePrice: artistConfig?.realTimePrice,
+          tokenPrice: artistConfig?.tokenPrice,
+          effectivePrice,
+          swapFromAmount,
+          artist: artistConfig?.name,
+          hasLiquidityPool: artistConfig?.hasLiquidityPool,
+          swapAddress: artistConfig?.swapAddress,
+          paused: artistConfig?.paused
+        });
+        setPurchaseAmountArtistocks(0);
+        setArtistocksInput("0");
+      }
     }
   }, [swapFromAmount, artistConfig]);
 
