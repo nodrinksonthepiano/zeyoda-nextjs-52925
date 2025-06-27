@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { ArtistConfig, UserTokenBalances } from '../../types/artist-types';
 import { SwapService, SwapQuote } from '../utils/swapUtils';
+import { TreasurySwapLiteService, TreasurySwapQuote } from '../utils/treasurySwapUtils';
 import { useWallet } from './MagicProvider';
 
 interface PurchaseFlowProps {
@@ -75,43 +76,67 @@ const PurchaseFlow: React.FC<PurchaseFlowProps> = ({
         setIsSwapping(true);
         try {
             const provider = magic.rpcProvider;
-            const browserProvider = new (await import('ethers')).BrowserProvider(provider as any);
+            const { ethers } = await import('ethers');
+            const browserProvider = new ethers.BrowserProvider(provider as any);
             const signer = await browserProvider.getSigner();
             
-            const swapService = new SwapService(signer);
+            // Determine which swap system to use
+            const useTreasurySwapLite = artistConfig.swapAddress && !artistConfig.paused;
             
-            if (swapFromAsset === "USD") {
-                // Convert USD to ETH (assuming 1 USD = some ETH for demo)
-                const ethAmount = (parseFloat(swapFromAmount) * 0.0004).toString(); // Mock conversion rate
+            if (useTreasurySwapLite && swapFromAsset === "USD") {
+                // Use TreasurySwapLite for USD purchases (Day-0 MVP)
+                console.log('🎯 Using TreasurySwapLite for Day-0 MVP swap');
                 
-                const tx = await swapService.swapEthForTokens(
-                    artistConfig.contract,
-                    ethAmount,
-                    artistocksInput
-                );
+                const treasurySwap = new TreasurySwapLiteService(artistConfig.swapAddress!, signer);
+                const usdAmount = parseFloat(swapFromAmount);
                 
+                const tx = await treasurySwap.buyTokensWithUSD(usdAmount);
                 await tx.wait();
-                console.log('Swap successful:', tx.hash);
-            } else {
-                // Token to token swap
-                const fromTokenConfig = Object.values(allArtistsConfig || {}).find(
-                    config => config.tokenName === swapFromAsset
-                );
+                console.log('✅ TreasurySwapLite swap successful:', tx.hash);
                 
-                if (fromTokenConfig?.contract) {
-                    const tx = await swapService.swapTokens(
-                        fromTokenConfig.contract,
+            } else if (artistConfig.hasLiquidityPool) {
+                // Use existing AMM for LP-based swaps (advanced system)
+                console.log('🏊 Using AMM system for LP-based swap');
+                
+                const swapService = new SwapService(signer);
+                
+                if (swapFromAsset === "USD") {
+                    // Convert USD to ETH for AMM
+                    const ethAmount = (parseFloat(swapFromAmount) / 2500).toString(); // Rough USD→ETH
+                    
+                    const tx = await swapService.swapEthForTokens(
                         artistConfig.contract,
-                        swapFromAmount,
+                        ethAmount,
                         artistocksInput
                     );
                     
                     await tx.wait();
-                    console.log('Token swap successful:', tx.hash);
+                    console.log('✅ AMM swap successful:', tx.hash);
+                } else {
+                    // Token to token swap via AMM
+                    const fromTokenConfig = Object.values(allArtistsConfig || {}).find(
+                        config => config.tokenName === swapFromAsset
+                    );
+                    
+                    if (fromTokenConfig?.contract) {
+                        const tx = await swapService.swapTokens(
+                            fromTokenConfig.contract,
+                            artistConfig.contract,
+                            swapFromAmount,
+                            artistocksInput
+                        );
+                        
+                        await tx.wait();
+                        console.log('✅ AMM token swap successful:', tx.hash);
+                    }
                 }
+            } else {
+                throw new Error('No swap system available. Deploy TreasurySwapLite or create liquidity pool.');
             }
-        } catch (error) {
-            console.error('Swap failed:', error);
+            
+        } catch (error: any) {
+            console.error('❌ Swap failed:', error);
+            alert(`Swap failed: ${error?.message || 'Unknown error'}`);
         } finally {
             setIsSwapping(false);
         }
@@ -226,12 +251,49 @@ const PurchaseFlow: React.FC<PurchaseFlowProps> = ({
                     </div>
                 </div>
 
-                {/* Token Price Info */}
-                {artistConfig.tokenPrice && (
-                    <p className="text-center text-sm text-gray-400 mb-4">
-                        1 {artistConfig.tokenName} = ${artistConfig.tokenPrice.toFixed(4)} USD (Minimum purchase: $1.00)
-                    </p>
-                )}
+                {/* Token Price Info and Swap System Status */}
+                <div className="text-center text-sm text-gray-400 mb-4">
+                    {/* Price Information */}
+                    {(artistConfig.realTimePrice || artistConfig.tokenPrice) && (
+                        <p>
+                            1 {artistConfig.tokenName} = ${(artistConfig.realTimePrice || artistConfig.tokenPrice).toFixed(6)} USD
+                            {artistConfig.hasLiquidityPool ? (
+                                <span className="ml-2 text-green-400">● Live Price</span>
+                            ) : (
+                                <span className="ml-2 text-yellow-400">● Fallback Price</span>
+                            )}
+                        </p>
+                    )}
+                    
+                    {/* Swap System Status */}
+                    <div className="mt-2 p-2 bg-gray-700 rounded-lg">
+                        {artistConfig.swapAddress && !artistConfig.paused ? (
+                            <div>
+                                <p className="text-blue-400">🎯 Day-0 MVP Active</p>
+                                <p className="text-xs">Fixed Rate: 1 ETH = 1,000,000 tokens</p>
+                                <p className="text-xs">TreasurySwapLite deployed</p>
+                            </div>
+                        ) : artistConfig.hasLiquidityPool ? (
+                            <div>
+                                <p className="text-green-400">🏊 AMM System Active</p>
+                                <p className="text-xs">Dynamic pricing from liquidity pool</p>
+                                <p className="text-xs">Advanced swap features available</p>
+                            </div>
+                        ) : (
+                            <div>
+                                <p className="text-yellow-400">⚠️ Limited System</p>
+                                <p className="text-xs">Fallback pricing only</p>
+                                <p className="text-xs">Deploy swap contract for trading</p>
+                            </div>
+                        )}
+                        
+                        {artistConfig.paused && (
+                            <p className="text-red-400 text-xs mt-1">⏸️ Swap temporarily paused</p>
+                        )}
+                    </div>
+                    
+                    <p className="text-xs mt-2">Minimum purchase: $1.00</p>
+                </div>
 
                 <div className="flex items-center justify-between mt-6">
                     <div className="flex items-center">
@@ -252,7 +314,11 @@ const PurchaseFlow: React.FC<PurchaseFlowProps> = ({
                     className="w-full mt-4 px-6 py-2 font-bold text-white bg-blue-600 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:bg-gray-500 custom-buy-button"
                     disabled={isSwapping || isActionLoading}
                 >
-                {isSwapping ? 'Swapping...' : isActionLoading ? 'Loading...' : `Get Download (${totalPurchasePrice > 0 ? `$${totalPurchasePrice.toFixed(2)}` : ''})`}
+                {isSwapping ? 'Swapping...' : isActionLoading ? 'Loading...' : 
+                  includeDownload ? 
+                    `Get Download (${totalPurchasePrice > 0 ? `$${totalPurchasePrice.toFixed(2)}` : ''})` :
+                    `Get ${artistocksInput || '0'} ${artistConfig?.tokenName || 'Tokens'} (${totalPurchasePrice > 0 ? `$${totalPurchasePrice.toFixed(2)}` : '$0.00'})`
+                }
                 </button>
                 </div>
             )}

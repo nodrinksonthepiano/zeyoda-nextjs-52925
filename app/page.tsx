@@ -158,12 +158,32 @@ export default function HomePage() {
   }, [artistConfig, dynamicOrbitalTokens, orbitAngleOffset]);
 
   useEffect(() => {
-    if (artistConfig && artistConfig.tokenPrice > 0) {
+    // Use realTimePrice if available, fallback to tokenPrice
+    const effectivePrice = artistConfig?.realTimePrice ?? artistConfig?.tokenPrice ?? 0;
+    
+    if (artistConfig && effectivePrice > 0) {
       const usdValue = parseFloat(swapFromAmount || '0');
-      const calculatedTokens = Math.floor(usdValue / artistConfig.tokenPrice);
+      const calculatedTokens = Math.floor(usdValue / effectivePrice);
+      console.log("🧮 Token calculation (LIVE PRICING):", {
+        usdValue,
+        realTimePrice: artistConfig.realTimePrice,
+        fallbackPrice: artistConfig.tokenPrice,
+        effectivePrice,
+        calculatedTokens,
+        artist: artistConfig.name,
+        hasLiquidityPool: artistConfig.hasLiquidityPool
+      });
       setPurchaseAmountArtistocks(calculatedTokens);
       setArtistocksInput(calculatedTokens > 0 ? calculatedTokens.toString() : (usdValue === 0 ? "0" : ""));
     } else if (artistConfig) {
+      console.log("❌ Token calculation failed:", {
+        realTimePrice: artistConfig?.realTimePrice,
+        tokenPrice: artistConfig?.tokenPrice,
+        effectivePrice,
+        swapFromAmount,
+        artist: artistConfig?.name,
+        hasLiquidityPool: artistConfig?.hasLiquidityPool
+      });
       setPurchaseAmountArtistocks(0);
       setArtistocksInput("0");
     }
@@ -301,10 +321,25 @@ export default function HomePage() {
   useEffect(() => {
     const dollarValueForTokens = parseFloat(swapFromAmount || '0');
 
-    let calculatedTotal = dollarValueForTokens;
+    let calculatedTotal = 0;
+    
+    // Only add token cost if we're buying tokens
+    if (dollarValueForTokens > 0) {
+      calculatedTotal += dollarValueForTokens;
+    }
+    
+    // Only add download cost if checkbox is checked and not already purchased
     if (includeDownload && !hasPurchasedDownload) {
       calculatedTotal += 1;
     }
+    
+    console.log("💰 Price calculation:", {
+      dollarValueForTokens,
+      includeDownload,
+      hasPurchasedDownload,
+      calculatedTotal
+    });
+    
     setTotalPurchasePrice(calculatedTotal);
   }, [swapFromAmount, includeDownload, hasPurchasedDownload]);
 
@@ -465,8 +500,9 @@ export default function HomePage() {
     const validNumArtistocks = isNaN(numArtistocks) || numArtistocks < 0 ? 0 : numArtistocks;
     setPurchaseAmountArtistocks(validNumArtistocks);
 
-    if (artistConfig && artistConfig.tokenPrice > 0) {
-      const equivalentDollars = validNumArtistocks * artistConfig.tokenPrice;
+    const effectivePrice = artistConfig?.realTimePrice ?? artistConfig?.tokenPrice ?? 0;
+    if (artistConfig && effectivePrice > 0) {
+      const equivalentDollars = validNumArtistocks * effectivePrice;
       if (swapFromAsset === "USD") {
         setSwapFromAmount(equivalentDollars.toFixed(2));
       }
@@ -477,9 +513,10 @@ export default function HomePage() {
     const usdString = e.target.value;
     setSwapFromAmount(usdString);
 
-    if (artistConfig && artistConfig.tokenPrice > 0) {
+    const effectivePrice = artistConfig?.realTimePrice ?? artistConfig?.tokenPrice ?? 0;
+    if (artistConfig && effectivePrice > 0) {
       const usdValue = parseFloat(usdString || '0');
-      const calculatedTokens = Math.floor(usdValue / artistConfig.tokenPrice);
+      const calculatedTokens = Math.floor(usdValue / effectivePrice);
       setPurchaseAmountArtistocks(calculatedTokens);
       setArtistocksInput(calculatedTokens > 0 ? calculatedTokens.toString() : (usdValue === 0 ? "0" : ""));
     }
@@ -511,10 +548,11 @@ export default function HomePage() {
   }, [artistConfig]);
 
   useEffect(() => {
-    if (swapFromAsset === "USD" && swapToAsset === artistConfig?.tokenName && artistConfig && artistConfig.tokenPrice > 0) {
+    const effectivePrice = artistConfig?.realTimePrice ?? artistConfig?.tokenPrice ?? 0;
+    if (swapFromAsset === "USD" && swapToAsset === artistConfig?.tokenName && artistConfig && effectivePrice > 0) {
       const fromVal = parseFloat(swapFromAmount);
       if (!isNaN(fromVal) && fromVal > 0) {
-        setSwapToAmount((fromVal / artistConfig.tokenPrice).toFixed(8)); 
+        setSwapToAmount((fromVal / effectivePrice).toFixed(8)); 
       } else {
         setSwapToAmount("");
       }
@@ -778,6 +816,7 @@ export default function HomePage() {
                   setIsVideoError={setIsVideoError}
                   toggleMute={toggleMute}
                   videoContainerRef={videoContainerRef}
+                  videoSrc={artistConfig.videoSrc ? `/${artistConfig.videoSrc}` : "/assets/GOSHEESH.mp4"}
                 >
                   <ThemeOrbitRenderer
                     artistConfig={artistConfig}

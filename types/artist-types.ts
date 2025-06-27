@@ -22,8 +22,12 @@ export interface ArtistConfig {
   artworkTitle: string;
   artworkYear: string;
   tokenPrice: number;
+  realTimePrice?: number;
+  hasLiquidityPool?: boolean;
   videoSrc: string;
   contract?: string;
+  swapAddress?: string;        // TreasurySwapLite contract address
+  paused?: boolean;           // Emergency pause state
   theme: {
     primaryColor: string;
     accentColor: string;

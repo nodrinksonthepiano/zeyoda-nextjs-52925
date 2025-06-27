@@ -1,0 +1,18 @@
+{
+  "timestamp": "2025-06-27T02:31:05.799Z",
+  "network": "baseSepolia",
+  "deployer": "0x615258a5263DBEe0DDEED3166ddC1f442D937eB3",
+  "contracts": {
+    "gosheesh": "0x63349f5190860b4E954639eeFd60b92bE9A01148",
+    "jaitea": "0xd01cFF08a9962e67914a3A3e446D90513915db6f"
+  },
+  "existingTokens": {
+    "GOSHEESH": "0x91EA826b3ff30272fDe475db012D7304dd6Dac1a",
+    "JAITEA": "0xDb2D5F722C0AF730a0fd737650f865ED296D79c1"
+  },
+  "artistWallets": {
+    "gosheesh": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+    "jaitea": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC"
+  },
+  "fixedRate": "1 ETH = 1,000,000 tokens"
+}

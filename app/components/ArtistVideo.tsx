@@ -6,6 +6,7 @@ interface ArtistVideoProps {
   setIsVideoError: (error: boolean) => void;
   toggleMute: () => void;
   videoContainerRef: React.RefObject<HTMLDivElement | null>;
+  videoSrc: string;
   children: React.ReactNode; 
 }
 
@@ -15,9 +16,9 @@ const ArtistVideo: React.FC<ArtistVideoProps> = ({
   setIsVideoError,
   toggleMute,
   videoContainerRef,
+  videoSrc,
   children,
 }) => {
-  const videoSrc = "/assets/GOSHEESH.mp4"; // Hardcoded for debugging
 
   return (
     <div ref={videoContainerRef} className="relative w-full max-w-4xl aspect-video rounded-xl shadow-2xl shadow-black/50 overflow-hidden mx-auto">
