@@ -127,13 +127,35 @@ export function useArtistConfig(artistId: string): UseArtistConfigReturn {
         }
 
         const artistsData = data.reduce((acc: {[key: string]: ArtistConfig}, artist: any) => {
-            // Add environment variable fallbacks for swap addresses
+            // DEBUG: Log the raw artist data from Supabase
+            console.log(`🔍 Raw Supabase data for ${artist.id}:`, {
+              tokenprice: artist.tokenprice,
+              videosrc: artist.videosrc,
+              contract: artist.contract,
+              tokenName: artist.tokenName
+            });
+            
+            // Map Supabase fields to expected format (based on actual schema)
             const enhancedArtist = {
-              ...artist,
-              swapAddress: artist.swapAddress || 
-                          (artist.id === 'gosheesh' ? process.env.NEXT_PUBLIC_GOSHEESH_SWAP : 
-                           artist.id === 'jaitea' ? process.env.NEXT_PUBLIC_JAITEA_SWAP : undefined),
-              paused: artist.paused ?? false
+              name: artist.name,
+              displayName: artist.displayname, // Supabase field is 'displayname'
+              tokenName: artist.tokenName, // Direct field from Supabase
+              artworkTitle: artist.artworktitle, // Supabase field is 'artworktitle'
+              artworkYear: artist.artworkyear?.toString() || '2024', // Supabase field is 'artworkyear'
+              tokenPrice: artist.tokenprice || 0.0005, // Supabase field is 'tokenprice' (numeric)
+              videoSrc: artist.videosrc?.startsWith('/') ? artist.videosrc : `/${artist.videosrc}`, // Supabase field is 'videosrc', add leading slash
+              contract: artist.contract, // Direct field from Supabase
+              swapAddress: artist.swap_address, // Supabase field is 'swap_address' 
+              paused: artist.paused ?? false,
+              theme: typeof artist.theme === 'string' ? JSON.parse(artist.theme) : (artist.theme || {
+                primaryColor: "#1a0a2b",
+                accentColor: "#9400FF",
+                gradientStart: "#FFD700",
+                gradientMiddle: "#DAA520",
+                gradientEnd: "#B8860B",
+                fontFamily: "Bungee, cursive"
+              }),
+              orbitalTokens: typeof artist.orbitaltokens === 'string' ? JSON.parse(artist.orbitaltokens) : (artist.orbitaltokens || [])
             };
             acc[artist.id] = enhancedArtist;
             return acc;

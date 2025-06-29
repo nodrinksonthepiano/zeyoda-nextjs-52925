@@ -26,6 +26,7 @@ interface PurchaseFlowProps {
   handlePreviewSwap: () => void;
   handleDollarPurchase: () => void;
   setShakeActive: (active: boolean) => void;
+  swapToAmount: string;
 }
 
 const PurchaseFlow: React.FC<PurchaseFlowProps> = ({
@@ -49,7 +50,8 @@ const PurchaseFlow: React.FC<PurchaseFlowProps> = ({
   totalPurchasePrice,
   handlePreviewSwap,
   handleDollarPurchase,
-  setShakeActive
+  setShakeActive,
+  swapToAmount
 }) => {
     const { magic } = useWallet();
     const [swapQuote, setSwapQuote] = useState<SwapQuote | null>(null);
@@ -243,7 +245,7 @@ const PurchaseFlow: React.FC<PurchaseFlowProps> = ({
                         <input
                             type="text"
                             id="toAmount"
-                            value={artistocksInput}
+                            value={swapFromAsset === 'USD' ? Math.floor(parseFloat(swapToAmount || '0')).toLocaleString() : artistocksInput}
                             onChange={handleArtistocksInputChange}
                             className="flex-grow p-2 border border-gray-600 rounded-md bg-gray-700 text-white focus:ring-accentColor focus:border-accentColor custom-token-input"
                             readOnly={swapFromAsset === 'USD'}

@@ -52,41 +52,74 @@ const Wallet: React.FC<WalletProps> = ({
   // Fetch real-time token balances from the blockchain
   useEffect(() => {
     const fetchRealBalances = async () => {
-      if (!userAddress || !magic || !allArtistsConfig) return;
+      if (!userAddress || !magic || !allArtistsConfig) {
+        console.log("⚠️ Missing requirements for balance fetch:", {
+          userAddress: !!userAddress,
+          magic: !!magic,
+          allArtistsConfig: !!allArtistsConfig
+        });
+        return;
+      }
       
       setIsLoading(true);
       const balances: UserTokenBalances = {};
       
       try {
+        console.log("🔍 Fetching real token balances for:", userAddress);
         const provider = new ethers.BrowserProvider(magic.rpcProvider as any);
         
+        // Add the new contract addresses from environment variables
+        const contractAddresses = {
+          'GOSH33SH': process.env.NEXT_PUBLIC_GOSH33SH_TOKEN,
+          'JAIT33': process.env.NEXT_PUBLIC_JAIT33_TOKEN,
+        };
+        
+        console.log("🏗️ Using contract addresses:", contractAddresses);
+        
         for (const [artistId, config] of Object.entries(allArtistsConfig)) {
-          if (config.contract) {
+          // Use new contract addresses first, fallback to config
+          const contractAddress = contractAddresses[config.tokenName as keyof typeof contractAddresses] || config.contract;
+          
+          if (contractAddress && contractAddress !== '0x0000000000000000000000000000000000000000') {
             try {
+              console.log(`🪙 Fetching ${config.tokenName} balance from:`, contractAddress);
+              
               // Simple ERC20 ABI for balanceOf
               const erc20Abi = [
                 "function balanceOf(address owner) view returns (uint256)",
-                "function decimals() view returns (uint8)"
+                "function decimals() view returns (uint8)",
+                "function symbol() view returns (string)"
               ];
               
-              const contract = new ethers.Contract(config.contract, erc20Abi, provider);
+              const contract = new ethers.Contract(contractAddress, erc20Abi, provider);
               const balance = await contract.balanceOf(userAddress);
               const decimals = await contract.decimals();
+              const symbol = await contract.symbol();
               
               // Convert from wei to tokens
               const tokenBalance = Number(ethers.formatUnits(balance, decimals));
+              console.log(`💰 ${symbol} balance:`, tokenBalance);
+              
               if (tokenBalance > 0) {
                 balances[config.tokenName] = tokenBalance;
+                console.log(`✅ Added ${tokenBalance} ${config.tokenName} to balances`);
               }
             } catch (err) {
-              console.log(`Error fetching balance for ${config.tokenName}:`, err);
+              console.error(`❌ Error fetching balance for ${config.tokenName}:`, err);
             }
+          } else {
+            console.log(`⚠️ No contract address for ${config.tokenName}`);
           }
         }
         
+        console.log("📊 Final balances:", balances);
         setRealTimeBalances(balances);
+        
+        // Also update localStorage for persistence
+        localStorage.setItem('zeyodaUserTokenBalances', JSON.stringify(balances));
+        
       } catch (error) {
-        console.error('Error fetching token balances:', error);
+        console.error('❌ Error fetching token balances:', error);
       } finally {
         setIsLoading(false);
       }

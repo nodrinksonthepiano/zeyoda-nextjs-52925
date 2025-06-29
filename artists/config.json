@@ -24,11 +24,11 @@
     "gosheesh": {
       "name": "GOSHEESH",
       "displayName": "GOSHEESH",
-      "tokenName": "GOSHIES",
+      "tokenName": "GOSH33SH",
       "artworkTitle": "Cosmic Bloom",
       "artworkYear": "2024",
       "tokenPrice": 0.0005,
-      "videoSrc": "assets/gosheesh-video.mp4",
+      "videoSrc": "/assets/1GOSHEESH.mp4",
       "theme": {
         "primaryColor": "#1a0a2b", 
         "accentColor": "#9400FF",
@@ -47,11 +47,11 @@
     "jaitea": {
       "name": "JAI TEA",
       "displayName": "JAI TEA",
-      "tokenName": "TEATOKENS",
+      "tokenName": "JAIT33",
       "artworkTitle": "Serenity Streams",
       "artworkYear": "2024",
       "tokenPrice": 0.0004,
-      "videoSrc": "assets/2JAITEA.mp4",
+      "videoSrc": "/assets/2JAITEA.mp4",
       "theme": {
         "primaryColor": "#0a1f0f", 
         "accentColor": "#00FF7F",

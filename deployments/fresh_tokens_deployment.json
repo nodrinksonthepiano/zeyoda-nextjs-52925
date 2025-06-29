@@ -1,0 +1,39 @@
+{
+  "timestamp": "2025-06-29T03:09:22.898Z",
+  "network": "baseSepolia",
+  "deployer": "0x615258a5263DBEe0DDEED3166ddC1f442D937eB3",
+  "tokens": {
+    "GOSH33SH": {
+      "address": "0xB5610c9c05c6B2995d55BB0Fa6e03Ce11b1Bf6Ac",
+      "symbol": "GOSH33SH",
+      "allocations": {
+        "artist": "1000000000.0",
+        "swap": "100000000.0",
+        "treasury": "8900000000.0"
+      }
+    },
+    "JAIT33": {
+      "address": "0x9D06564a8D98e146CAb1dE74BF815bf05d24D685",
+      "symbol": "JAIT33",
+      "allocations": {
+        "artist": "1000000000.0",
+        "swap": "100000000.0",
+        "treasury": "8900000000.0"
+      }
+    }
+  },
+  "swapContracts": {
+    "GOSHEESH_SWAP": "0x63349f5190860b4E954639eeFd60b92bE9A01148",
+    "JAITEA_SWAP": "0xd01cFF08a9962e67914a3A3e446D90513915db6f"
+  },
+  "artistWallets": {
+    "gosheesh": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+    "jaitea": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC"
+  },
+  "allocations": {
+    "totalSupply": "10000000000.0",
+    "artist": "1000000000.0",
+    "swap": "100000000.0",
+    "treasury": "8900000000.0"
+  }
+}

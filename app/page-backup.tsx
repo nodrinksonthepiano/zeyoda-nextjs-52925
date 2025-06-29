@@ -84,12 +84,7 @@ export default function HomePage() {
 
   const [dynamicOrbitalTokens, setDynamicOrbitalTokens] = useState<RenderableToken[]>([]);
 
-  const [orbitAngleOffset, setOrbitAngleOffset] = useState(() => {
-    if (typeof window !== 'undefined') {
-      return parseFloat(localStorage.getItem('zeyodaOrbitAngleOffset') || '0');
-    }
-    return 0;
-  });
+  const [orbitAngleOffset, setOrbitAngleOffset] = useState(0);
 
   useEffect(() => {
     const storedOffset = parseFloat(localStorage.getItem('zeyodaOrbitAngleOffset') || '0');
@@ -163,17 +158,65 @@ export default function HomePage() {
   }, [artistConfig, dynamicOrbitalTokens, orbitAngleOffset]);
 
   useEffect(() => {
-    if (artistConfig && artistConfig.tokenPrice > 0) {
-      const usdValue = parseFloat(swapFromAmount || '0');
-      const calculatedTokens = Math.floor(usdValue / artistConfig.tokenPrice);
+    if (!artistConfig) return;
+    
+    const usdValue = parseFloat(swapFromAmount || '0');
+    
+    // Check if TreasurySwapLite is active (Day-0 MVP)
+    const useTreasurySwapLite = artistConfig.swapAddress && !artistConfig.paused;
+    
+    if (useTreasurySwapLite) {
+      // Use fixed rate: 1 ETH = 1,000,000 tokens
+      // At $2500 ETH: $1 = 400 tokens
+      const ethPrice = 2500; // Rough ETH price
+      const tokensPerUSD = 1_000_000 / ethPrice; // ~400 tokens per USD
+      const calculatedTokens = Math.floor(usdValue * tokensPerUSD);
+      
+      console.log("🎯 Token calculation (Day-0 MVP):", {
+        usdValue,
+        ethPrice,
+        tokensPerUSD: tokensPerUSD.toFixed(2),
+        calculatedTokens,
+        artist: artistConfig.name,
+        swapAddress: artistConfig.swapAddress,
+        system: "TreasurySwapLite"
+      });
+      
       setPurchaseAmountArtistocks(calculatedTokens);
       setArtistocksInput(calculatedTokens > 0 ? calculatedTokens.toString() : (usdValue === 0 ? "0" : ""));
-      console.log(`[SyncEffect] Synced USD: $${usdValue} to ${calculatedTokens} tokens for ${artistConfig.name} (Price: ${artistConfig.tokenPrice})`);
-    } else if (artistConfig) {
-      // If token price is 0 or invalid, ensure tokens are 0
-      setPurchaseAmountArtistocks(0);
-      setArtistocksInput("0");
-      console.log(`[SyncEffect] Token price is 0 or invalid for ${artistConfig.name}. Setting tokens to 0.`);
+      
+    } else {
+      // Use realTimePrice if available, fallback to tokenPrice (existing LP system)
+      const effectivePrice = artistConfig?.realTimePrice ?? artistConfig?.tokenPrice ?? 0;
+      
+      if (effectivePrice > 0) {
+        const calculatedTokens = Math.floor(usdValue / effectivePrice);
+        console.log("🏊 Token calculation (AMM/LP PRICING):", {
+          usdValue,
+          realTimePrice: artistConfig.realTimePrice,
+          fallbackPrice: artistConfig.tokenPrice,
+          effectivePrice,
+          calculatedTokens,
+          artist: artistConfig.name,
+          hasLiquidityPool: artistConfig.hasLiquidityPool,
+          system: "AMM/Fallback"
+        });
+        setPurchaseAmountArtistocks(calculatedTokens);
+        setArtistocksInput(calculatedTokens > 0 ? calculatedTokens.toString() : (usdValue === 0 ? "0" : ""));
+      } else {
+        console.log("❌ Token calculation failed:", {
+          realTimePrice: artistConfig?.realTimePrice,
+          tokenPrice: artistConfig?.tokenPrice,
+          effectivePrice,
+          swapFromAmount,
+          artist: artistConfig?.name,
+          hasLiquidityPool: artistConfig?.hasLiquidityPool,
+          swapAddress: artistConfig?.swapAddress,
+          paused: artistConfig?.paused
+        });
+        setPurchaseAmountArtistocks(0);
+        setArtistocksInput("0");
+      }
     }
   }, [swapFromAmount, artistConfig]);
 
@@ -181,10 +224,9 @@ export default function HomePage() {
     const currentArtistId = artistIdFromUrl;
     setHasPurchasedDownload(false);
     setDownloadIpfsHash(null);
-    setSafewordVerified(false);
 
-    // Load user data if Magic Link user exists
-    if (user) {
+    const storedEmail = localStorage.getItem('zeyodaUserEmail');
+    if (storedEmail) {
       const storedBalances = localStorage.getItem('zeyodaUserTokenBalances');
       if (storedBalances) {
         try {
@@ -203,7 +245,6 @@ export default function HomePage() {
       if (storedUnlockedArtists) {
         try {
           initialUnlockedStates = JSON.parse(storedUnlockedArtists);
-          // Check if any artist in the stored object is true
           for (const artistKey in initialUnlockedStates) {
             if (initialUnlockedStates.hasOwnProperty(artistKey) && initialUnlockedStates[artistKey]) {
               anyArtistUnlocked = true;
@@ -212,7 +253,7 @@ export default function HomePage() {
           }
         } catch (e) {
           console.error("Error parsing unlocked artists from localStorage", e);
-          setUnlockedArtistStates({}); // Reset to empty if error
+          setUnlockedArtistStates({});
         }
       }
       setUnlockedArtistStates(initialUnlockedStates);
@@ -225,9 +266,6 @@ export default function HomePage() {
         if (storedIpfsHash) {
           setDownloadIpfsHash(storedIpfsHash);
         }
-        console.log(`[Wallet] Loaded hasPurchasedDownload for ${currentArtistId}: true`);
-      } else {
-        console.log(`[Wallet] No stored hasPurchasedDownload for ${currentArtistId} or not true.`);
       }
 
       if (allArtistsConfig) {
@@ -243,19 +281,16 @@ export default function HomePage() {
           }
         }
         setAllPurchasedDownloads(downloads);
-        console.log('[WalletData] Populated allPurchasedDownloads:', downloads);
       } else {
-        console.log('[WalletData] allArtistsConfig not yet available to populate allPurchasedDownloads');
-        setAllPurchasedDownloads([]); // Clear if config is not ready
+        setAllPurchasedDownloads([]);
       }
     } else {
-      // Clear user data when no Magic Link user
       setUserTokenBalances({});
       setUnlockedArtistStates({});
       setGlobalSafewordVerified(false);
       setAllPurchasedDownloads([]);
     }
-  }, [searchParams, artistIdFromUrl, allArtistsConfig, user]);
+  }, [searchParams, artistIdFromUrl, allArtistsConfig]);
 
   useEffect(() => {
     if (user && artistConfig && hasPurchasedDownload) {
@@ -473,9 +508,7 @@ export default function HomePage() {
     setShowPurchaseModal(false);
     setPurchaseAmountArtistocks(0);
     setPurchaseAmountDollars(20);
-    showToast("You have been logged out. Refreshing...", "info");
-    
-    // Force proper Magic Link state refresh
+    showToast("You have been logged out.", "info");
     setTimeout(() => window.location.reload(), 1000);
   };
 
@@ -804,7 +837,7 @@ export default function HomePage() {
         <main className="app-main">
           <div className="text-center">
               <>
-                <h1 className="text-2xl md:text-3xl font-bold tracking-wider mb-4" style={{ fontFamily: artistConfig.theme.fontFamily, color: artistConfig.theme.accentColor }}>
+                <h1 className="text-6xl md:text-8xl font-bold tracking-wider mb-8" style={{ fontFamily: artistConfig.theme.fontFamily, color: artistConfig.theme.accentColor }}>
                   {artistConfig.displayName}
                 </h1>
   
@@ -858,7 +891,6 @@ export default function HomePage() {
             handlePreviewSwap={handlePreviewSwap}
             handleDollarPurchase={handleDollarPurchase}
             setShakeActive={setShakeActive}
-            swapToAmount={swapToAmount}
           />
 
           <div className="action-section text-center mb-4">
