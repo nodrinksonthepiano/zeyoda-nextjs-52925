@@ -82,8 +82,18 @@ const PurchaseFlow: React.FC<PurchaseFlowProps> = ({
             const browserProvider = new ethers.BrowserProvider(provider as any);
             const signer = await browserProvider.getSigner();
             
+            // DEBUG: Log the artist configuration for swap debugging
+            console.log('🔍 Swap Debug Info for', artistConfig.name, {
+                swapAddress: artistConfig.swapAddress,
+                paused: artistConfig.paused,
+                hasLiquidityPool: artistConfig.hasLiquidityPool,
+                contract: artistConfig.contract,
+                swapFromAsset: swapFromAsset
+            });
+            
             // Determine which swap system to use
             const useTreasurySwapLite = artistConfig.swapAddress && !artistConfig.paused;
+            console.log('🎯 useTreasurySwapLite:', useTreasurySwapLite, 'swapFromAsset:', swapFromAsset);
             
             if (useTreasurySwapLite && swapFromAsset === "USD") {
                 // Use TreasurySwapLite for USD purchases (Day-0 MVP)
@@ -173,25 +183,25 @@ const PurchaseFlow: React.FC<PurchaseFlowProps> = ({
                 <div className="purchase-slider-section mock-ui-section p-4 md:p-6 bg-gray-800 bg-opacity-70 shadow-xl rounded-lg border border-gray-700 backdrop-blur-md mb-8 max-w-2xl mx-auto">
                 <h3 className="text-xl font-semibold mb-3 text-center text-white">Purchase Options</h3>
                 
-                {/* Token Amount Slider - This was missing! */}
-                {swapFromAsset === "USD" && (
-                    <div className="mb-6">
-                        <label className="block text-sm font-medium text-gray-300 mb-2">Amount Slider</label>
-                        <input
-                            type="range"
-                            min={minSliderValue}
-                            max={maxSliderValue}
-                            value={sliderValue}
-                            onChange={handleSliderChange}
-                            className="custom-token-slider w-full"
-                            step="0.01"
-                        />
-                        <div className="flex justify-between text-xs text-gray-400 mt-1">
-                            <span>${minSliderValue}</span>
-                            <span>${maxSliderValue}</span>
-                        </div>
+                {/* Universal Amount Slider - Always visible for all swaps */}
+                <div className="mb-6">
+                    <label className="block text-sm font-medium text-gray-300 mb-2">
+                        {swapFromAsset === "USD" ? "Amount Slider ($)" : `Amount Slider (${swapFromAsset})`}
+                    </label>
+                    <input
+                        type="range"
+                        min={swapFromAsset === "USD" ? minSliderValue : 1}
+                        max={swapFromAsset === "USD" ? maxSliderValue : (userTokenBalances[swapFromAsset] || 1000)}
+                        value={parseFloat(swapFromAmount || "0")}
+                        onChange={handleSliderChange}
+                        className="custom-token-slider w-full"
+                        step={swapFromAsset === "USD" ? "0.01" : "1"}
+                    />
+                    <div className="flex justify-between text-xs text-gray-400 mt-1">
+                        <span>{swapFromAsset === "USD" ? `$${minSliderValue}` : "1"}</span>
+                        <span>{swapFromAsset === "USD" ? `$${maxSliderValue}` : `${userTokenBalances[swapFromAsset] || 1000}`}</span>
                     </div>
-                )}
+                </div>
                 
                 <div className="mb-4">
                     <label className="block text-sm font-medium text-gray-300 mb-1">FROM</label>
@@ -245,10 +255,10 @@ const PurchaseFlow: React.FC<PurchaseFlowProps> = ({
                         <input
                             type="text"
                             id="toAmount"
-                            value={swapFromAsset === 'USD' ? Math.floor(parseFloat(swapToAmount || '0')).toLocaleString() : artistocksInput}
+                            value={Math.floor(parseFloat(swapToAmount || artistocksInput || '0')).toLocaleString()}
                             onChange={handleArtistocksInputChange}
                             className="flex-grow p-2 border border-gray-600 rounded-md bg-gray-700 text-white focus:ring-accentColor focus:border-accentColor custom-token-input"
-                            readOnly={swapFromAsset === 'USD'}
+                            readOnly={true}
                         />
                     </div>
                 </div>
@@ -314,12 +324,12 @@ const PurchaseFlow: React.FC<PurchaseFlowProps> = ({
                 <button 
                     onClick={handleRealSwap}
                     className="w-full mt-4 px-6 py-2 font-bold text-white bg-blue-600 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:bg-gray-500 custom-buy-button"
-                    disabled={isSwapping || isActionLoading}
+                    disabled={isSwapping || isActionLoading || parseFloat(swapFromAmount || '0') <= 0}
                 >
-                {isSwapping ? 'Swapping...' : isActionLoading ? 'Loading...' : 
-                  includeDownload ? 
-                    `Get Download (${totalPurchasePrice > 0 ? `$${totalPurchasePrice.toFixed(2)}` : ''})` :
-                    `Get ${artistocksInput || '0'} ${artistConfig?.tokenName || 'Tokens'} (${totalPurchasePrice > 0 ? `$${totalPurchasePrice.toFixed(2)}` : '$0.00'})`
+                {isSwapping ? 'SWAPPING...' : isActionLoading ? 'LOADING...' : 
+                  swapFromAsset === 'USD' ? 
+                    `GET ${Math.floor(parseFloat(swapToAmount || '0')).toLocaleString()} ${artistConfig?.tokenName || 'TOKENS'} ($${parseFloat(swapFromAmount || '0').toFixed(2)})` :
+                    `GET ${Math.floor(parseFloat(swapToAmount || '0')).toLocaleString()} ${artistConfig?.tokenName || 'TOKENS'} (${swapFromAmount || '0'} ${swapFromAsset})`
                 }
                 </button>
                 </div>

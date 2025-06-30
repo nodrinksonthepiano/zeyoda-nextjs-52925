@@ -546,18 +546,63 @@ export default function HomePage() {
   }, [artistConfig]);
 
   useEffect(() => {
-    const effectivePrice = artistConfig?.realTimePrice ?? artistConfig?.tokenPrice ?? 0;
-    if (swapFromAsset === "USD" && swapToAsset === artistConfig?.tokenName && artistConfig && effectivePrice > 0) {
-      const fromVal = parseFloat(swapFromAmount);
-      if (!isNaN(fromVal) && fromVal > 0) {
-        setSwapToAmount((fromVal / effectivePrice).toFixed(8)); 
-      } else {
-        setSwapToAmount("");
+    const calculateSwapOutput = async () => {
+      if (!artistConfig || !allArtistsConfig) return;
+      
+      const effectivePrice = artistConfig?.realTimePrice ?? artistConfig?.tokenPrice ?? 0;
+      
+      // USD to Token swap (existing logic)
+      if (swapFromAsset === "USD" && swapToAsset === artistConfig?.tokenName && effectivePrice > 0) {
+        const fromVal = parseFloat(swapFromAmount);
+        if (!isNaN(fromVal) && fromVal > 0) {
+          setSwapToAmount((fromVal / effectivePrice).toFixed(8));
+          setArtistocksInput(Math.floor(fromVal / effectivePrice).toString());
+        } else {
+          setSwapToAmount("");
+          setArtistocksInput("0");
+        }
       }
-    } else {
-      setSwapToAmount(""); 
-    }
-  }, [swapFromAmount, swapFromAsset, swapToAsset, artistConfig]);
+      // Token to Token swap (NEW - use AMM quotes)
+      else if (swapFromAsset !== "USD" && artistConfig?.hasLiquidityPool) {
+        const fromTokenConfig = Object.values(allArtistsConfig).find(
+          config => config.tokenName === swapFromAsset
+        );
+        
+        if (fromTokenConfig?.hasLiquidityPool && parseFloat(swapFromAmount) > 0) {
+          try {
+            // Import SwapService dynamically
+            const { SwapService } = await import('./utils/swapUtils');
+            const swapService = new SwapService(window.ethereum);
+            
+            // Get cross-token quote: fromToken → ETH → toToken
+            const fromTokenAmount = swapFromAmount;
+            const ethQuote = await swapService.getEthQuote(fromTokenConfig.contract, fromTokenAmount);
+            const tokenQuote = await swapService.getTokenQuote(artistConfig.contract, ethQuote.outputAmount);
+            
+            const expectedOutput = parseFloat(tokenQuote.outputAmount);
+            setSwapToAmount(expectedOutput.toFixed(8));
+            setArtistocksInput(Math.floor(expectedOutput).toString());
+            
+            console.log(`🔄 Cross-token quote: ${swapFromAmount} ${swapFromAsset} → ${expectedOutput.toFixed(2)} ${artistConfig.tokenName}`);
+          } catch (error) {
+            console.error('❌ Failed to get AMM quote:', error);
+            setSwapToAmount("");
+            setArtistocksInput("0");
+          }
+        } else {
+          setSwapToAmount("");
+          setArtistocksInput("0");
+        }
+      }
+      // No valid swap path
+      else {
+        setSwapToAmount("");
+        setArtistocksInput("0");
+      }
+    };
+    
+    calculateSwapOutput();
+  }, [swapFromAmount, swapFromAsset, swapToAsset, artistConfig, allArtistsConfig]);
 
   const handleSwapFromAmountChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const usdString = e.target.value;

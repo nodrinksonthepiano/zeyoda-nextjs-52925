@@ -11,8 +11,8 @@ task("seed-lp", "Seed liquidity pool for an artist token")
     const [deployer] = await ethers.getSigners();
     console.log("Protocol deployer:", deployer.address);
     
-    // Contract addresses
-    const SWAP_CONTRACT = "0xb9Fd7D8111F462cdB58EB7E1D18EA3016142Fa35";
+    // Contract addresses (NEW - with correct ownership)
+    const SWAP_CONTRACT = "0xdBBfFD696484bBFCa3dA059FB1d8e2Cf40c450dE";
     
     // Get token contract
     const erc20ABI = [

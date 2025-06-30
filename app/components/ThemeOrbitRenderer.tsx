@@ -121,7 +121,7 @@ const ThemeOrbitRenderer: React.FC<ThemeOrbitRendererProps> = ({
             };
             return (
                 <div 
-                key={token.artistId ? `orbit-${token.artistId}` : `orbit-token-${index}`}
+                key={`orbit-${token.name}-${token.artistId || 'standalone'}-${index}`}
                 ref={(el: HTMLDivElement | null) => {
                     tokenElementRefs.current[index] = el;
                 }}

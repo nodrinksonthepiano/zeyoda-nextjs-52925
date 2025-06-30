@@ -1,8 +1,8 @@
 import { ethers } from 'ethers';
 import SwapArtifact from '../../artifacts/contracts/Swap.sol/Swap.json';
 
-// Swap contract deployed on Base Sepolia
-export const SWAP_CONTRACT_ADDRESS = "0xb9Fd7D8111F462cdB58EB7E1D18EA3016142Fa35";
+// Swap contract deployed on Base Sepolia (NEW - with correct ownership)
+export const SWAP_CONTRACT_ADDRESS = "0xdBBfFD696484bBFCa3dA059FB1d8e2Cf40c450dE";
 
 export interface SwapQuote {
   inputAmount: string;
@@ -157,7 +157,7 @@ export class SwapService {
       const tokenAmountWei = await this.contract.getTokenQuote(tokenAddress, ethAmountWei);
       
       const tokenAmount = ethers.formatUnits(tokenAmountWei, 18);
-      const slippage = 0.02; // 2% slippage tolerance
+      const slippage = 0.05; // 5% slippage tolerance (higher for small pools)
       const minimumOutput = (parseFloat(tokenAmount) * (1 - slippage)).toString();
       
       return {
@@ -181,7 +181,7 @@ export class SwapService {
       const ethAmountWei = await this.contract.getEthQuote(tokenAddress, tokenAmountWei);
       
       const ethAmount = ethers.formatEther(ethAmountWei);
-      const slippage = 0.02; // 2% slippage tolerance
+      const slippage = 0.05; // 5% slippage tolerance (higher for small pools)
       const minimumOutput = (parseFloat(ethAmount) * (1 - slippage)).toString();
       
       return {

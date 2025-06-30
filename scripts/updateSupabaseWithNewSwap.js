@@ -1,11 +1,12 @@
 const { createClient } = require('@supabase/supabase-js');
 require('dotenv').config({ path: '.env.local' });
 
-// New swap contract address
-const NEW_GOSHEESH_SWAP = "0xC7Ddb4F5310405758e4D609dA1E6aba4228E29ae";
+// NEW swap contract addresses from latest deployment
+const NEW_GOSHEESH_SWAP = "0x984A009d3113342F004C40A0934b77A81c66a42e";
+const NEW_JAITEA_SWAP = "0x5da3a34555EbfA9FC780F869d2F68898E9010DB6";
 
 async function main() {
-    console.log("📝 UPDATING SUPABASE WITH NEW SWAP CONTRACT");
+    console.log("📝 UPDATING SUPABASE WITH NEW SWAP CONTRACTS");
     console.log("=" * 40);
     
     // Initialize Supabase client
@@ -23,40 +24,60 @@ async function main() {
         // Update GOSHEESH swap address
         console.log("🚀 Updating GOSHEESH swap address...");
         
-        const { data, error } = await supabase
+        const { data: gosheeshData, error: gosheeshError } = await supabase
             .from('artists')
             .update({ swap_address: NEW_GOSHEESH_SWAP })
             .eq('id', 'gosheesh')
             .select();
             
-        if (error) {
-            console.error("❌ Error updating Supabase:", error.message);
-            return;
+        if (gosheeshError) {
+            console.error("❌ Error updating GOSHEESH:", gosheeshError.message);
+        } else {
+            console.log("✅ Successfully updated GOSHEESH swap address");
         }
         
-        console.log("✅ Successfully updated GOSHEESH swap address");
-        console.log("Updated data:", data);
+        // Update JAITEA swap address
+        console.log("🚀 Updating JAITEA swap address...");
         
-        // Verify the update
-        console.log("\n🔍 Verifying update...");
+        const { data: jaiteaData, error: jaiteaError } = await supabase
+            .from('artists')
+            .update({ swap_address: NEW_JAITEA_SWAP })
+            .eq('id', 'jaitea')
+            .select();
+            
+        if (jaiteaError) {
+            console.error("❌ Error updating JAITEA:", jaiteaError.message);
+        } else {
+            console.log("✅ Successfully updated JAITEA swap address");
+        }
+        
+        // Verify the updates
+        console.log("\n🔍 Verifying updates...");
         const { data: verifyData, error: verifyError } = await supabase
             .from('artists')
             .select('id, name, contract, swap_address')
-            .eq('id', 'gosheesh');
+            .in('id', ['gosheesh', 'jaitea']);
             
         if (verifyError) {
-            console.error("❌ Error verifying update:", verifyError.message);
+            console.error("❌ Error verifying updates:", verifyError.message);
             return;
         }
         
-        console.log("📊 Current GOSHEESH configuration:");
-        console.log(`  Contract: ${verifyData[0].contract}`);
-        console.log(`  Swap Address: ${verifyData[0].swap_address}`);
+        console.log("📊 Current configuration:");
+        verifyData.forEach(artist => {
+            console.log(`  ${artist.name}:`);
+            console.log(`    Contract: ${artist.contract}`);
+            console.log(`    Swap Address: ${artist.swap_address}`);
+        });
         
-        if (verifyData[0].swap_address === NEW_GOSHEESH_SWAP) {
-            console.log("✅ Supabase update confirmed!");
+        // Check if updates were successful
+        const gosheeshCorrect = verifyData.find(a => a.id === 'gosheesh')?.swap_address === NEW_GOSHEESH_SWAP;
+        const jaiteaCorrect = verifyData.find(a => a.id === 'jaitea')?.swap_address === NEW_JAITEA_SWAP;
+        
+        if (gosheeshCorrect && jaiteaCorrect) {
+            console.log("✅ All Supabase updates confirmed!");
         } else {
-            console.log("❌ Update verification failed");
+            console.log("❌ Some updates failed verification");
         }
         
     } catch (error) {
@@ -65,14 +86,13 @@ async function main() {
     
     console.log("\n🎯 NEXT STEPS:");
     console.log("1. Hard refresh your browser (Cmd+Shift+R)");
-    console.log("2. Try the GOSHEESH swap with a small amount ($1-5)");
-    console.log("3. Swap should now work automatically!");
-    console.log("4. Deploy JAITEA swap when you have more ETH");
+    console.log("2. Try both GOSHEESH and JAITEA swaps with small amounts ($1-5)");
+    console.log("3. Both swaps should now work automatically!");
     
-    console.log("\n💡 FOR MANUAL TESTING:");
-    console.log("The new GOSHEESH swap contract is ready at:");
-    console.log(`${NEW_GOSHEESH_SWAP}`);
-    console.log("Fixed rate: 1 ETH = 1,000,000 GOSH33SH tokens");
+    console.log("\n💡 NEW SWAP CONTRACT ADDRESSES:");
+    console.log(`GOSHEESH: ${NEW_GOSHEESH_SWAP}`);
+    console.log(`JAITEA: ${NEW_JAITEA_SWAP}`);
+    console.log("Fixed rate: 1 ETH = 1,000,000 tokens");
 }
 
 main()
