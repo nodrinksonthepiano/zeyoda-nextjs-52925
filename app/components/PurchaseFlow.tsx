@@ -91,19 +91,27 @@ const PurchaseFlow: React.FC<PurchaseFlowProps> = ({
                 swapFromAsset: swapFromAsset
             });
             
+            // Show user that transaction is starting
+            const loadingToast = window.alert || console.log;
+            
             // Determine which swap system to use
             const useTreasurySwapLite = artistConfig.swapAddress && !artistConfig.paused;
             console.log('🎯 useTreasurySwapLite:', useTreasurySwapLite, 'swapFromAsset:', swapFromAsset);
             
+            let transactionHash = '';
+            let swapType = '';
+            
             if (useTreasurySwapLite && swapFromAsset === "USD") {
                 // Use TreasurySwapLite for USD purchases (Day-0 MVP)
                 console.log('🎯 Using TreasurySwapLite for Day-0 MVP swap');
+                swapType = `$${swapFromAmount} USD → ${artistConfig.tokenName}`;
                 
                 const treasurySwap = new TreasurySwapLiteService(artistConfig.swapAddress!, signer);
                 const usdAmount = parseFloat(swapFromAmount);
                 
                 const tx = await treasurySwap.buyTokensWithUSD(usdAmount);
                 await tx.wait();
+                transactionHash = tx.hash;
                 console.log('✅ TreasurySwapLite swap successful:', tx.hash);
                 
             } else if (artistConfig.hasLiquidityPool) {
@@ -115,6 +123,7 @@ const PurchaseFlow: React.FC<PurchaseFlowProps> = ({
                 if (swapFromAsset === "USD") {
                     // Convert USD to ETH for AMM
                     const ethAmount = (parseFloat(swapFromAmount) / 2500).toString(); // Rough USD→ETH
+                    swapType = `$${swapFromAmount} USD → ${artistConfig.tokenName} (AMM)`;
                     
                     const tx = await swapService.swapEthForTokens(
                         artistConfig.contract,
@@ -123,6 +132,7 @@ const PurchaseFlow: React.FC<PurchaseFlowProps> = ({
                     );
                     
                     await tx.wait();
+                    transactionHash = tx.hash;
                     console.log('✅ AMM swap successful:', tx.hash);
                 } else {
                     // Token to token swap via AMM
@@ -131,6 +141,8 @@ const PurchaseFlow: React.FC<PurchaseFlowProps> = ({
                     );
                     
                     if (fromTokenConfig?.contract) {
+                        swapType = `${swapFromAmount} ${swapFromAsset} → ${artistConfig.tokenName}`;
+                        
                         const tx = await swapService.swapTokens(
                             fromTokenConfig.contract,
                             artistConfig.contract,
@@ -139,6 +151,7 @@ const PurchaseFlow: React.FC<PurchaseFlowProps> = ({
                         );
                         
                         await tx.wait();
+                        transactionHash = tx.hash;
                         console.log('✅ AMM token swap successful:', tx.hash);
                     }
                 }
@@ -146,9 +159,43 @@ const PurchaseFlow: React.FC<PurchaseFlowProps> = ({
                 throw new Error('No swap system available. Deploy TreasurySwapLite or create liquidity pool.');
             }
             
+            // 🎉 SUCCESS - Show user-facing feedback
+            if (transactionHash) {
+                const successMessage = `🎉 SWAP SUCCESSFUL!\n\n${swapType}\n\nTransaction: ${transactionHash.substring(0, 10)}...`;
+                alert(successMessage);
+                
+                // Force wallet balance refresh with delay to allow blockchain to update
+                setTimeout(() => {
+                    console.log('🔄 Triggering wallet balance refresh after successful transaction...');
+                    
+                    // Clear any cached balances to force fresh fetch
+                    localStorage.removeItem('zeyodaUserTokenBalances');
+                    
+                    // Trigger a custom event for wallet refresh
+                    const refreshEvent = new CustomEvent('refreshWalletBalances', {
+                        detail: { transactionHash, swapType, forceRefresh: true }
+                    });
+                    window.dispatchEvent(refreshEvent);
+                    
+                }, 8000); // Increased from 3 to 8 seconds for better blockchain propagation
+            }
+            
         } catch (error: any) {
             console.error('❌ Swap failed:', error);
-            alert(`Swap failed: ${error?.message || 'Unknown error'}`);
+            
+            // Better error handling
+            let errorMessage = 'Swap failed: ';
+            if (error?.message?.includes('user rejected')) {
+                errorMessage += 'Transaction was cancelled by user';
+            } else if (error?.message?.includes('insufficient funds')) {
+                errorMessage += 'Insufficient funds for gas or tokens';
+            } else if (error?.message?.includes('paused')) {
+                errorMessage += 'Swap contract is temporarily paused';
+            } else {
+                errorMessage += error?.message || 'Unknown error occurred';
+            }
+            
+            alert(errorMessage);
         } finally {
             setIsSwapping(false);
         }
@@ -287,20 +334,15 @@ const PurchaseFlow: React.FC<PurchaseFlowProps> = ({
                             </div>
                         ) : artistConfig.hasLiquidityPool ? (
                             <div>
-                                <p className="text-green-400">🏊 AMM System Active</p>
-                                <p className="text-xs">Dynamic pricing from liquidity pool</p>
-                                <p className="text-xs">Advanced swap features available</p>
+                                <p className="text-green-400">🏊 AMM Pools Active</p>
+                                <p className="text-xs">Dynamic pricing via liquidity pools</p>
+                                <p className="text-xs">Cross-token trading enabled</p>
                             </div>
                         ) : (
                             <div>
-                                <p className="text-yellow-400">⚠️ Limited System</p>
-                                <p className="text-xs">Fallback pricing only</p>
-                                <p className="text-xs">Deploy swap contract for trading</p>
+                                <p className="text-red-400">⚠️ No swap system available</p>
+                                <p className="text-xs">Contact support for assistance</p>
                             </div>
-                        )}
-                        
-                        {artistConfig.paused && (
-                            <p className="text-red-400 text-xs mt-1">⏸️ Swap temporarily paused</p>
                         )}
                     </div>
                     
@@ -321,17 +363,42 @@ const PurchaseFlow: React.FC<PurchaseFlowProps> = ({
                     </label>
                     </div>
                 </div>
-                <button 
-                    onClick={handleRealSwap}
-                    className="w-full mt-4 px-6 py-2 font-bold text-white bg-blue-600 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:bg-gray-500 custom-buy-button"
-                    disabled={isSwapping || isActionLoading || parseFloat(swapFromAmount || '0') <= 0}
-                >
-                {isSwapping ? 'SWAPPING...' : isActionLoading ? 'LOADING...' : 
-                  swapFromAsset === 'USD' ? 
-                    `GET ${Math.floor(parseFloat(swapToAmount || '0')).toLocaleString()} ${artistConfig?.tokenName || 'TOKENS'} ($${parseFloat(swapFromAmount || '0').toFixed(2)})` :
-                    `GET ${Math.floor(parseFloat(swapToAmount || '0')).toLocaleString()} ${artistConfig?.tokenName || 'TOKENS'} (${swapFromAmount || '0'} ${swapFromAsset})`
-                }
-                </button>
+
+                {/* Main Swap Button */}
+                <div className="text-center">
+                    <button
+                        onClick={handleRealSwap}
+                        disabled={isSwapping || !swapFromAmount || parseFloat(swapFromAmount) <= 0}
+                        className={`w-full py-4 px-6 rounded-lg font-bold text-lg transition-all duration-200 ${
+                            isSwapping 
+                                ? 'bg-gray-600 cursor-not-allowed' 
+                                : 'bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 transform hover:scale-105 shadow-lg'
+                        } text-white`}
+                    >
+                        {isSwapping ? (
+                            <span className="flex items-center justify-center">
+                                <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                </svg>
+                                Processing Transaction...
+                            </span>
+                        ) : swapFromAsset === "USD" ? (
+                            `🔄 Swap $${swapFromAmount || '0'} for ${Math.floor(parseFloat(swapToAmount || artistocksInput || '0')).toLocaleString()} ${artistConfig.tokenName}`
+                        ) : (
+                            `🔄 Swap ${swapFromAmount || '0'} ${swapFromAsset} for ${Math.floor(parseFloat(swapToAmount || artistocksInput || '0')).toLocaleString()} ${artistConfig.tokenName}`
+                        )}
+                    </button>
+                    
+                    {/* Helpful hints */}
+                    <div className="mt-3 text-xs text-gray-400">
+                        {!swapFromAmount || parseFloat(swapFromAmount) <= 0 ? (
+                            <p>💡 Set an amount above to enable swapping</p>
+                        ) : (
+                            <p>💡 Transaction will be confirmed in your wallet</p>
+                        )}
+                    </div>
+                </div>
                 </div>
             )}
         </>

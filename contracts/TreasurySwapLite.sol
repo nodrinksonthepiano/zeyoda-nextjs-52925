@@ -64,8 +64,9 @@ contract TreasurySwapLite is Initializable, UUPSUpgradeable, OwnableUpgradeable,
     function swapIn() external payable nonReentrant whenNotPaused {
         require(msg.value > 0, "Must send ETH");
         
-        // Calculate tokens: tokenAmount = msg.value * 1e6 / 1e18 = msg.value / 1e12
-        uint256 tokenAmount = (msg.value * TOKENS_PER_ETH) / 1e18;
+        // Calculate tokens: 1 ETH = 1,000,000 tokens
+        // Token has 18 decimals, so we need to account for that
+        uint256 tokenAmount = msg.value * TOKENS_PER_ETH;
         require(tokenAmount > 0, "Token amount too small");
         
         // Check contract has enough tokens
@@ -113,7 +114,7 @@ contract TreasurySwapLite is Initializable, UUPSUpgradeable, OwnableUpgradeable,
      * @dev Get quote for ETH → tokens
      */
     function getTokenQuote(uint256 ethAmount) external pure returns (uint256) {
-        return (ethAmount * TOKENS_PER_ETH) / 1e18;
+        return ethAmount * TOKENS_PER_ETH;
     }
 
     /**
