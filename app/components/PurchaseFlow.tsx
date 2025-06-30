@@ -94,17 +94,72 @@ const PurchaseFlow: React.FC<PurchaseFlowProps> = ({
             // Show user that transaction is starting
             const loadingToast = window.alert || console.log;
             
-            // Determine which swap system to use
-            const useTreasurySwapLite = artistConfig.swapAddress && !artistConfig.paused;
-            console.log('🎯 useTreasurySwapLite:', useTreasurySwapLite, 'swapFromAsset:', swapFromAsset);
+            // FIXED ROUTING LOGIC: Prioritize AMM when liquidity pools exist
+            const hasLiquidityPool = artistConfig.hasLiquidityPool;
+            const hasTreasurySwap = artistConfig.swapAddress && !artistConfig.paused;
             
             let transactionHash = '';
             let swapType = '';
             
-            if (useTreasurySwapLite && swapFromAsset === "USD") {
-                // Use TreasurySwapLite for USD purchases (Day-0 MVP)
-                console.log('🎯 Using TreasurySwapLite for Day-0 MVP swap');
-                swapType = `$${swapFromAmount} USD → ${artistConfig.tokenName}`;
+            if (hasLiquidityPool && swapFromAsset === "USD") {
+                // ✅ PRIORITY: Use AMM for USD purchases when liquidity pools exist (live pricing)
+                console.log('🏊 Using AMM system for LP-based swap (live pricing)');
+                
+                const swapService = new SwapService(signer);
+                
+                // Convert USD to ETH for AMM with proper precision
+                const ethAmount = (parseFloat(swapFromAmount) / 2500).toFixed(18); // Max 18 decimals for ETH
+                swapType = `$${swapFromAmount} USD → ${artistConfig.tokenName} (AMM Live Price)`;
+                
+                // Get actual AMM quote with proper slippage tolerance
+                const quote = await swapService.getTokenQuote(artistConfig.contract, ethAmount);
+                console.log('📊 AMM Quote:', {
+                    ethAmount,
+                    expectedTokens: quote.outputAmount,
+                    minimumOutput: quote.minimumOutput,
+                    frontendEstimate: artistocksInput
+                });
+                
+                const tx = await swapService.swapEthForTokens(
+                    artistConfig.contract,
+                    ethAmount,
+                    quote.minimumOutput  // ✅ Use AMM quote with slippage, not frontend estimate
+                );
+                
+                await tx.wait();
+                transactionHash = tx.hash;
+                console.log('✅ AMM swap successful:', tx.hash);
+                
+            } else if (hasLiquidityPool && swapFromAsset !== "USD") {
+                // ✅ Use AMM for token-to-token swaps
+                console.log('🏊 Using AMM system for token-to-token swap');
+                
+                const swapService = new SwapService(signer);
+                
+                // Token to token swap via AMM
+                const fromTokenConfig = Object.values(allArtistsConfig || {}).find(
+                    config => config.tokenName === swapFromAsset
+                );
+                
+                if (fromTokenConfig?.contract) {
+                    swapType = `${swapFromAmount} ${swapFromAsset} → ${artistConfig.tokenName}`;
+                    
+                    const tx = await swapService.swapTokens(
+                        fromTokenConfig.contract,
+                        artistConfig.contract,
+                        swapFromAmount,
+                        artistocksInput
+                    );
+                    
+                    await tx.wait();
+                    transactionHash = tx.hash;
+                    console.log('✅ AMM token swap successful:', tx.hash);
+                }
+                
+            } else if (hasTreasurySwap && swapFromAsset === "USD") {
+                // ⚠️ FALLBACK: Use TreasurySwapLite only when no liquidity pools (fixed rate)
+                console.log('🎯 Using TreasurySwapLite for Day-0 MVP swap (fixed rate fallback)');
+                swapType = `$${swapFromAmount} USD → ${artistConfig.tokenName} (Fixed Rate)`;
                 
                 const treasurySwap = new TreasurySwapLiteService(artistConfig.swapAddress!, signer);
                 const usdAmount = parseFloat(swapFromAmount);
@@ -114,49 +169,8 @@ const PurchaseFlow: React.FC<PurchaseFlowProps> = ({
                 transactionHash = tx.hash;
                 console.log('✅ TreasurySwapLite swap successful:', tx.hash);
                 
-            } else if (artistConfig.hasLiquidityPool) {
-                // Use existing AMM for LP-based swaps (advanced system)
-                console.log('🏊 Using AMM system for LP-based swap');
-                
-                const swapService = new SwapService(signer);
-                
-                if (swapFromAsset === "USD") {
-                    // Convert USD to ETH for AMM
-                    const ethAmount = (parseFloat(swapFromAmount) / 2500).toString(); // Rough USD→ETH
-                    swapType = `$${swapFromAmount} USD → ${artistConfig.tokenName} (AMM)`;
-                    
-                    const tx = await swapService.swapEthForTokens(
-                        artistConfig.contract,
-                        ethAmount,
-                        artistocksInput
-                    );
-                    
-                    await tx.wait();
-                    transactionHash = tx.hash;
-                    console.log('✅ AMM swap successful:', tx.hash);
-                } else {
-                    // Token to token swap via AMM
-                    const fromTokenConfig = Object.values(allArtistsConfig || {}).find(
-                        config => config.tokenName === swapFromAsset
-                    );
-                    
-                    if (fromTokenConfig?.contract) {
-                        swapType = `${swapFromAmount} ${swapFromAsset} → ${artistConfig.tokenName}`;
-                        
-                        const tx = await swapService.swapTokens(
-                            fromTokenConfig.contract,
-                            artistConfig.contract,
-                            swapFromAmount,
-                            artistocksInput
-                        );
-                        
-                        await tx.wait();
-                        transactionHash = tx.hash;
-                        console.log('✅ AMM token swap successful:', tx.hash);
-                    }
-                }
             } else {
-                throw new Error('No swap system available. Deploy TreasurySwapLite or create liquidity pool.');
+                throw new Error('No swap system available for this configuration');
             }
             
             // 🎉 SUCCESS - Show user-facing feedback
@@ -326,17 +340,17 @@ const PurchaseFlow: React.FC<PurchaseFlowProps> = ({
                     
                     {/* Swap System Status */}
                     <div className="mt-2 p-2 bg-gray-700 rounded-lg">
-                        {artistConfig.swapAddress && !artistConfig.paused ? (
+                        {artistConfig.hasLiquidityPool ? (
+                            <div>
+                                <p className="text-green-400">🏊 AMM Pools Active</p>
+                                <p className="text-xs">Live pricing via liquidity pools</p>
+                                <p className="text-xs">Cross-token trading enabled</p>
+                            </div>
+                        ) : artistConfig.swapAddress && !artistConfig.paused ? (
                             <div>
                                 <p className="text-blue-400">🎯 Day-0 MVP Active</p>
                                 <p className="text-xs">Fixed Rate: 1 ETH = 1,000,000 tokens</p>
-                                <p className="text-xs">TreasurySwapLite deployed</p>
-                            </div>
-                        ) : artistConfig.hasLiquidityPool ? (
-                            <div>
-                                <p className="text-green-400">🏊 AMM Pools Active</p>
-                                <p className="text-xs">Dynamic pricing via liquidity pools</p>
-                                <p className="text-xs">Cross-token trading enabled</p>
+                                <p className="text-xs">TreasurySwapLite fallback</p>
                             </div>
                         ) : (
                             <div>
@@ -405,4 +419,4 @@ const PurchaseFlow: React.FC<PurchaseFlowProps> = ({
     );
 };
 
-export default PurchaseFlow; 
+export default PurchaseFlow;

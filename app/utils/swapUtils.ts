@@ -157,7 +157,7 @@ export class SwapService {
       const tokenAmountWei = await this.contract.getTokenQuote(tokenAddress, ethAmountWei);
       
       const tokenAmount = ethers.formatUnits(tokenAmountWei, 18);
-      const slippage = 0.05; // 5% slippage tolerance (higher for small pools)
+      const slippage = 0.10; // 10% slippage tolerance (for small test pools)
       const minimumOutput = (parseFloat(tokenAmount) * (1 - slippage)).toString();
       
       return {
@@ -181,7 +181,7 @@ export class SwapService {
       const ethAmountWei = await this.contract.getEthQuote(tokenAddress, tokenAmountWei);
       
       const ethAmount = ethers.formatEther(ethAmountWei);
-      const slippage = 0.05; // 5% slippage tolerance (higher for small pools)
+      const slippage = 0.10; // 10% slippage tolerance (for small test pools)
       const minimumOutput = (parseFloat(ethAmount) * (1 - slippage)).toString();
       
       return {
