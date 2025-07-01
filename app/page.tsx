@@ -42,7 +42,7 @@ export default function HomePage() {
 
   const searchParams = useSearchParams();
   const router = useRouter();
-  const artistIdFromUrl = searchParams.get('artist') || 'gosheesh';
+  const artistIdFromUrl = searchParams?.get('artist') || 'gosheesh';
   const { artistConfig, allArtistsConfig, isLoading, error } = useArtistConfig(artistIdFromUrl);
 
   const [isMuted, setIsMuted] = useState(true);
@@ -484,10 +484,9 @@ export default function HomePage() {
   };
 
   const handleExploreOtherArtist = () => {
-    if (!artistConfig) return;
-    const currentArtistId = searchParams.get('artist') || 'gosheesh';
-    const nextArtistId = currentArtistId.toLowerCase() === 'gosheesh' ? 'jaitea' : 'gosheesh';
-    window.location.search = `?artist=${nextArtistId}`;
+    const currentArtistId = searchParams?.get('artist') || 'gosheesh';
+    const otherArtistId = currentArtistId === 'gosheesh' ? 'jaitea' : 'gosheesh';
+    router.push(`/?artist=${otherArtistId}`);
   };
 
   const handleArtistocksInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -539,11 +538,14 @@ export default function HomePage() {
     }
   };
 
+  // Initialize swapToAsset when artistConfig loads
   useEffect(() => {
-    if (artistConfig) {
-      setSwapToAsset(artistConfig.tokenName);
+    if (artistConfig && !swapToAsset) {
+      // Default TO asset: if we're on GOSHEESH page, default TO is JAIT33, and vice versa
+      const defaultToAsset = artistConfig.tokenName === "GOSH33SH" ? "JAIT33" : "GOSH33SH";
+      setSwapToAsset(defaultToAsset);
     }
-  }, [artistConfig]);
+  }, [artistConfig, swapToAsset]);
 
   useEffect(() => {
     const calculateSwapOutput = async () => {
@@ -552,7 +554,7 @@ export default function HomePage() {
       const effectivePrice = artistConfig?.realTimePrice ?? artistConfig?.tokenPrice ?? 0;
       
       // USD to Token swap (existing logic)
-      if (swapFromAsset === "USD" && swapToAsset === artistConfig?.tokenName && effectivePrice > 0) {
+      if (swapFromAsset === "USD" && effectivePrice > 0) {
         const fromVal = parseFloat(swapFromAmount);
         if (!isNaN(fromVal) && fromVal > 0) {
           setSwapToAmount((fromVal / effectivePrice).toFixed(8));
@@ -562,17 +564,18 @@ export default function HomePage() {
           setArtistocksInput("0");
         }
       }
-      // Token to Token swap (NEW - use AMM quotes)
-      else if (swapFromAsset !== "USD" && artistConfig?.hasLiquidityPool) {
+      // Token to Token swap (FIXED - use AMM quotes with proper provider)
+      else if (swapFromAsset !== "USD" && artistConfig?.hasLiquidityPool && magic) {
         const fromTokenConfig = Object.values(allArtistsConfig).find(
           config => config.tokenName === swapFromAsset
         );
         
-        if (fromTokenConfig?.hasLiquidityPool && parseFloat(swapFromAmount) > 0) {
+        if (fromTokenConfig?.hasLiquidityPool && fromTokenConfig?.contract && parseFloat(swapFromAmount) > 0) {
           try {
-            // Import SwapService dynamically
+            // Import SwapService with proper Magic Link provider
             const { SwapService } = await import('./utils/swapUtils');
-            const swapService = new SwapService(window.ethereum);
+            const provider = new ethers.BrowserProvider(magic.rpcProvider as any);
+            const swapService = new SwapService(provider);
             
             // Get cross-token quote: fromToken → ETH → toToken
             const fromTokenAmount = swapFromAmount;
@@ -602,7 +605,7 @@ export default function HomePage() {
     };
     
     calculateSwapOutput();
-  }, [swapFromAmount, swapFromAsset, swapToAsset, artistConfig, allArtistsConfig]);
+  }, [swapFromAmount, swapFromAsset, artistConfig, allArtistsConfig, magic]);
 
   const handleSwapFromAmountChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const usdString = e.target.value;
@@ -739,6 +742,42 @@ export default function HomePage() {
         setIsMinting(false);
     }
   };
+
+  // Listen for wallet balance updates
+  useEffect(() => {
+    const handleBalanceUpdate = (event: CustomEvent) => {
+      const newBalances = event.detail;
+      console.log('🔄 Received balance update:', newBalances);
+      setUserTokenBalances(newBalances);
+      
+      // Also update localStorage to sync with other components
+      localStorage.setItem('zeyodaUserTokenBalances', JSON.stringify(newBalances));
+    };
+
+    window.addEventListener('walletBalancesUpdated', handleBalanceUpdate as EventListener);
+    
+    return () => {
+      window.removeEventListener('walletBalancesUpdated', handleBalanceUpdate as EventListener);
+    };
+  }, []);
+
+  // Load cached token balances on component mount
+  useEffect(() => {
+    if (user) {
+      const storedBalances = localStorage.getItem('zeyodaUserTokenBalances');
+      if (storedBalances) {
+        try {
+          const parsed = JSON.parse(storedBalances);
+          if (parsed.balances) {
+            setUserTokenBalances(parsed.balances);
+            console.log('📦 Loaded cached balances:', parsed.balances);
+          }
+        } catch (e) {
+          console.error("Error parsing token balances from localStorage", e);
+        }
+      }
+    }
+  }, [user]);
 
   if (isLoading) {
     return <div className="flex justify-center items-center h-screen">Loading artist profile...</div>;
@@ -891,6 +930,8 @@ export default function HomePage() {
             purchaseConfirmationData={purchaseConfirmationData}
             swapFromAsset={swapFromAsset}
             setSwapFromAsset={setSwapFromAsset}
+            swapToAsset={swapToAsset}
+            setSwapToAsset={setSwapToAsset}
             unlockedArtistStates={unlockedArtistStates}
             userTokenBalances={userTokenBalances}
             swapFromAmount={swapFromAmount}

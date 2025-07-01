@@ -14,6 +14,8 @@ interface PurchaseFlowProps {
   purchaseConfirmationData: string | null;
   swapFromAsset: string;
   setSwapFromAsset: (asset: string) => void;
+  swapToAsset: string;
+  setSwapToAsset: (asset: string) => void;
   unlockedArtistStates: { [key: string]: boolean };
   userTokenBalances: UserTokenBalances;
   swapFromAmount: string;
@@ -39,6 +41,8 @@ const PurchaseFlow: React.FC<PurchaseFlowProps> = ({
   purchaseConfirmationData,
   swapFromAsset,
   setSwapFromAsset,
+  swapToAsset,
+  setSwapToAsset,
   unlockedArtistStates,
   userTokenBalances,
   swapFromAmount,
@@ -133,27 +137,79 @@ const PurchaseFlow: React.FC<PurchaseFlowProps> = ({
             } else if (hasLiquidityPool && swapFromAsset !== "USD") {
                 // ✅ Use AMM for token-to-token swaps
                 console.log('🏊 Using AMM system for token-to-token swap');
+                console.log('📋 Swap details:', {
+                    from: swapFromAsset,
+                    to: swapToAsset || artistConfig.tokenName,
+                    amount: swapFromAmount
+                });
                 
                 const swapService = new SwapService(signer);
                 
-                // Token to token swap via AMM
+                // Find FROM token config
                 const fromTokenConfig = Object.values(allArtistsConfig || {}).find(
                     config => config.tokenName === swapFromAsset
                 );
                 
-                if (fromTokenConfig?.contract) {
-                    swapType = `${swapFromAmount} ${swapFromAsset} → ${artistConfig.tokenName}`;
+                // Find TO token config (use swapToAsset if set, otherwise fallback to artistConfig)
+                const toTokenName = swapToAsset || artistConfig.tokenName;
+                const toTokenConfig = Object.values(allArtistsConfig || {}).find(
+                    config => config.tokenName === toTokenName
+                );
+                
+                if (fromTokenConfig?.contract && toTokenConfig?.contract) {
+                    swapType = `${swapFromAmount} ${swapFromAsset} → ${toTokenName}`;
+                    
+                    console.log('🎯 Token contracts:', {
+                        fromToken: fromTokenConfig.contract,
+                        toToken: toTokenConfig.contract,
+                        fromSymbol: swapFromAsset,
+                        toSymbol: toTokenName
+                    });
+                    
+                    // IMPORTANT: Approve tokens before swap
+                    const { ethers: ethersLib } = await import('ethers');
+                    const fromTokenContract = new ethersLib.Contract(
+                        fromTokenConfig.contract,
+                        ["function approve(address spender, uint256 amount) external returns (bool)"],
+                        signer
+                    );
+                    
+                    const swapAmountWei = ethersLib.parseUnits(swapFromAmount, 18);
+                    console.log('🔑 Approving tokens for swap...');
+                    const approveTx = await fromTokenContract.approve(
+                        '0xdBBfFD696484bBFCa3dA059FB1d8e2Cf40c450dE', // Main swap contract
+                        swapAmountWei
+                    );
+                    await approveTx.wait();
+                    console.log('✅ Tokens approved for swap');
+                    
+                    // Calculate minimum output with EXTREME slippage tolerance for testing (50%)
+                    const ethQuote = await swapService.getEthQuote(fromTokenConfig.contract, swapFromAmount);
+                    const tokenQuote = await swapService.getTokenQuote(toTokenConfig.contract, ethQuote.outputAmount);
+                    const minimumOutput = (parseFloat(tokenQuote.outputAmount) * 0.50).toString(); // 50% slippage tolerance for testing
+                    
+                    console.log('📊 Cross-token swap quotes:', {
+                        fromAmount: swapFromAmount,
+                        fromToken: swapFromAsset,
+                        toToken: toTokenName,
+                        ethIntermediate: ethQuote.outputAmount,
+                        expectedTokens: tokenQuote.outputAmount,
+                        minimumOutput,
+                        slippageTolerance: '50%'
+                    });
                     
                     const tx = await swapService.swapTokens(
                         fromTokenConfig.contract,
-                        artistConfig.contract,
+                        toTokenConfig.contract, // Use the correct TO token contract
                         swapFromAmount,
-                        artistocksInput
+                        minimumOutput // Use calculated minimum with very lenient slippage
                     );
                     
                     await tx.wait();
                     transactionHash = tx.hash;
                     console.log('✅ AMM token swap successful:', tx.hash);
+                } else {
+                    throw new Error(`Missing contract addresses: FROM=${fromTokenConfig?.contract}, TO=${toTokenConfig?.contract}`);
                 }
                 
             } else if (hasTreasurySwap && swapFromAsset === "USD") {
@@ -276,21 +332,21 @@ const PurchaseFlow: React.FC<PurchaseFlowProps> = ({
                         className="w-2/5 p-2 border border-gray-600 rounded-md bg-gray-700 text-white focus:ring-accentColor focus:border-accentColor"
                     >
                         <option value="USD">USD (Cash)</option>
-                        {allArtistsConfig && (
-                        unlockedArtistStates[artistConfig.name.toLowerCase()] ? (
-                            Object.entries(allArtistsConfig).map(([id, artist]) => {
-                            const isOwned = userTokenBalances[artist.tokenName] && userTokenBalances[artist.tokenName] > 0;
-                            if (isOwned || id === artistConfig.name.toLowerCase()) {
-                                return <option key={artist.tokenName} value={artist.tokenName}>{artist.tokenName}</option>;
+                        {/* Show ALL tokens the user owns with a balance > 0 */}
+                        {allArtistsConfig && Object.entries(allArtistsConfig).map(([id, artist]) => {
+                            const userBalance = userTokenBalances[artist.tokenName] || 0;
+                            const hasTokens = userBalance > 0;
+                            
+                            // Show token if user has it OR if it's the current artist's token (for swapping TO it)
+                            if (hasTokens || artist.tokenName === artistConfig?.tokenName) {
+                                return (
+                                    <option key={artist.tokenName} value={artist.tokenName}>
+                                        {artist.tokenName} {hasTokens ? `(${Math.floor(userBalance).toLocaleString()})` : ''}
+                                    </option>
+                                );
                             }
                             return null;
-                            })
-                        ) : (
-                            (userTokenBalances[artistConfig.tokenName] && userTokenBalances[artistConfig.tokenName] > 0 || artistConfig.name.toLowerCase() === artistConfig.name.toLowerCase()) && (
-                            <option key={artistConfig.tokenName} value={artistConfig.tokenName}>{artistConfig.tokenName}</option>
-                            )
-                        )
-                        )}
+                        })}
                     </select>
                     <input
                         type="text"
@@ -307,11 +363,41 @@ const PurchaseFlow: React.FC<PurchaseFlowProps> = ({
                     <div className="flex items-center space-x-2">
                         <select 
                             id="toAsset"
-                            value={artistConfig.tokenName}
-                            disabled
-                            className="w-2/5 p-2 border border-gray-600 rounded-md bg-gray-700 text-white focus:ring-accentColor focus:border-accentColor"
+                            value={swapFromAsset === "USD" ? artistConfig.tokenName : 
+                                   (swapToAsset || (artistConfig.tokenName === "GOSH33SH" ? "JAIT33" : "GOSH33SH"))}
+                            onChange={(e) => {
+                                const newToAsset = e.target.value;
+                                setSwapToAsset(newToAsset);
+                                
+                                // For token swaps, if user changes TO asset, we might want to suggest opposite FROM
+                                if (swapFromAsset !== "USD" && swapFromAsset === newToAsset) {
+                                    // If FROM and TO are same, switch FROM to something else
+                                    const oppositeAsset = newToAsset === "GOSH33SH" ? "JAIT33" : "GOSH33SH";
+                                    setSwapFromAsset(oppositeAsset);
+                                }
+                            }}
+                            disabled={swapFromAsset === "USD"} // Only disable for USD swaps
+                            className="w-2/5 p-2 border border-gray-600 rounded-md bg-gray-700 text-white focus:ring-accentColor focus:border-accentColor disabled:opacity-50"
                             >
-                            <option value={artistConfig.tokenName}>{artistConfig.tokenName}</option>
+                            {swapFromAsset === "USD" ? (
+                                // For USD swaps, only show current artist's token
+                                <option value={artistConfig.tokenName}>{artistConfig.tokenName}</option>
+                            ) : (
+                                // For token swaps, show all available tokens except the FROM token
+                                allArtistsConfig && Object.entries(allArtistsConfig).map(([id, artist]) => {
+                                    const userBalance = userTokenBalances[artist.tokenName] || 0;
+                                    // Show if different from FROM asset and either has balance or is main tokens
+                                    if (artist.tokenName !== swapFromAsset && 
+                                        (userBalance > 0 || ['GOSH33SH', 'JAIT33'].includes(artist.tokenName))) {
+                                        return (
+                                            <option key={artist.tokenName} value={artist.tokenName}>
+                                                {artist.tokenName}
+                                            </option>
+                                        );
+                                    }
+                                    return null;
+                                })
+                            )}
                         </select>
                         <input
                             type="text"
@@ -400,7 +486,7 @@ const PurchaseFlow: React.FC<PurchaseFlowProps> = ({
                         ) : swapFromAsset === "USD" ? (
                             `🔄 Swap $${swapFromAmount || '0'} for ${Math.floor(parseFloat(swapToAmount || artistocksInput || '0')).toLocaleString()} ${artistConfig.tokenName}`
                         ) : (
-                            `🔄 Swap ${swapFromAmount || '0'} ${swapFromAsset} for ${Math.floor(parseFloat(swapToAmount || artistocksInput || '0')).toLocaleString()} ${artistConfig.tokenName}`
+                            `🔄 Swap ${swapFromAmount || '0'} ${swapFromAsset} for ${Math.floor(parseFloat(swapToAmount || artistocksInput || '0')).toLocaleString()} ${swapToAsset || artistConfig.tokenName}`
                         )}
                     </button>
                     

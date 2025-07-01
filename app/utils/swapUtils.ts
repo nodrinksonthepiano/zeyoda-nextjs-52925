@@ -259,16 +259,50 @@ export class SwapService {
       const tokenInAmountWei = ethers.parseUnits(tokenInAmount, 18);
       const minimumTokensOutWei = ethers.parseUnits(minimumTokensOut, 18);
       
+      console.log('🔄 Executing swapTokens with params:', {
+        tokenIn: tokenInAddress,
+        tokenOut: tokenOutAddress,
+        amountIn: tokenInAmount,
+        minimumOut: minimumTokensOut,
+        gasLimit: 1500000
+      });
+      
+      // Try to estimate gas first
+      try {
+        const gasEstimate = await this.contract.swapTokens.estimateGas(
+          tokenInAddress,
+          tokenOutAddress,
+          tokenInAmountWei,
+          minimumTokensOutWei
+        );
+        console.log('⛽ Estimated gas:', gasEstimate.toString());
+      } catch (gasError) {
+        console.warn('⚠️ Gas estimation failed:', gasError);
+      }
+      
       const tx = await this.contract.swapTokens(
         tokenInAddress,
         tokenOutAddress,
         tokenInAmountWei,
-        minimumTokensOutWei
+        minimumTokensOutWei,
+        { 
+          gasLimit: 1500000, // Massively increased gas limit for cross-token swaps
+          gasPrice: undefined // Let the network set gas price
+        }
       );
       
       return tx;
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error swapping tokens:', error);
+      
+      // Try to decode the revert reason
+      if (error?.reason) {
+        console.error('Revert reason:', error.reason);
+      }
+      if (error?.data) {
+        console.error('Error data:', error.data);
+      }
+      
       throw error;
     }
   }

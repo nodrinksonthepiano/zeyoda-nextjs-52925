@@ -65,58 +65,14 @@ const Wallet: React.FC<WalletProps> = ({
     setIsLoading(true);
     setFetchError(null);
     const balances: UserTokenBalances = {};
-    let successfulFetches = 0;
-    let totalAttempts = 0;
     
     try {
       console.log("🔍 Fetching real token balances for:", userAddress);
       
-      // Try multiple RPC providers for better success rate
-      const providers = [];
+      // Use Magic Link provider (most reliable)
+      const provider = new ethers.BrowserProvider(magic.rpcProvider as any);
       
-      // Primary: Magic Link provider
-      try {
-        const magicProvider = new ethers.BrowserProvider(magic.rpcProvider as any);
-        providers.push({ name: 'Magic', provider: magicProvider });
-      } catch (e) {
-        console.warn('Magic provider failed to initialize');
-      }
-      
-      // Fallback: Direct Base Sepolia RPC
-      try {
-        const directProvider = new ethers.JsonRpcProvider('https://sepolia.base.org');
-        providers.push({ name: 'Direct', provider: directProvider });
-      } catch (e) {
-        console.warn('Direct provider failed to initialize');
-      }
-      
-      // Fallback: Alchemy Base Sepolia
-      try {
-        const alchemyProvider = new ethers.JsonRpcProvider('https://base-sepolia.g.alchemy.com/v2/demo');
-        providers.push({ name: 'Alchemy', provider: alchemyProvider });
-      } catch (e) {
-        console.warn('Alchemy provider failed to initialize');
-      }
-      
-      if (providers.length === 0) {
-        throw new Error('No RPC providers available');
-      }
-      
-              console.log(`🔗 Using ${providers.length} provider(s) for balance fetching`);
-        
-        // Get latest block to ensure fresh data
-        let latestBlock = 0;
-        for (const { name, provider } of providers) {
-          try {
-            latestBlock = await provider.getBlockNumber();
-            console.log(`📊 Latest block from ${name}: ${latestBlock}`);
-            break; // Use first successful block number
-          } catch (e) {
-            console.warn(`Could not get block number from ${name}`);
-          }
-        }
-        
-        // Use the contract addresses from environment variables
+      // Use the contract addresses from environment variables
       const contractAddresses = {
         'GOSH33SH': process.env.NEXT_PUBLIC_GOSH33SH_TOKEN,
         'JAIT33': process.env.NEXT_PUBLIC_JAIT33_TOKEN,
@@ -129,107 +85,57 @@ const Wallet: React.FC<WalletProps> = ({
         "function symbol() view returns (string)"
       ];
       
-      // Try to fetch balance for each artist config
+      // Fetch balance for each token with simplified logic
       for (const [artistId, config] of Object.entries(allArtistsConfig)) {
         const contractAddress = contractAddresses[config.tokenName as keyof typeof contractAddresses];
         
         if (!contractAddress) {
           console.warn(`⚠️ No contract address for ${config.tokenName}`);
+          balances[config.tokenName] = 0; // Set to 0 instead of skipping
           continue;
         }
         
-        totalAttempts++;
-        let balanceFetched = false;
-        
-        // Try each provider until one succeeds
-        for (const { name, provider } of providers) {
-          if (balanceFetched) break;
+        try {
+          console.log(`🪙 Fetching ${config.tokenName} balance...`);
           
-          try {
-            console.log(`🪙 Fetching ${config.tokenName} balance using ${name} provider...`);
-            
-            const contract = new ethers.Contract(contractAddress, erc20Abi, provider);
-            
-            // Set a 5-second timeout for each call
-            const timeoutPromise = new Promise((_, reject) => 
-              setTimeout(() => reject(new Error(`${name} provider timeout`)), 5000)
-            );
-            
-                         // Force latest block data to avoid cached balances
-             const balancePromise = latestBlock > 0 
-               ? contract.balanceOf(userAddress, { blockTag: latestBlock })
-               : contract.balanceOf(userAddress);
-             const rawBalance = await Promise.race([balancePromise, timeoutPromise]) as bigint;
-            
-            const balance = Number(rawBalance) / Math.pow(10, 18); // Assuming 18 decimals
-            
-                         console.log(`✅ ${config.tokenName} balance from ${name}:`, balance);
-             balances[config.tokenName] = balance;
-            
-            successfulFetches++;
-            balanceFetched = true;
-            
-          } catch (error: any) {
-            console.warn(`⚠️ ${name} provider failed for ${config.tokenName}:`, error.message);
-            // Try next provider
-          }
-        }
-        
-        if (!balanceFetched) {
-          console.error(`❌ Could not fetch ${config.tokenName} balance from any provider`);
+          const contract = new ethers.Contract(contractAddress, erc20Abi, provider);
+          const rawBalance = await contract.balanceOf(userAddress);
+          const balance = Number(rawBalance) / Math.pow(10, 18); // Assuming 18 decimals
+          
+          console.log(`✅ ${config.tokenName} balance:`, balance);
+          balances[config.tokenName] = balance;
+          
+        } catch (error: any) {
+          console.warn(`⚠️ Error fetching ${config.tokenName} balance:`, error.message);
+          balances[config.tokenName] = 0; // Set to 0 on error
         }
       }
       
-      // Update state with fetched balances
-      if (successfulFetches > 0) {
-        setRealTimeBalances(balances);
-        setLastFetchTime(new Date());
-        
-        // Cache successful balances
-        try {
-          localStorage.setItem('zeyodaUserTokenBalances', JSON.stringify({
-            balances,
-            timestamp: Date.now(),
-            userAddress
-          }));
-          console.log(`💾 Cached ${successfulFetches} token balances`);
-        } catch (cacheError) {
-          console.warn('Could not cache balances:', cacheError);
-        }
+      // Always update state with whatever we fetched (even if some failed)
+      setRealTimeBalances(balances);
+      setLastFetchTime(new Date());
+      
+      // Cache successful balances
+      try {
+        localStorage.setItem('zeyodaUserTokenBalances', JSON.stringify({
+          balances,
+          timestamp: Date.now(),
+          userAddress
+        }));
+        console.log(`💾 Cached token balances:`, balances);
+      } catch (cacheError) {
+        console.warn('Could not cache balances:', cacheError);
       }
       
-      // Provide user feedback
-      if (successfulFetches === 0 && totalAttempts > 0) {
-        console.warn('⚠️ No balances could be fetched from any provider');
-        setFetchError('Unable to fetch current balances. Network connectivity issues detected. Showing cached data if available.');
-        
-        // Try to load from cache as fallback
-        try {
-          const cached = localStorage.getItem('zeyodaUserTokenBalances');
-          if (cached) {
-            const { balances: cachedBalances, timestamp, userAddress: cachedAddress } = JSON.parse(cached);
-            if (cachedAddress === userAddress && cachedBalances) {
-              setRealTimeBalances(cachedBalances);
-              const cacheAge = Math.round((Date.now() - timestamp) / 1000 / 60);
-              setFetchError(`Showing cached balances (${cacheAge} minutes old). Click refresh to try again.`);
-              console.log(`📦 Using cached balances (${cacheAge} minutes old)`);
-            }
-          }
-        } catch (e) {
-          console.warn('Could not load cached balances');
-        }
-        
-      } else if (successfulFetches < totalAttempts) {
-        console.warn(`⚠️ Partial balance fetch: ${successfulFetches}/${totalAttempts} successful`);
-        setFetchError(`Some balances couldn't be loaded (${successfulFetches}/${totalAttempts} successful). Data may be incomplete.`);
-      } else {
-        setLastFetchTime(new Date());
-        console.log(`✅ Successfully fetched all ${successfulFetches} token balances`);
-      }
+      // Trigger a custom event to notify other components
+      const balanceUpdateEvent = new CustomEvent('walletBalancesUpdated', {
+        detail: balances
+      });
+      window.dispatchEvent(balanceUpdateEvent);
       
     } catch (error: any) {
-      console.error('❌ Critical error in balance fetching:', error);
-      setFetchError(`Critical error: ${error.message}. Please try refreshing the page.`);
+      console.error('❌ Balance fetch failed:', error);
+      setFetchError(`Failed to fetch balances: ${error.message}`);
     } finally {
       setIsLoading(false);
     }
