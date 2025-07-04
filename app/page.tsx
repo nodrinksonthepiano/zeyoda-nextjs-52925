@@ -36,14 +36,14 @@ interface PriceDetails {
 const ORBIT_SPEED = 0.3;
 
 export default function HomePage() {
-  const { magic, user } = useWallet();
+  const { magic, user, isReady, isLoading: authLoading, error: authError } = useWallet();
   const { showToast } = useToast();
   const [email, setEmail] = useState('');
 
   const searchParams = useSearchParams();
   const router = useRouter();
   const artistIdFromUrl = searchParams?.get('artist') || 'gosheesh';
-  const { artistConfig, allArtistsConfig, isLoading, error } = useArtistConfig(artistIdFromUrl);
+  const { artistConfig, allArtistsConfig, isLoading: configLoading, error: configError } = useArtistConfig(artistIdFromUrl);
 
   const [isMuted, setIsMuted] = useState(true);
   const [shakeActive, setShakeActive] = useState(false);
@@ -570,7 +570,7 @@ export default function HomePage() {
           config => config.tokenName === swapFromAsset
         );
         
-        if (fromTokenConfig?.hasLiquidityPool && fromTokenConfig?.contract && parseFloat(swapFromAmount) > 0) {
+        if (fromTokenConfig?.hasLiquidityPool && fromTokenConfig?.contract && artistConfig?.contract && parseFloat(swapFromAmount) > 0) {
           try {
             // Import SwapService with proper Magic Link provider
             const { SwapService } = await import('./utils/swapUtils');
@@ -689,12 +689,18 @@ export default function HomePage() {
   async function login() {
     if (!magic) return;
     try {
+      console.log("🔐 Starting Magic.link login process...");
+      
       const didToken = await magic.auth.loginWithEmailOTP({ email });
       const meta = await magic.user.getInfo();
       if (meta.publicAddress && meta.email) {
         localStorage.setItem('zeyodaUserEmail', meta.email);
         showToast('Logged in as ' + meta.publicAddress, 'success');
-        setTimeout(() => window.location.reload(), 1500);
+        
+        // Trigger a simple refresh after a short delay to let Magic.link settle
+        setTimeout(() => {
+          window.location.reload();
+        }, 1000);
       }
     } catch (error) {
       console.error("magic login failed", error);
@@ -779,12 +785,40 @@ export default function HomePage() {
     }
   }, [user]);
 
-  if (isLoading) {
+  // Show authentication loading screen first
+  if (authLoading || !isReady) {
+    return (
+      <div className="auth-loading">
+        <div className="auth-loading-spinner"></div>
+        <p className="auth-loading-text">Connecting wallet...</p>
+      </div>
+    );
+  }
+
+  // Show authentication error if present
+  if (authError) {
+    return (
+      <div className="auth-loading">
+        <div className="auth-error-icon">⚠️</div>
+        <p className="auth-error-text">Authentication failed: {authError ?? 'Unknown error'}</p>
+        <button 
+          onClick={() => window.location.reload()} 
+          className="auth-retry-button"
+        >
+          Try Again
+        </button>
+      </div>
+    );
+  }
+
+  // Show artist config loading
+  if (configLoading) {
     return <div className="flex justify-center items-center h-screen">Loading artist profile...</div>;
   }
 
-  if (error) {
-    return <div className="flex justify-center items-center h-screen">Error: {error}</div>;
+  // Show artist config error
+  if (configError) {
+    return <div className="flex justify-center items-center h-screen">Error: {configError}</div>;
   }
 
   if (!artistConfig) {

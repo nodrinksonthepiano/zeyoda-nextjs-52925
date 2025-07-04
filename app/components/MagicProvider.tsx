@@ -7,34 +7,68 @@ type WalletCtx = {
   magic?: Magic
   provider?: ethers.BrowserProvider
   user?: string | null
-  isInitialized?: boolean
+  isReady: boolean      // true once auth check finished
+  isLoading: boolean    // initial loader
+  error?: string | null
 }
 
-const WalletContext = createContext<WalletCtx>({})
+const WalletContext = createContext<WalletCtx>({
+  user: null,
+  isReady: false,
+  isLoading: true,
+  error: null
+})
 
 export function useWallet() {
   return useContext(WalletContext)
 }
 
 export function MagicProvider({ children }: { children: React.ReactNode }) {
-  const [state, setState] = useState<WalletCtx>({ user: null, isInitialized: false })
+  const [state, setState] = useState<WalletCtx>({ 
+    user: null, 
+    isReady: false, 
+    isLoading: true,
+    error: null 
+  })
 
   useEffect(() => {
     if (typeof window === 'undefined') return
     
-    const magic = new Magic(process.env.NEXT_PUBLIC_MAGIC_PK!, {
-      network: {
-        rpcUrl: process.env.NEXT_PUBLIC_RPC!,
-        chainId: 84532 // Base Sepolia
-      }
-    })
-    const provider = new ethers.BrowserProvider(magic.rpcProvider as any)
-
-    async function init() {
+    async function initializeAuth() {
       try {
-        console.log("🔧 MagicProvider: Initializing Magic Link...")
+        console.log("🔧 MagicProvider: Starting authentication initialization...")
         
-        // Check if user is already logged in (without forcing logout)
+        // Create Magic instance
+        const magic = new Magic(process.env.NEXT_PUBLIC_MAGIC_PK!, {
+          network: {
+            rpcUrl: process.env.NEXT_PUBLIC_RPC!,
+            chainId: 84532 // Base Sepolia
+          }
+        })
+        const provider = new ethers.BrowserProvider(magic.rpcProvider as any)
+
+        // Check for cached auth state first for faster loading
+        let cachedUser = null
+        try {
+          const cachedAuth = sessionStorage.getItem('magic-auth-state')
+          if (cachedAuth) {
+            const { user, timestamp } = JSON.parse(cachedAuth)
+            // Only use cached data if it's less than 30 minutes old (shorter cache)
+            if (Date.now() - timestamp < 1800000) {
+              cachedUser = user
+              console.log("🔍 MagicProvider: Using cached auth state:", cachedUser)
+            } else {
+              console.log("🔍 MagicProvider: Cached auth state expired, clearing...")
+              sessionStorage.removeItem('magic-auth-state')
+            }
+          }
+        } catch (e) {
+          console.warn("⚠️ MagicProvider: Error reading cached auth:", e)
+          sessionStorage.removeItem('magic-auth-state')
+        }
+
+        // Perform actual auth check (let Magic.link handle its own flow)
+        console.log("🔍 MagicProvider: Checking Magic.link authentication...")
         const isLoggedIn = await magic.user.isLoggedIn()
         let userAddress = null
         
@@ -42,30 +76,52 @@ export function MagicProvider({ children }: { children: React.ReactNode }) {
           console.log("🔍 MagicProvider: User session detected, getting user info...")
           const meta = await magic.user.getInfo()
           userAddress = meta.publicAddress || null
-          console.log("👤 MagicProvider: User restored:", userAddress)
+          console.log("👤 MagicProvider: User authenticated:", userAddress)
+          
+          // Cache successful auth (but don't cache too aggressively)
+          if (userAddress) {
+            sessionStorage.setItem('magic-auth-state', JSON.stringify({
+              user: userAddress,
+              timestamp: Date.now()
+            }))
+          }
         } else {
           console.log("❌ MagicProvider: No existing user session")
+          // Clear any stale cached data
+          sessionStorage.removeItem('magic-auth-state')
         }
         
+        // SINGLE ATOMIC STATE UPDATE
         setState({ 
           magic, 
           provider, 
           user: userAddress,
-          isInitialized: true 
+          isReady: true,
+          isLoading: false,
+          error: null
         })
         
-        console.log("✅ MagicProvider: Initialization complete")
+        console.log("✅ MagicProvider: Authentication initialization complete")
       } catch (error) {
-        console.error("❌ MagicProvider: Initialization error:", error)
-        setState({ 
-          magic, 
-          provider, 
+        console.error("❌ MagicProvider: Authentication initialization failed:", error)
+        
+        // Clear any cached data on error
+        sessionStorage.removeItem('magic-auth-state')
+        
+        // Single error state update
+        setState(prev => ({ 
+          ...prev,
+          magic: prev.magic, // Keep magic instance if it was created
+          provider: prev.provider, // Keep provider if it was created
           user: null,
-          isInitialized: true 
-        })
+          isReady: true,
+          isLoading: false,
+          error: error instanceof Error ? error.message : 'Authentication failed'
+        }))
       }
     }
-    init()
+
+    initializeAuth()
   }, [])
 
   return <WalletContext.Provider value={state}>{children}</WalletContext.Provider>
