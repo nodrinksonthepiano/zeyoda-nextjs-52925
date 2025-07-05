@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { supabase } from '../utils/supabaseClient';
 import { SwapService } from '../utils/swapUtils';
 import { ethers } from 'ethers';
+import { ARTIST_REGISTRY, getArtistContracts, isValidArtist } from '../utils/addressRegistry';
 
 // Define the types again for clarity within the hook
 interface ArtistConfig {
@@ -127,15 +128,19 @@ export function useArtistConfig(artistId: string): UseArtistConfigReturn {
         }
 
         const artistsData = data.reduce((acc: {[key: string]: ArtistConfig}, artist: any) => {
-            // DEBUG: Log the raw artist data from Supabase
+            // Get registry contracts for this artist (if they exist)
+            const registryContracts = getArtistContracts(artist.id);
+            
+            // DEBUG: Log the raw artist data from Supabase and registry
             console.log(`🔍 Raw Supabase data for ${artist.id}:`, {
               tokenprice: artist.tokenprice,
               videosrc: artist.videosrc,
               contract: artist.contract,
-              tokenName: artist.tokenName
+              tokenName: artist.tokenName,
+              registryFound: !!registryContracts
             });
             
-            // Map Supabase fields to expected format (based on actual schema)
+            // Map Supabase fields to expected format, with registry override
             const enhancedArtist = {
               name: artist.name,
               displayName: artist.displayname, // Supabase field is 'displayname'
@@ -144,8 +149,9 @@ export function useArtistConfig(artistId: string): UseArtistConfigReturn {
               artworkYear: artist.artworkyear?.toString() || '2024', // Supabase field is 'artworkyear'
               tokenPrice: artist.tokenprice || 0.0005, // Supabase field is 'tokenprice' (numeric)
               videoSrc: artist.videosrc?.startsWith('/') ? artist.videosrc : `/${artist.videosrc}`, // Supabase field is 'videosrc', add leading slash
-              contract: artist.contract, // Direct field from Supabase
-              swapAddress: artist.swap_address, // Supabase field is 'swap_address' 
+              // Use registry addresses if available, fallback to Supabase
+              contract: registryContracts?.token || artist.contract,
+              swapAddress: registryContracts?.swap || artist.swap_address,
               paused: artist.paused ?? false,
               theme: typeof artist.theme === 'string' ? JSON.parse(artist.theme) : (artist.theme || {
                 primaryColor: "#1a0a2b",
@@ -157,6 +163,16 @@ export function useArtistConfig(artistId: string): UseArtistConfigReturn {
               }),
               orbitalTokens: typeof artist.orbitaltokens === 'string' ? JSON.parse(artist.orbitaltokens) : (artist.orbitaltokens || [])
             };
+            
+            // Log when registry overrides Supabase data
+            if (registryContracts) {
+              console.log(`📝 Using registry contracts for ${artist.id}:`, {
+                token: registryContracts.token,
+                swap: registryContracts.swap,
+                treasuryWallet: registryContracts.treasuryWallet
+              });
+            }
+            
             acc[artist.id] = enhancedArtist;
             return acc;
         }, {});

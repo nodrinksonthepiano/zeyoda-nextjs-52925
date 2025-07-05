@@ -5,9 +5,23 @@ const PROVIDER_URL = "https://sepolia.base.org";
 const provider = new ethers.JsonRpcProvider(PROVIDER_URL);
 
 // Token addresses (consistent across all files)
+// Import the centralized registry
+const ARTIST_REGISTRY = {
+  gosheesh: {
+    token: "0xB5610c9c05c6B2995d55BB0Fa6e03Ce11b1Bf6Ac",
+    swap:  "0xFCdc6C04bC0e1625178883c64567e1218Ee97DFf",
+    treasuryWallet: "0xeE699E81717F03B745bf21EC08c2978B8e6aa0e8"
+  },
+  jaitea: {
+    token: "0x9D06564a8D98e146CAb1dE74BF815bf05d24D685",
+    swap:  "0xd01cFF08a9962e67914a3A3e446D90513915db6f",
+    treasuryWallet: "0x0B893D9D0dA09096C75e43c310316dC61b2773be"
+  }
+};
+
 const TOKENS = {
-  GOSH33SH: "0xB5610c9c05c6B2995d55BB0Fa6e03Ce11b1Bf6Ac",
-  JAIT33: "0x9D06564a8D98e146CAb1dE74BF815bf05d24D685"
+  GOSH33SH: ARTIST_REGISTRY.gosheesh.token,
+  JAIT33: ARTIST_REGISTRY.jaitea.token
 };
 
 // Potential swap contract addresses from different sources

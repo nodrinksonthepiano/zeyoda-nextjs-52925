@@ -1,15 +1,18 @@
 const { createClient } = require('@supabase/supabase-js');
 require('dotenv').config({ path: '.env.local' });
 
-// Expected correct addresses
-const EXPECTED_ADDRESSES = {
-  gosheesh: "0xB5610c9c05c6B2995d55BB0Fa6e03Ce11b1Bf6Ac", // GOSH33SH
-  jaitea: "0x9D06564a8D98e146CAb1dE74BF815bf05d24D685"   // JAIT33
-};
-
-const EXPECTED_SWAP_ADDRESSES = {
-  gosheesh: "0x63349f5190860b4E954639eeFd60b92bE9A01148", // GOSHEESH Swap
-  jaitea: "0xd01cFF08a9962e67914a3A3e446D90513915db6f"   // JAITEA Swap
+// Import the centralized registry
+const ARTIST_REGISTRY = {
+  gosheesh: {
+    token: "0xB5610c9c05c6B2995d55BB0Fa6e03Ce11b1Bf6Ac",
+    swap:  "0xFCdc6C04bC0e1625178883c64567e1218Ee97DFf",
+    treasuryWallet: "0xeE699E81717F03B745bf21EC08c2978B8e6aa0e8"
+  },
+  jaitea: {
+    token: "0x9D06564a8D98e146CAb1dE74BF815bf05d24D685",
+    swap:  "0xd01cFF08a9962e67914a3A3e446D90513915db6f",
+    treasuryWallet: "0x0B893D9D0dA09096C75e43c310316dC61b2773be"
+  }
 };
 
 async function main() {
@@ -57,8 +60,8 @@ async function main() {
             console.log(`   Token Price: ${artist.tokenprice || 'NOT SET'}`);
             
             // Check if contract address is correct
-            const expectedContract = EXPECTED_ADDRESSES[artist.id];
-            const expectedSwap = EXPECTED_SWAP_ADDRESSES[artist.id];
+            const expectedContract = ARTIST_REGISTRY[artist.id]?.token;
+            const expectedSwap = ARTIST_REGISTRY[artist.id]?.swap;
             
             if (artist.contract === expectedContract) {
                 console.log("   ✅ Contract address is CORRECT");
@@ -81,8 +84,8 @@ async function main() {
         
         // Check if we need to update
         const needsUpdate = data.some(artist => {
-            const expectedContract = EXPECTED_ADDRESSES[artist.id];
-            const expectedSwap = EXPECTED_SWAP_ADDRESSES[artist.id];
+            const expectedContract = ARTIST_REGISTRY[artist.id]?.token;
+            const expectedSwap = ARTIST_REGISTRY[artist.id]?.swap;
             return artist.contract !== expectedContract || artist.swap_address !== expectedSwap;
         });
         
@@ -91,9 +94,9 @@ async function main() {
             console.log("Your Supabase has wrong contract addresses!");
             console.log("\nRun this SQL in your Supabase SQL Editor:");
             console.log("\n-- Update GOSHEESH");
-            console.log(`UPDATE artists SET contract = '${EXPECTED_ADDRESSES.gosheesh}', swap_address = '${EXPECTED_SWAP_ADDRESSES.gosheesh}' WHERE id = 'gosheesh';`);
+            console.log(`UPDATE artists SET contract = '${ARTIST_REGISTRY.gosheesh.token}', swap_address = '${ARTIST_REGISTRY.gosheesh.swap}' WHERE id = 'gosheesh';`);
             console.log("\n-- Update JAITEA");
-            console.log(`UPDATE artists SET contract = '${EXPECTED_ADDRESSES.jaitea}', swap_address = '${EXPECTED_SWAP_ADDRESSES.jaitea}' WHERE id = 'jaitea';`);
+            console.log(`UPDATE artists SET contract = '${ARTIST_REGISTRY.jaitea.token}', swap_address = '${ARTIST_REGISTRY.jaitea.swap}' WHERE id = 'jaitea';`);
             console.log("\n-- Verify");
             console.log("SELECT id, name, contract, swap_address FROM artists;");
         } else {

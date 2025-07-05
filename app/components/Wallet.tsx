@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { ethers } from 'ethers';
+import { ARTIST_REGISTRY, getArtistContracts } from '../utils/addressRegistry';
 
 interface ArtistConfig {
   name: string;
@@ -72,10 +73,10 @@ const Wallet: React.FC<WalletProps> = ({
       // Use Magic Link provider (most reliable)
       const provider = new ethers.BrowserProvider(magic.rpcProvider as any);
       
-      // Use the contract addresses from environment variables
+      // Use the contract addresses from the registry
       const contractAddresses = {
-        'GOSH33SH': process.env.NEXT_PUBLIC_GOSH33SH_TOKEN,
-        'JAIT33': process.env.NEXT_PUBLIC_JAIT33_TOKEN,
+        'GOSH33SH': ARTIST_REGISTRY.gosheesh.token,
+        'JAIT33': ARTIST_REGISTRY.jaitea.token,
       };
       
       // Simple ERC20 ABI for balanceOf

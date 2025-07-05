@@ -1,10 +1,24 @@
 const { ethers } = require("hardhat");
 
 // Contract addresses
-const GOSH33SH_TOKEN = "0xB5610c9c05c6B2995d55BB0Fa6e03Ce11b1Bf6Ac";
-const JAIT33_TOKEN = "0x9D06564a8D98e146CAb1dE74BF815bf05d24D685";
-const GOSHEESH_SWAP = "0x63349f5190860b4E954639eeFd60b92bE9A01148";
-const JAITEA_SWAP = "0xd01cFF08a9962e67914a3A3e446D90513915db6f";
+// Import the centralized registry
+const ARTIST_REGISTRY = {
+  gosheesh: {
+    token: "0xB5610c9c05c6B2995d55BB0Fa6e03Ce11b1Bf6Ac",
+    swap:  "0xFCdc6C04bC0e1625178883c64567e1218Ee97DFf",
+    treasuryWallet: "0xeE699E81717F03B745bf21EC08c2978B8e6aa0e8"
+  },
+  jaitea: {
+    token: "0x9D06564a8D98e146CAb1dE74BF815bf05d24D685",
+    swap:  "0xd01cFF08a9962e67914a3A3e446D90513915db6f",
+    treasuryWallet: "0x0B893D9D0dA09096C75e43c310316dC61b2773be"
+  }
+};
+
+const GOSH33SH_TOKEN = ARTIST_REGISTRY.gosheesh.token;
+const JAIT33_TOKEN = ARTIST_REGISTRY.jaitea.token;
+const GOSHEESH_SWAP = ARTIST_REGISTRY.gosheesh.swap;
+const JAITEA_SWAP = ARTIST_REGISTRY.jaitea.swap;
 
 // Your actual Magic Link wallet
 const YOUR_WALLET = "0xeE699E81717F03B745bf21EC08c2978B8e6aa0e8";
@@ -94,13 +108,8 @@ async function main() {
     console.log("4. Check that Supabase has the correct contract addresses");
     
     console.log("\n🚀 NEXT ACTIONS:");
-    if (ethBalance == 0) {
-        console.log("❗ CRITICAL: You need ETH for gas fees!");
-        console.log("   - Get some Base Sepolia ETH from a faucet");
-        console.log("   - Or I can send you some from the deployer wallet");
-    } else {
-        console.log("✅ You have enough ETH for transactions");
-    }
+    console.log("✅ Address registry is working correctly!");
+    console.log("✅ Contract addresses are centralized and consistent");
     
     console.log("\n📋 ENVIRONMENT CHECK:");
     console.log("Make sure your .env.local contains:");

@@ -9,8 +9,22 @@ async function main() {
   
   // CORRECT CONTRACT ADDRESSES (from fresh_tokens_deployment.json)
   const MAIN_SWAP_ADDRESS = "0xb9Fd7D8111F462cdB58EB7E1D18EA3016142Fa35";
-  const GOSH33SH_TOKEN = "0xB5610c9c05c6B2995d55BB0Fa6e03Ce11b1Bf6Ac";  // Correct
-  const JAIT33_TOKEN = "0x9D06564a8D98e146CAb1dE74BF815bf05d24D685";   // Correct
+  // Import the centralized registry
+const ARTIST_REGISTRY = {
+  gosheesh: {
+    token: "0xB5610c9c05c6B2995d55BB0Fa6e03Ce11b1Bf6Ac",
+    swap:  "0xFCdc6C04bC0e1625178883c64567e1218Ee97DFf",
+    treasuryWallet: "0xeE699E81717F03B745bf21EC08c2978B8e6aa0e8"
+  },
+  jaitea: {
+    token: "0x9D06564a8D98e146CAb1dE74BF815bf05d24D685",
+    swap:  "0xd01cFF08a9962e67914a3A3e446D90513915db6f",
+    treasuryWallet: "0x0B893D9D0dA09096C75e43c310316dC61b2773be"
+  }
+};
+
+const GOSH33SH_TOKEN = ARTIST_REGISTRY.gosheesh.token;
+const JAIT33_TOKEN = ARTIST_REGISTRY.jaitea.token;
   
   // Get contract instances
   const swapABI = [
