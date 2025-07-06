@@ -3,6 +3,7 @@ import { ArtistConfig, UserTokenBalances } from '../../types/artist-types';
 import { SwapService, SwapQuote } from '../utils/swapUtils';
 import { TreasurySwapLiteService, TreasurySwapQuote } from '../utils/treasurySwapUtils';
 import { useWallet } from './MagicProvider';
+import { useDownloadAccess } from '../hooks/useDownloadAccess';
 
 interface PurchaseFlowProps {
   user: string | null;
@@ -60,6 +61,13 @@ const PurchaseFlow: React.FC<PurchaseFlowProps> = ({
     const { magic } = useWallet();
     const [swapQuote, setSwapQuote] = useState<SwapQuote | null>(null);
     const [isSwapping, setIsSwapping] = useState(false);
+    const [downloadingAssets, setDownloadingAssets] = useState<Set<number>>(new Set());
+    
+    // Check download access for current artist
+    const { hasAccessToAsset, hasAnyAccess, downloadAccess, isLoading: checkingAccess } = useDownloadAccess(
+        user, 
+        artistConfig?.name?.toLowerCase() || null
+    );
 
     if (!artistConfig) return null;
 
@@ -268,6 +276,59 @@ const PurchaseFlow: React.FC<PurchaseFlowProps> = ({
             alert(errorMessage);
         } finally {
             setIsSwapping(false);
+        }
+    };
+
+    const handleDownload = async (assetNumber: number) => {
+        if (!user || !artistConfig) {
+            alert('Please connect your wallet first');
+            return;
+        }
+
+        setDownloadingAssets(prev => new Set([...prev, assetNumber]));
+        try {
+            console.log(`📥 Requesting download for ${artistConfig.name} asset ${assetNumber}`);
+            
+            const response = await fetch('/api/createSignedUrl', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    artist_id: artistConfig.name?.toLowerCase(),
+                    asset_number: assetNumber,
+                    user_address: user
+                })
+            });
+
+            const data = await response.json();
+
+            if (!response.ok) {
+                throw new Error(data.error || 'Failed to get download URL');
+            }
+
+            console.log(`✅ Got signed URL for ${artistConfig.name} asset ${assetNumber}`);
+            
+            // Create a temporary link to trigger download
+            const link = document.createElement('a');
+            link.href = data.url;
+            link.download = `${artistConfig.name}_asset_${assetNumber}.${data.file_type?.split('/')[1] || 'mp4'}`;
+            link.target = '_blank';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+
+            alert(`✅ Download started! Your ${artistConfig.name} asset will begin downloading shortly.`);
+            
+        } catch (error: any) {
+            console.error('Download failed:', error);
+            alert(`❌ Download failed: ${error.message}`);
+        } finally {
+            setDownloadingAssets(prev => {
+                const newSet = new Set(prev);
+                newSet.delete(assetNumber);
+                return newSet;
+            });
         }
     };
 
@@ -484,7 +545,9 @@ const PurchaseFlow: React.FC<PurchaseFlowProps> = ({
                                 Processing Transaction...
                             </span>
                         ) : swapFromAsset === "USD" ? (
-                            `🔄 Swap $${swapFromAmount || '0'} for ${Math.floor(parseFloat(swapToAmount || artistocksInput || '0')).toLocaleString()} ${artistConfig.tokenName}`
+                            includeDownload 
+                                ? `🔄 GET DOWNLOAD + ${Math.floor(parseFloat(swapToAmount || artistocksInput || '0')).toLocaleString()} ARTISTOCKS ($${(parseFloat(swapFromAmount || '0') + 1).toFixed(2)})`
+                                : `🔄 GET ${Math.floor(parseFloat(swapToAmount || artistocksInput || '0')).toLocaleString()} ARTISTOCKS ($${swapFromAmount || '0'})`
                         ) : (
                             `🔄 Swap ${swapFromAmount || '0'} ${swapFromAsset} for ${Math.floor(parseFloat(swapToAmount || artistocksInput || '0')).toLocaleString()} ${swapToAsset || artistConfig.tokenName}`
                         )}
@@ -498,6 +561,8 @@ const PurchaseFlow: React.FC<PurchaseFlowProps> = ({
                             <p>💡 Transaction will be confirmed in your wallet</p>
                         )}
                     </div>
+                    
+
                 </div>
                 </div>
             )}
