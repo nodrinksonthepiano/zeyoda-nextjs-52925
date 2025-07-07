@@ -1,172 +1,132 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { ethers } from 'ethers';
-import { supabase } from '../../utils/supabaseClient';
-import { ARTIST_REGISTRY, getArtistContracts } from '../../utils/addressRegistry';
+import { supabase } from '@/app/utils/supabaseClient';
+import { getArtistContracts } from '@/app/utils/addressRegistry';
 
-// ERC-1155 ABI for checking balances
-const ERC1155_ABI = [
-  "function balanceOf(address owner, uint256 id) view returns (uint256)",
-  "function hasDownloadAccess(address user, uint256 assetId) view returns (bool)"
-];
+// --- Constants ---
+const ERC1155_ABI = ["function balanceOf(address owner, uint256 id) view returns (uint256)"];
+const SEVEN_DAYS_IN_SECONDS = 7 * 24 * 60 * 60;
 
-// RPC provider for contract calls
-const provider = new ethers.JsonRpcProvider(process.env.NEXT_PUBLIC_RPC);
+// --- Environment Variables ---
+const RPC_URL = process.env.BASE_SEPOLIA_RPC_URL || 'https://sepolia.base.org';
+if (!process.env.BASE_SEPOLIA_RPC_URL) {
+  console.warn("BASE_SEPOLIA_RPC_URL not set, using default public RPC.");
+}
 
-export async function POST(request: NextRequest) {
+// --- Provider ---
+const provider = new ethers.JsonRpcProvider(RPC_URL);
+
+// --- In-memory cache for rate limiting ---
+const verificationCache = new Map<string, { timestamp: number }>();
+const CACHE_DURATION_MS = 60 * 1000; // 60 seconds
+
+// --- Helper Functions ---
+const maskAddress = (address: string) => `${address.slice(0, 6)}...${address.slice(-4)}`;
+
+const incrementDownloadCount = async (artistId: string, assetNumber: number) => {
   try {
-    const { artist_id, asset_number, user_address } = await request.json();
-    
-    // Validate required parameters
-    if (!artist_id || !asset_number || !user_address) {
-      return NextResponse.json(
-        { error: 'Missing required parameters: artist_id, asset_number, user_address' },
-        { status: 400 }
-      );
-    }
-    
-    // Validate artist exists in registry
-    const artistContracts = getArtistContracts(artist_id) as any;
-    if (!artistContracts || !artistContracts.download) {
-      return NextResponse.json(
-        { error: `Artist ${artist_id} not found or no download contract` },
-        { status: 404 }
-      );
-    }
-    
-    // Validate Ethereum address
-    if (!ethers.isAddress(user_address)) {
-      return NextResponse.json(
-        { error: 'Invalid user address' },
-        { status: 400 }
-      );
-    }
-    
-    console.log(`🔍 Checking download access for ${user_address} to ${artist_id} asset ${asset_number}`);
-    
-    // Check if user owns the download token
-    const downloadContract = new ethers.Contract(
-      artistContracts.download,
-      ERC1155_ABI,
-      provider
-    );
-    
-    const balance = await downloadContract.balanceOf(user_address, asset_number);
-    const hasAccess = balance > 0;
-    
-    console.log(`📊 Balance check: ${balance.toString()}, Has access: ${hasAccess}`);
-    
-    if (!hasAccess) {
-      return NextResponse.json(
-        { error: 'User does not own download access to this asset' },
-        { status: 403 }
-      );
-    }
-    
-    // Get asset info from database
-    const { data: asset, error: assetError } = await supabase
-      .from('artist_assets')
-      .select('file_url, file_type, metadata, download_count')
-      .eq('artist_id', artist_id)
-      .eq('asset_number', asset_number)
-      .single();
-    
-    if (assetError || !asset) {
-      console.error('Asset lookup error:', assetError);
-      return NextResponse.json(
-        { error: 'Asset not found in database' },
-        { status: 404 }
-      );
-    }
-    
-    console.log(`📁 Found asset: ${asset.file_url}`);
-    
-    // Extract the storage path from the file_url
-    // Expected format: "/assets/1GOSHEESH.mp4" or "artist-assets/gosheesh/1.mp4"
-    let storagePath = asset.file_url;
-    
-    // If it's a legacy static file path, convert to storage path
-    if (storagePath.startsWith('/assets/')) {
-      // Convert /assets/1GOSHEESH.mp4 to gosheesh/1.mp4
-      const fileName = storagePath.replace('/assets/', '');
-      storagePath = `${artist_id}/${asset_number}.mp4`;
-      console.log(`🔄 Converting legacy path to storage path: ${storagePath}`);
-    }
-    
-    // Remove leading slash if present
-    if (storagePath.startsWith('/')) {
-      storagePath = storagePath.substring(1);
-    }
-    
-    // Create signed URL with 7-day expiration
-    const expiresIn = 60 * 60 * 24 * 7; // 7 days in seconds
-    
-    const { data: signedUrlData, error: signedUrlError } = await supabase.storage
-      .from('artist-assets')
-      .createSignedUrl(storagePath, expiresIn);
-    
-    if (signedUrlError) {
-      console.error('Signed URL creation error:', signedUrlError);
-      
-      // If storage file doesn't exist, fall back to static file
-      if (signedUrlError.message?.includes('not found')) {
-        console.log('📄 Falling back to static file access');
-        
-        // For MVP, return the static file URL
-        const staticUrl = `${process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'}${asset.file_url}`;
-        
-        return NextResponse.json({
-          url: staticUrl,
-          expires_at: new Date(Date.now() + expiresIn * 1000).toISOString(),
-          file_type: asset.file_type,
-          metadata: asset.metadata,
-          source: 'static'
-        });
-      }
-      
-      return NextResponse.json(
-        { error: 'Failed to create signed URL' },
-        { status: 500 }
-      );
-    }
-    
-    // Update download count
-    const { error: updateError } = await supabase
-      .from('artist_assets')
-      .update({ download_count: asset.download_count + 1 })
-      .eq('artist_id', artist_id)
-      .eq('asset_number', asset_number);
-    
-    if (updateError) {
-      console.warn('Failed to update download count:', updateError);
-      // Don't fail the request for this
-    }
-    
-    console.log(`✅ Created signed URL for ${artist_id} asset ${asset_number}`);
-    
-    // Return the signed URL
-    return NextResponse.json({
-      url: signedUrlData.signedUrl,
-      expires_at: new Date(Date.now() + expiresIn * 1000).toISOString(),
-      file_type: asset.file_type,
-      metadata: asset.metadata,
-      source: 'storage'
+    await supabase.rpc('increment_download_count', {
+      p_artist_id: artistId,
+      p_asset_number: assetNumber,
     });
-    
-  } catch (error: any) {
-    console.error('API Error:', error);
-    
-    // Handle specific contract errors
-    if (error.message?.includes('call revert')) {
-      return NextResponse.json(
-        { error: 'Contract call failed - user may not own download access' },
-        { status: 403 }
-      );
+  } catch (error) {
+    console.warn(`Failed to increment download count for ${artistId}#${assetNumber}:`, error);
+  }
+};
+
+// --- Main Route Handler ---
+export async function POST(request: NextRequest) {
+  let body;
+  try {
+    body = await request.json();
+  } catch {
+    return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
+  }
+
+  const { artistId, assetNumber, userAddress } = body;
+
+  // 1. Basic Input Validation
+  if (!artistId || !assetNumber || !userAddress) {
+    return NextResponse.json({ error: 'Missing required parameters: artistId, assetNumber, userAddress' }, { status: 400 });
+  }
+
+  if (!ethers.isAddress(userAddress)) {
+    console.log(`❌ Invalid address format for ${userAddress}`);
+    return NextResponse.json({ error: 'malformed user address' }, { status: 400 });
+  }
+
+  const maskedAddr = maskAddress(userAddress);
+  const cacheKey = `${userAddress}-${artistId}-${assetNumber}`;
+
+  // 2. Check Rate-Limiting Cache
+  const cached = verificationCache.get(cacheKey);
+  if (cached && Date.now() - cached.timestamp < CACHE_DURATION_MS) {
+    console.log(`CACHE HIT for ${maskedAddr} on ${artistId}#${assetNumber}`);
+    // If cache is hit, we assume ownership and proceed, but this means we need to get the file path again
+  } else {
+    // 3. On-Chain Verification
+    try {
+      const artistContracts = getArtistContracts(artistId);
+      if (!artistContracts?.download) {
+        return NextResponse.json({ error: `Configuration not found for artist: ${artistId}` }, { status: 404 });
+      }
+
+      const contract = new ethers.Contract(artistContracts.download, ERC1155_ABI, provider);
+      const balance = await contract.balanceOf(userAddress, assetNumber);
+
+      if (balance === 0n) {
+        console.log(`❌ Ownership check failed (balance 0) for ${maskedAddr} on ${artistId}#${assetNumber}`);
+        return NextResponse.json({ error: 'asset not owned' }, { status: 403 });
+      }
+
+      // If successful, update the cache
+      verificationCache.set(cacheKey, { timestamp: Date.now() });
+
+    } catch (error: any) {
+      console.error(`❌ RPC/Contract error for ${maskedAddr} on ${artistId}#${assetNumber}:`, error.message);
+      return NextResponse.json({ error: error.reason || 'Contract query failed' }, { status: 502 });
+    }
+  }
+
+  // 4. Generate Signed URL (Success Path)
+  try {
+    const { data: asset, error: dbError } = await supabase
+      .from('artist_assets')
+      .select('file_url')
+      .eq('artist_id', artistId)
+      .eq('asset_number', assetNumber)
+      .single();
+
+    if (dbError || !asset) {
+      return NextResponse.json({ error: 'Asset not found in database' }, { status: 404 });
     }
     
-    return NextResponse.json(
-      { error: 'Internal server error' },
-      { status: 500 }
-    );
+    // The storage path is derived from the file_url, assuming a consistent structure
+    const storagePath = asset.file_url.startsWith('/') ? asset.file_url.substring(1) : asset.file_url;
+
+    const { data, error: signError } = await supabase.storage
+      .from('artist-assets')
+      .createSignedUrl(storagePath, SEVEN_DAYS_IN_SECONDS);
+
+    if (signError) {
+      throw signError;
+    }
+
+    // Fire-and-forget the download count increment
+    incrementDownloadCount(artistId, assetNumber);
+    
+    console.log(`✅ ${maskedAddr} owns ${artistId} asset #${assetNumber} – signed URL generated`);
+
+    const expiresAt = Math.floor(Date.now() / 1000) + SEVEN_DAYS_IN_SECONDS;
+
+    return NextResponse.json({
+      signedUrl: data.signedUrl,
+      expiresAt: expiresAt,
+    });
+
+  } catch (error: any) {
+    console.error('❌ Supabase error:', error.message);
+    return NextResponse.json({ error: 'Failed to retrieve asset or create signed URL' }, { status: 500 });
   }
 }
 
