@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { ethers } from 'ethers';
 import { supabase } from '@/app/utils/supabaseClient';
-import { getArtistContracts } from '@/app/utils/addressRegistry';
+import { getArtistContractsFromServer } from '@/app/utils/server/artistRegistry';
 
 // --- Constants ---
 const ERC1155_ABI = ["function balanceOf(address owner, uint256 id) view returns (uint256)"];
@@ -66,12 +66,12 @@ export async function POST(request: NextRequest) {
   } else {
     // 3. On-Chain Verification
     try {
-      const artistContracts = getArtistContracts(artistId);
-      if (!artistContracts?.download) {
-        return NextResponse.json({ error: `Configuration not found for artist: ${artistId}` }, { status: 404 });
+      const artistContracts = await getArtistContractsFromServer(artistId);
+      if (!artistContracts?.downloads) {
+        return NextResponse.json({ error: `Configuration for artist ${artistId} missing downloads contract` }, { status: 404 });
       }
 
-      const contract = new ethers.Contract(artistContracts.download, ERC1155_ABI, provider);
+      const contract = new ethers.Contract(artistContracts.downloads, ERC1155_ABI, provider);
       const balance = await contract.balanceOf(userAddress, assetNumber);
 
       if (balance === 0n) {

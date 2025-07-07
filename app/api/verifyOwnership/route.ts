@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { ethers } from 'ethers';
-import { getArtistContracts } from '@/app/utils/addressRegistry';
+import { getArtistContractsFromServer } from '@/app/utils/server/artistRegistry';
 
 // --- Constants ---
 const ERC1155_ABI = ["function balanceOf(address owner, uint256 id) view returns (uint256)"];
@@ -31,13 +31,13 @@ export async function GET(request: NextRequest) {
 
   // 2. On-Chain Verification
   try {
-    const artistContracts = getArtistContracts(artistId);
-    if (!artistContracts?.download) {
+    const artistContracts = await getArtistContractsFromServer(artistId as string);
+    if (!artistContracts?.downloads) {
       return NextResponse.json({ error: `Configuration not found for artist: ${artistId}` }, { status: 404 });
     }
 
-    const contract = new ethers.Contract(artistContracts.download, ERC1155_ABI, provider);
-    const balance = await contract.balanceOf(userAddress, assetNum);
+    const contract = new ethers.Contract(artistContracts.downloads, ERC1155_ABI, provider);
+    const balance = await contract.balanceOf(userAddress as string, assetNum);
     const owned = balance > 0n;
 
     return NextResponse.json({ owned });

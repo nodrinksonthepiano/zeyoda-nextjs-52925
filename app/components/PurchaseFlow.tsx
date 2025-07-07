@@ -4,7 +4,7 @@ import { SwapService, SwapQuote } from '../utils/swapUtils';
 import { TreasurySwapLiteService, TreasurySwapQuote } from '../utils/treasurySwapUtils';
 import { useWallet } from './MagicProvider';
 import { useDownloadAccess } from '../hooks/useDownloadAccess';
-import { getArtistContracts } from '../utils/addressRegistry';
+import { getArtistContracts } from '../utils/addressRegistryFallback';
 
 // ERC-1155 ABI for minting download tokens
 const DOWNLOAD_CONTRACT_ABI = [
@@ -115,7 +115,7 @@ const PurchaseFlow: React.FC<PurchaseFlowProps> = ({
             
             // DEBUG: Log the artist configuration for swap debugging
             console.log('🔍 Swap Debug Info for', artistConfig.name, {
-                swapAddress: artistConfig.swapAddress,
+                swap: artistConfig.swap,
                 paused: artistConfig.paused,
                 hasLiquidityPool: artistConfig.hasLiquidityPool,
                 contract: artistConfig.contract,
@@ -127,7 +127,7 @@ const PurchaseFlow: React.FC<PurchaseFlowProps> = ({
             
             // FIXED ROUTING LOGIC: Prioritize AMM when liquidity pools exist
             const hasLiquidityPool = artistConfig.hasLiquidityPool;
-            const hasTreasurySwap = artistConfig.swapAddress && !artistConfig.paused;
+            const hasTreasurySwap = artistConfig.swap && !artistConfig.paused;
             
             let transactionHash = '';
             let swapType = '';
@@ -162,6 +162,11 @@ const PurchaseFlow: React.FC<PurchaseFlowProps> = ({
                 await tx.wait();
                 transactionHash = tx.hash;
                 console.log('✅ AMM swap successful:', tx.hash);
+                
+                // Trigger balance refresh
+                window.dispatchEvent(new CustomEvent('transactionSuccess', {
+                    detail: { type: 'swap', hash: tx.hash }
+                }));
                 
             } else if (hasLiquidityPool && swapFromAsset !== "USD") {
                 // ✅ Use AMM for token-to-token swaps
@@ -237,6 +242,11 @@ const PurchaseFlow: React.FC<PurchaseFlowProps> = ({
                     await tx.wait();
                     transactionHash = tx.hash;
                     console.log('✅ AMM token swap successful:', tx.hash);
+
+                    // Trigger balance refresh
+                    window.dispatchEvent(new CustomEvent('transactionSuccess', {
+                        detail: { type: 'swap', hash: tx.hash }
+                    }));
                 } else {
                     throw new Error(`Missing contract addresses: FROM=${fromTokenConfig?.contract}, TO=${toTokenConfig?.contract}`);
                 }
@@ -246,12 +256,17 @@ const PurchaseFlow: React.FC<PurchaseFlowProps> = ({
                 console.log('🎯 Using TreasurySwapLite for Day-0 MVP swap (fixed rate fallback)');
                 swapType = `$${totalUsdAmount} USD → ${artistConfig.tokenName}${includeDownload ? ' + Download' : ''} (Fixed Rate)`;
                 
-                const treasurySwap = new TreasurySwapLiteService(artistConfig.swapAddress!, signer);
+                const treasurySwap = new TreasurySwapLiteService(artistConfig.swap!, signer);
                 
                 const tx = await treasurySwap.buyTokensWithUSD(totalUsdAmount);
                 await tx.wait();
                 transactionHash = tx.hash;
                 console.log('✅ TreasurySwapLite swap successful:', tx.hash);
+                
+                // Trigger balance refresh
+                window.dispatchEvent(new CustomEvent('transactionSuccess', {
+                    detail: { type: 'swap', hash: tx.hash }
+                }));
                 
             } else {
                 throw new Error('No swap system available for this configuration');
@@ -632,7 +647,7 @@ const PurchaseFlow: React.FC<PurchaseFlowProps> = ({
                                 <p className="text-xs">Live pricing via liquidity pools</p>
                                 <p className="text-xs">Cross-token trading enabled</p>
                             </div>
-                        ) : artistConfig.swapAddress && !artistConfig.paused ? (
+                        ) : artistConfig.swap && !artistConfig.paused ? (
                             <div>
                                 <p className="text-blue-400">🎯 Day-0 MVP Active</p>
                                 <p className="text-xs">Fixed Rate: 1 ETH = 1,000,000 tokens</p>

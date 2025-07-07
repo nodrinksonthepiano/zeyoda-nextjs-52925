@@ -1,46 +1,30 @@
+'use client';
+
 import { useState, useEffect } from 'react';
+import { useSearchParams } from 'next/navigation';
+import { useArtistRegistryContext } from '../contexts/ArtistRegistryContext';
+import { getArtistContracts as getFallbackArtistContracts } from '../utils/addressRegistryFallback';
 import { supabase } from '../utils/supabaseClient';
 import { SwapService } from '../utils/swapUtils';
 import { ethers } from 'ethers';
-import { ARTIST_REGISTRY, getArtistContracts, isValidArtist } from '../utils/addressRegistry';
-
-// Define the types again for clarity within the hook
-interface ArtistConfig {
-  name: string;
-  displayName: string;
-  tokenName: string;
-  artworkTitle: string;
-  artworkYear: string;
-  tokenPrice: number;           // DEPRECATED: Fallback only
-  realTimePrice?: number;       // NEW: Real LP price
-  hasLiquidityPool?: boolean;   // NEW: LP status
-  videoSrc: string;
-  contract?: string;
-  swapAddress?: string;         // TreasurySwapLite contract address
-  paused?: boolean;             // Emergency pause state
-  theme: {
-    primaryColor: string;
-    accentColor: string;
-    gradientStart: string;
-    gradientMiddle: string;
-    gradientEnd: string;
-    fontFamily: string;
-  };
-  orbitalTokens: Array<{ name: string; angle: number; artistId?: string; }>;
-}
+import { ArtistConfig, ArtistDatabaseEntry } from '../../types/artist-types';
 
 interface UseArtistConfigReturn {
-    artistConfig: ArtistConfig | null;
-    allArtistsConfig: {[key: string]: ArtistConfig} | null;
-    isLoading: boolean;
-    error: string | null;
-    refreshPrices: () => Promise<void>;
+  artistConfig: ArtistConfig | null;
+  allArtistsConfig: { [key: string]: ArtistConfig } | null;
+  isLoading: boolean;
+  error: string | null;
+  refreshPrices: () => Promise<void>;
 }
 
-export function useArtistConfig(artistId: string): UseArtistConfigReturn {
+const useArtistConfig = (): UseArtistConfigReturn => {
+  const { registry, isLoading: isRegistryLoading, error: registryError } = useArtistRegistryContext();
+  const searchParams = useSearchParams();
+  const artistId = searchParams.get('artist');
+
   const [artistConfig, setArtistConfig] = useState<ArtistConfig | null>(null);
   const [allArtistsConfig, setAllArtistsConfig] = useState<{[key: string]: ArtistConfig} | null>(null);
-  const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   // Fetch real-time prices for all artists
@@ -52,41 +36,29 @@ export function useArtistConfig(artistId: string): UseArtistConfigReturn {
 
       const updatedArtists = { ...artistsData };
 
-      for (const [id, artist] of Object.entries(artistsData)) {
-        if (artist.contract) {
+      for (const [artistId, config] of Object.entries(updatedArtists)) {
+        if (config.contract) {
           try {
-            console.log(`🔍 Fetching LP price for ${artist.name} (${artist.contract})`);
+            const hasLiquidityPool = await swapService.hasLiquidityPool(config.contract);
+            const realTimePrice = hasLiquidityPool ? 
+              await swapService.getTokenPriceInUSD(config.contract) : 
+              config.tokenPrice;
             
-            // Check if LP exists
-            const hasLP = await swapService.hasLiquidityPool(artist.contract);
-            updatedArtists[id].hasLiquidityPool = hasLP;
-
-            if (hasLP) {
-              // Get real-time price from LP
-              const realPrice = await swapService.getTokenPriceInUSD(artist.contract);
-              updatedArtists[id].realTimePrice = realPrice;
-              
-              console.log(`✅ LP Price for ${artist.name}: $${realPrice.toFixed(6)} (LP exists)`);
-            } else {
-              console.log(`⚠️ No LP for ${artist.name}, using fallback price: $${artist.tokenPrice}`);
-              updatedArtists[id].realTimePrice = artist.tokenPrice; // Fallback to Supabase
-            }
-          } catch (error) {
-            console.error(`Error fetching price for ${artist.name}:`, error);
-            updatedArtists[id].realTimePrice = artist.tokenPrice; // Fallback to Supabase
-            updatedArtists[id].hasLiquidityPool = false;
+            updatedArtists[artistId] = {
+              ...config,
+              hasLiquidityPool,
+              realTimePrice: realTimePrice || config.tokenPrice
+            };
+          } catch (e) {
+            console.warn(`Failed to fetch price for ${artistId}:`, e);
           }
-        } else {
-          console.log(`⚠️ No contract address for ${artist.name}`);
-          updatedArtists[id].realTimePrice = artist.tokenPrice; // Fallback to Supabase
-          updatedArtists[id].hasLiquidityPool = false;
         }
       }
 
       return updatedArtists;
-    } catch (error) {
-      console.error('Error fetching real-time prices:', error);
-      return artistsData; // Return original data on error
+    } catch (e) {
+      console.error('Failed to fetch real-time prices:', e);
+      return artistsData;
     }
   };
 
@@ -104,115 +76,80 @@ export function useArtistConfig(artistId: string): UseArtistConfigReturn {
   };
 
   useEffect(() => {
-    async function fetchConfig() {
-      if (!artistId) {
-        setIsLoading(false);
+    const fetchConfig = async () => {
+      if (isRegistryLoading) {
+        // Wait until the registry is loaded, errored, or has a fallback
         return;
       }
       
       setIsLoading(true);
       setError(null);
-      setArtistConfig(null);
 
       try {
-        console.log(`📊 Fetching artist config for: ${artistId}`);
-        
-        const { data, error } = await supabase
+        // Fetch base artist data from the artists table
+        const { data: artistsData, error: dbError } = await supabase
           .from('artists')
           .select('*');
-
-        if (error) throw error;
-
-        if (!data) {
-          throw new Error("No artists found in the database.");
-        }
-
-        const artistsData = data.reduce((acc: {[key: string]: ArtistConfig}, artist: any) => {
-            // Get registry contracts for this artist (if they exist)
-            const registryContracts = getArtistContracts(artist.id);
-            
-            // DEBUG: Log the raw artist data from Supabase and registry
-            console.log(`🔍 Raw Supabase data for ${artist.id}:`, {
-              tokenprice: artist.tokenprice,
-              videosrc: artist.videosrc,
-              contract: artist.contract,
-              tokenName: artist.tokenName,
-              registryFound: !!registryContracts
-            });
-            
-            // Map Supabase fields to expected format, with registry override
-            const enhancedArtist = {
-              name: artist.name,
-              displayName: artist.displayname, // Supabase field is 'displayname'
-              tokenName: artist.tokenName, // Direct field from Supabase
-              artworkTitle: artist.artworktitle, // Supabase field is 'artworktitle'
-              artworkYear: artist.artworkyear?.toString() || '2024', // Supabase field is 'artworkyear'
-              tokenPrice: artist.tokenprice || 0.0005, // Supabase field is 'tokenprice' (numeric)
-              videoSrc: artist.videosrc?.startsWith('/') ? artist.videosrc : `/${artist.videosrc}`, // Supabase field is 'videosrc', add leading slash
-              // Use registry addresses if available, fallback to Supabase
-              contract: registryContracts?.token || artist.contract,
-              swapAddress: registryContracts?.swap || artist.swap_address,
-              paused: artist.paused ?? false,
-              theme: typeof artist.theme === 'string' ? JSON.parse(artist.theme) : (artist.theme || {
-                primaryColor: "#1a0a2b",
-                accentColor: "#9400FF",
-                gradientStart: "#FFD700",
-                gradientMiddle: "#DAA520",
-                gradientEnd: "#B8860B",
-                fontFamily: "Bungee, cursive"
-              }),
-              orbitalTokens: typeof artist.orbitaltokens === 'string' ? JSON.parse(artist.orbitaltokens) : (artist.orbitaltokens || [])
-            };
-            
-            // Log when registry overrides Supabase data
-            if (registryContracts) {
-              console.log(`📝 Using registry contracts for ${artist.id}:`, {
-                token: registryContracts.token,
-                swap: registryContracts.swap,
-                treasuryWallet: registryContracts.treasuryWallet
-              });
-            }
-            
-            acc[artist.id] = enhancedArtist;
-            return acc;
-        }, {});
-
-        console.log(`📊 Fetched ${Object.keys(artistsData).length} artists from Supabase`);
-
-        // Fetch real-time prices for all artists
-        const artistsWithPrices = await fetchRealTimePrices(artistsData);
         
-        setAllArtistsConfig(artistsWithPrices);
+        if (dbError) throw dbError;
 
-        const currentArtistConfig = artistsWithPrices[artistId];
-
-        if (currentArtistConfig) {
-          console.log(`✅ Found config for '${artistId}':`, {
-            name: currentArtistConfig.name,
-            contract: currentArtistConfig.contract,
-            swapAddress: currentArtistConfig.swapAddress,
-            paused: currentArtistConfig.paused,
-            supabasePrice: currentArtistConfig.tokenPrice,
-            realTimePrice: currentArtistConfig.realTimePrice,
-            hasLP: currentArtistConfig.hasLiquidityPool,
-            video: currentArtistConfig.videoSrc
-          });
-          setArtistConfig(currentArtistConfig);
-        } else {
-          throw new Error(`Artist '${artistId}' not found in the database.`);
+        // The registry from context is the primary source of truth for contract addresses
+        const currentRegistry = registry;
+        if (!currentRegistry) {
+          throw new Error("Artist registry is not available, and fallback failed.");
         }
-      } catch (err: any) {
-        console.error(`[useArtistConfig] Error fetching config for ${artistId}:`, err);
-        const errorMessage = err.message || "An unknown error occurred.";
-        setError(errorMessage);
-        setArtistConfig(null);
+
+        const combinedConfigs: {[key: string]: ArtistConfig} = {};
+
+        for (const artistData of artistsData as ArtistDatabaseEntry[]) {
+          const contracts = currentRegistry[artistData.id] || getFallbackArtistContracts(artistData.id);
+          
+          if (contracts) {
+            combinedConfigs[artistData.id] = {
+              name: artistData.name,
+              displayName: artistData.display_name,
+              tokenName: artistData.token_name,
+              artworkTitle: artistData.artwork_title,
+              artworkYear: artistData.artwork_year,
+              tokenPrice: artistData.token_price,
+              videoSrc: artistData.video_src,
+              contract: contracts.token,
+              swap: contracts.swap,
+              downloads: contracts.downloads || undefined,
+              treasury_wallet: contracts.treasury_wallet || undefined,
+              theme: {
+                primaryColor: artistData.primary_color,
+                accentColor: artistData.accent_color,
+                gradientStart: artistData.gradient_start,
+                gradientMiddle: artistData.gradient_middle,
+                gradientEnd: artistData.gradient_end,
+                fontFamily: artistData.font_family,
+              },
+              orbitalTokens: artistData.orbital_tokens,
+            };
+          }
+        }
+        
+        // Fetch real-time prices
+        const configsWithPrices = await fetchRealTimePrices(combinedConfigs);
+        setAllArtistsConfig(configsWithPrices);
+
+        if (artistId && configsWithPrices[artistId]) {
+          setArtistConfig(configsWithPrices[artistId]);
+        } else if (artistId) {
+          setError(`Configuration for artist "${artistId}" not found.`);
+        }
+
+      } catch (e: any) {
+        console.error("Failed to fetch artist configurations:", e);
+        setError(e.message);
       } finally {
         setIsLoading(false);
       }
-    }
+    };
 
     fetchConfig();
-  }, [artistId]);
+  }, [artistId, isRegistryLoading, registry]); // Rerun when artist changes or registry loads
 
   // Auto-refresh prices every 60 seconds
   useEffect(() => {
@@ -226,5 +163,7 @@ export function useArtistConfig(artistId: string): UseArtistConfigReturn {
     return () => clearInterval(interval);
   }, [allArtistsConfig, artistId]);
 
-  return { artistConfig, allArtistsConfig, isLoading, error, refreshPrices };
-} 
+  return { artistConfig, allArtistsConfig, isLoading: isLoading || isRegistryLoading, error, refreshPrices };
+};
+
+export default useArtistConfig; 

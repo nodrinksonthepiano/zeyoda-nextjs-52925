@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { ethers } from 'ethers';
-import { getArtistContracts } from '../../utils/addressRegistry';
+import { getArtistContracts } from '../../utils/addressRegistryFallback';
 
 // ERC-1155 ABI for minting download tokens
 const DOWNLOAD_CONTRACT_ABI = [
@@ -69,7 +69,7 @@ export async function POST(request: NextRequest) {
       contracts: artistContracts
     });
     
-    if (!artistContracts?.download) {
+    if (!artistContracts?.downloads) {
       console.error('❌ Download contract not found for artist:', artistId);
       return NextResponse.json(
         { error: `Download contract not found for artist: ${artistId}` },
@@ -185,10 +185,11 @@ export async function POST(request: NextRequest) {
         }
         
         // Wait for at least 1 confirmation
-        if (receipt.confirmations < 1) {
+        const confirmations = await receipt.confirmations;
+        if (confirmations < 1) {
           verificationAttempts++;
           if (verificationAttempts < maxAttempts) {
-            console.log(`⏳ Waiting for confirmations (current: ${receipt.confirmations})`);
+            console.log(`⏳ Waiting for confirmations (current: ${confirmations})`);
             console.log(`   This is normal! New blocks take time to be confirmed.`);
             console.log(`   Waiting ${retryDelay}ms before next check...`);
             await new Promise(resolve => setTimeout(resolve, retryDelay));
@@ -199,7 +200,7 @@ export async function POST(request: NextRequest) {
         console.log(`✅ Transaction verified:`, {
           txHash,
           blockNumber: receipt.blockNumber,
-          confirmations: receipt.confirmations,
+          confirmations,
           gasUsed: receipt.gasUsed?.toString()
         });
         break; // Success, exit the retry loop
@@ -244,14 +245,14 @@ export async function POST(request: NextRequest) {
     // 4. Create signer and contract instance
     const ownerWallet = new ethers.Wallet(ownerPrivateKey, provider);
     const downloadContract = new ethers.Contract(
-      artistContracts.download,
+      artistContracts.downloads,
       DOWNLOAD_CONTRACT_ABI,
       ownerWallet
     );
     
     console.log('👤 Signer created:', {
       signerAddress: ownerWallet.address,
-      contractAddress: artistContracts.download
+      contractAddress: artistContracts.downloads
     });
     
     // Verify the signer is actually the contract owner
@@ -416,7 +417,7 @@ export async function GET(request: NextRequest) {
   }
   
   const artistContracts = getArtistContracts(artistId);
-  if (!artistContracts?.download) {
+  if (!artistContracts?.downloads) {
     return NextResponse.json(
       { error: `Download contract not found for artist: ${artistId}` },
       { status: 404 }
@@ -425,7 +426,7 @@ export async function GET(request: NextRequest) {
   
   try {
     const downloadContract = new ethers.Contract(
-      artistContracts.download,
+      artistContracts.downloads,
       DOWNLOAD_CONTRACT_ABI,
       provider
     );
@@ -434,7 +435,7 @@ export async function GET(request: NextRequest) {
     
     return NextResponse.json({
       artistId,
-      downloadContract: artistContracts.download,
+      downloadContract: artistContracts.downloads,
       contractOwner: owner,
       serverConfigured: !!process.env.DOWNLOAD_MINTER_PK,
       rpcConnected: true

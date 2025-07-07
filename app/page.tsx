@@ -8,7 +8,7 @@ import { useWallet } from './components/MagicProvider';
 import { useToast } from './contexts/ToastContext';
 import { ethers } from "ethers";
 import ArtistockArtifact from '../artifacts/contracts/Artistock.sol/Artistock.json';
-import { useArtistConfig } from "./hooks/useArtistConfig";
+import useArtistConfig from "./hooks/useArtistConfig";
 import { useFeaturedAsset } from "./hooks/useFeaturedAsset";
 import OwnerControls from "./components/OwnerControls";
 import ArtistVideo from "./components/ArtistVideo";
@@ -42,10 +42,9 @@ export default function HomePage() {
 
   const searchParams = useSearchParams();
   const router = useRouter();
-  const artistIdFromUrl = searchParams?.get('artist') || 'gosheesh';
-  const { artistConfig, allArtistsConfig, isLoading: configLoading, error: configError } = useArtistConfig(artistIdFromUrl);
+  const { artistConfig, allArtistsConfig, isLoading: configLoading, error: configError } = useArtistConfig();
   
-  // NEW: Fetch featured asset for video display
+  const artistIdFromUrl = (searchParams.get('artist') ?? 'gosheesh') as string;
   const { featuredAsset, videoUrl, isLoading: assetLoading, error: assetError } = useFeaturedAsset(artistIdFromUrl);
 
   const [isMuted, setIsMuted] = useState(true);
@@ -291,17 +290,22 @@ export default function HomePage() {
   }, [user, artistConfig, magic]);
 
   useEffect(() => {
-    if (artistConfig && artistConfig.theme) {
-      const { theme } = artistConfig;
-      document.documentElement.style.setProperty('--primary-color', theme.primaryColor);
-      document.documentElement.style.setProperty('--accent-color', theme.accentColor);
-      document.documentElement.style.setProperty('--accent-color-rgb', theme.accentColor.match(/\d+/g)?.join(', ') || '64, 115, 255');
-      document.documentElement.style.setProperty('--gradient-start', theme.gradientStart);
-      document.documentElement.style.setProperty('--gradient-middle', theme.gradientMiddle);
-      document.documentElement.style.setProperty('--gradient-end', theme.gradientEnd);
+    const { theme } = artistConfig || {};
+    if (theme) {
+      document.documentElement.style.setProperty('--primary-color', theme.primaryColor || '#000000');
+      if (theme.accentColor) {
+        document.documentElement.style.setProperty('--accent-color', theme.accentColor);
+        document.documentElement.style.setProperty(
+          '--accent-color-rgb',
+          theme.accentColor.match(/\d+/g)?.join(', ') ?? '0,0,0'
+        );
+      }
+      document.documentElement.style.setProperty('--gradient-start', theme.gradientStart || '#ffffff');
+      document.documentElement.style.setProperty('--gradient-middle', theme.gradientMiddle || '#cccccc');
+      document.documentElement.style.setProperty('--gradient-end', theme.gradientEnd || '#999999');
       document.body.style.fontFamily = theme.fontFamily || 'Geist Sans, sans-serif';
     }
-  }, [artistConfig?.theme]);
+  }, [artistConfig]);
 
   useEffect(() => {
     const dollarValueForTokens = parseFloat(swapFromAmount || '0');
@@ -725,47 +729,69 @@ export default function HomePage() {
     }
   };
 
-  // Listen for wallet balance updates
+  // Listen for balance updates from the wallet
   useEffect(() => {
-    const handleBalanceUpdate = (event: CustomEvent) => {
+    const handleBalanceUpdate = (event: any) => {
+      console.log('📊 Balance update received:', event.detail);
       const newBalances = event.detail;
-      console.log('🔄 Received balance update:', newBalances);
       setUserTokenBalances(newBalances);
       
-      // Also update localStorage to sync with other components
-      localStorage.setItem('zeyodaUserTokenBalances', JSON.stringify(newBalances));
+      // Update localStorage with new balances
+      try {
+        localStorage.setItem('zeyodaUserTokenBalances', JSON.stringify({
+          balances: newBalances,
+          timestamp: Date.now(),
+          userAddress: user || ''
+        }));
+      } catch (error) {
+        console.warn('Failed to cache balances:', error);
+      }
     };
 
-    window.addEventListener('walletBalancesUpdated', handleBalanceUpdate as EventListener);
-    
-    return () => {
-      window.removeEventListener('walletBalancesUpdated', handleBalanceUpdate as EventListener);
-    };
-  }, []);
+    window.addEventListener('walletBalancesUpdated', handleBalanceUpdate);
+    return () => window.removeEventListener('walletBalancesUpdated', handleBalanceUpdate);
+  }, [user]);
 
-  // Load cached token balances on component mount
+  // Load initial balances
   useEffect(() => {
     if (user) {
       const storedBalances = localStorage.getItem('zeyodaUserTokenBalances');
       if (storedBalances) {
         try {
           const parsed = JSON.parse(storedBalances);
-          if (parsed.balances) {
+          // Only use cached balances if they're for the current user and less than 5 minutes old
+          if (parsed.userAddress === user && 
+              Date.now() - parsed.timestamp < 5 * 60 * 1000) {
             setUserTokenBalances(parsed.balances);
-            console.log('📦 Loaded cached balances:', parsed.balances);
+          } else {
+            // Clear outdated balances
+            localStorage.removeItem('zeyodaUserTokenBalances');
+            setUserTokenBalances({});
           }
         } catch (e) {
           console.error("Error parsing token balances from localStorage", e);
+          setUserTokenBalances({});
         }
+      } else {
+        setUserTokenBalances({});
       }
+
+      // ... rest of the user data loading code ...
+    } else {
+      // Clear user data when no Magic Link user
+      setUserTokenBalances({});
+      setUnlockedArtistStates({});
+      setGlobalSafewordVerified(false);
     }
-  }, [user]);
+  }, [searchParams, artistIdFromUrl, allArtistsConfig, user]);
 
   // Calculate video source with proper fallback and type safety
   const getVideoSource = (): string => {
     if (videoUrl) return videoUrl;
     if (artistConfig?.videoSrc) return `/${artistConfig.videoSrc}`;
-    return `/assets/1${artistIdFromUrl.toUpperCase()}.mp4`;
+    // Ensure artistIdFromUrl is defined before using it
+    const artistId = artistIdFromUrl || 'gosheesh';
+    return `/assets/1${artistId.toUpperCase()}.mp4`;
   };
   
   const videoSource = getVideoSource();

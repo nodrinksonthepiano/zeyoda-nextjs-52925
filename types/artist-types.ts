@@ -15,6 +15,35 @@ export interface RenderableToken extends OrbitalToken {
   element?: HTMLElement | null;
 }
 
+// Database schema types
+export interface ArtistRegistryEntry {
+  token: string;
+  swap: string;
+  downloads: string | null;
+  treasury_wallet: string | null;
+}
+
+export interface ArtistDatabaseEntry {
+  id: string;
+  name: string;
+  display_name: string;
+  token_name: string;
+  artwork_title: string;
+  artwork_year: string;
+  token_price: number;
+  video_src: string;
+  primary_color: string;
+  accent_color: string;
+  gradient_start: string;
+  gradient_middle: string;
+  gradient_end: string;
+  font_family: string;
+  orbital_tokens: OrbitalToken[];
+  created_at: string;
+  updated_at: string;
+}
+
+// Application types
 export interface ArtistConfig {
   name: string;
   displayName: string;
@@ -26,7 +55,9 @@ export interface ArtistConfig {
   hasLiquidityPool?: boolean;
   videoSrc: string;
   contract?: string;
-  swapAddress?: string;        // TreasurySwapLite contract address
+  swap?: string;               // TreasurySwapLite contract address
+  downloads?: string;          // ERC-1155 downloads contract
+  treasury_wallet?: string;    // Treasury wallet address
   paused?: boolean;           // Emergency pause state
   theme: {
     primaryColor: string;

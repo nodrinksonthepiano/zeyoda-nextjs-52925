@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { ethers } from 'ethers';
-import { ARTIST_REGISTRY, getArtistContracts } from '../utils/addressRegistry';
 import { useAllArtistsDownloadAccess } from '../hooks/useDownloadAccess';
 import { supabase } from '../utils/supabaseClient';
 import { useToast } from '../contexts/ToastContext';
@@ -57,6 +56,10 @@ const Wallet: React.FC<WalletProps> = ({
   const [downloadingAssets, setDownloadingAssets] = useState<Set<string>>(new Set());
   const [assetMetadata, setAssetMetadata] = useState<{ [key: string]: AssetMetadata }>({});
   const { showToast } = useToast();
+
+  // Debug logging for balance tracing
+  console.debug('[BAL-TRACE] props.userTokenBalances', userTokenBalances);
+  console.debug('[BAL-TRACE] realTimeBalances', realTimeBalances);
 
   // Use the new hook to get all download access data at once
   const { allDownloads, isLoading: downloadsLoading, error: downloadsError } = useAllArtistsDownloadAccess(
@@ -148,7 +151,7 @@ const Wallet: React.FC<WalletProps> = ({
   // Fetch real-time token balances from the blockchain
   const fetchRealBalances = async () => {
     if (!userAddress || !magic || !allArtistsConfig) {
-      console.log("⚠️ Missing requirements for balance fetch:", {
+      console.debug('[BAL-TRACE] Missing requirements:', {
         userAddress: !!userAddress,
         magic: !!magic,
         allArtistsConfig: !!allArtistsConfig
@@ -161,16 +164,20 @@ const Wallet: React.FC<WalletProps> = ({
     const balances: UserTokenBalances = {};
     
     try {
-      console.log("🔍 Fetching real token balances for:", userAddress);
+      console.debug('[BAL-TRACE] Starting balance fetch for:', userAddress);
       
       // Use Magic Link provider (most reliable)
       const provider = new ethers.BrowserProvider(magic.rpcProvider as any);
       
-      // Use the contract addresses from the registry
-      const contractAddresses = {
-        'GOSH33SH': ARTIST_REGISTRY.gosheesh.token,
-        'JAIT33': ARTIST_REGISTRY.jaitea.token,
-      };
+      // Use the contract addresses from the dynamically loaded config
+      const contractAddresses = Object.entries(allArtistsConfig).reduce((acc, [artistId, config]) => {
+        if (config.contract) {
+          acc[config.tokenName] = config.contract;
+        }
+        return acc;
+      }, {} as Record<string, string>);
+      
+      console.debug('[BAL-TRACE] Contract addresses:', contractAddresses);
       
       // Simple ERC20 ABI for balanceOf
       const erc20Abi = [
@@ -179,33 +186,41 @@ const Wallet: React.FC<WalletProps> = ({
         "function symbol() view returns (string)"
       ];
       
-      // Fetch balance for each token with simplified logic
-      for (const [artistId, config] of Object.entries(allArtistsConfig)) {
-        const contractAddress = contractAddresses[config.tokenName as keyof typeof contractAddresses];
-        
+      // Fetch balance for each token
+      for (const [tokenName, contractAddress] of Object.entries(contractAddresses)) {
         if (!contractAddress) {
-          console.warn(`⚠️ No contract address for ${config.tokenName}`);
-          balances[config.tokenName] = 0; // Set to 0 instead of skipping
+          console.debug(`[BAL-TRACE] No contract address for ${tokenName}`);
+          balances[tokenName] = 0;
           continue;
         }
         
         try {
-          console.log(`🪙 Fetching ${config.tokenName} balance...`);
+          console.debug(`[BAL-TRACE] Fetching ${tokenName} balance from ${contractAddress}`);
           
           const contract = new ethers.Contract(contractAddress, erc20Abi, provider);
-          const rawBalance = await contract.balanceOf(userAddress);
-          const balance = Number(rawBalance) / Math.pow(10, 18); // Assuming 18 decimals
+          const [rawBalance, decimals] = await Promise.all([
+            contract.balanceOf(userAddress),
+            contract.decimals()
+          ]);
           
-          console.log(`✅ ${config.tokenName} balance:`, balance);
-          balances[config.tokenName] = balance;
+          console.debug(`[BAL-TRACE] Raw balance for ${tokenName}:`, rawBalance.toString());
+          console.debug(`[BAL-TRACE] Decimals for ${tokenName}:`, decimals);
+          
+          // Convert using proper decimals
+          const balance = Number(ethers.formatUnits(rawBalance, decimals));
+          console.debug(`[BAL-TRACE] Converted balance for ${tokenName}:`, balance);
+          
+          balances[tokenName] = balance;
           
         } catch (error: any) {
-          console.warn(`⚠️ Error fetching ${config.tokenName} balance:`, error.message);
-          balances[config.tokenName] = 0; // Set to 0 on error
+          console.warn(`[BAL-TRACE] Error fetching ${tokenName} balance:`, error.message);
+          balances[tokenName] = 0;
         }
       }
       
-      // Always update state with whatever we fetched (even if some failed)
+      console.debug('[BAL-TRACE] Final balances:', balances);
+      
+      // Always update state with whatever we fetched
       setRealTimeBalances(balances);
       setLastFetchTime(new Date());
       
@@ -216,9 +231,9 @@ const Wallet: React.FC<WalletProps> = ({
           timestamp: Date.now(),
           userAddress
         }));
-        console.log(`💾 Cached token balances:`, balances);
+        console.debug('[BAL-TRACE] Cached balances:', balances);
       } catch (cacheError) {
-        console.warn('Could not cache balances:', cacheError);
+        console.warn('[BAL-TRACE] Could not cache balances:', cacheError);
       }
       
       // Trigger a custom event to notify other components
@@ -228,70 +243,73 @@ const Wallet: React.FC<WalletProps> = ({
       window.dispatchEvent(balanceUpdateEvent);
       
     } catch (error: any) {
-      console.error('❌ Balance fetch failed:', error);
+      console.error('[BAL-TRACE] Balance fetch failed:', error);
       setFetchError(`Failed to fetch balances: ${error.message}`);
     } finally {
       setIsLoading(false);
     }
   };
 
-  // Auto-fetch balances when wallet panel opens
+  // Listen for transaction success events to refresh balances
+  useEffect(() => {
+    const handleTransactionSuccess = (event: any) => {
+      console.debug('[BAL-TRACE] txSuccess event', event?.detail);
+      console.log('🎉 Transaction success detected, forcing balance refresh...', event.detail);
+      setFetchError(null);
+      
+      // Clear cached balances to force a fresh fetch
+      localStorage.removeItem('zeyodaUserTokenBalances');
+      
+      // Add a small delay to allow the blockchain to update
+      setTimeout(() => {
+        fetchRealBalances();
+      }, 2000); // Wait 2 seconds before refreshing
+    };
+
+    window.addEventListener('transactionSuccess', handleTransactionSuccess);
+    return () => window.removeEventListener('transactionSuccess', handleTransactionSuccess);
+  }, [userAddress, magic, allArtistsConfig]);
+
+  // Auto-refresh balances when wallet panel opens
   useEffect(() => {
     if (showAssetsPanel) {
+      // Clear cached balances when opening panel
+      localStorage.removeItem('zeyodaUserTokenBalances');
       fetchRealBalances();
     }
   }, [userAddress, magic, allArtistsConfig, showAssetsPanel]);
 
-  // Listen for transaction success events to refresh balances
-  useEffect(() => {
-    const handleTransactionSuccess = (event: CustomEvent) => {
-      console.log('🎉 Transaction success detected, forcing balance refresh...', event.detail);
-      setFetchError(null);
-      
-      // Force aggressive refresh for post-transaction updates
-      if (event.detail?.forceRefresh) {
-        console.log('🚀 Forcing aggressive balance refresh with retries...');
-        
-        // Clear all cached data
-        localStorage.removeItem('zeyodaUserTokenBalances');
-        
-        // Try multiple times with delays to catch blockchain propagation
-        let retryCount = 0;
-        const maxRetries = 3;
-        
-        const retryFetch = async () => {
-          retryCount++;
-          console.log(`🔄 Balance fetch attempt ${retryCount}/${maxRetries}...`);
-          
-          await fetchRealBalances();
-          
-          // If we still don't see updated balances and have retries left, try again
-          if (retryCount < maxRetries) {
-            setTimeout(retryFetch, 5000); // Wait 5 seconds between retries
-          }
-        };
-        
-        retryFetch();
-      } else {
-        // Normal refresh
-        fetchRealBalances();
-      }
-    };
-
-    window.addEventListener('refreshWalletBalances', handleTransactionSuccess as EventListener);
-    
-    return () => {
-      window.removeEventListener('refreshWalletBalances', handleTransactionSuccess as EventListener);
-    };
-  }, [userAddress, magic, allArtistsConfig]);
-
   const handleManualRefresh = async () => {
     setFetchError(null);
+    // Clear cached balances on manual refresh
+    localStorage.removeItem('zeyodaUserTokenBalances');
     await fetchRealBalances();
-    // Note: The download hook refreshes automatically based on its dependencies
   };
 
-  const combinedBalances = { ...userTokenBalances, ...realTimeBalances };
+  // Combine balances, preferring real-time balances over passed-in balances
+  const combinedBalances = useMemo(() => {
+    console.debug('[BAL-TRACE] Combining balances:', {
+      userTokenBalances,
+      realTimeBalances
+    });
+    
+    const combined = { ...userTokenBalances };
+    
+    // Only override with real-time balances if they exist
+    Object.entries(realTimeBalances).forEach(([token, balance]) => {
+      // Convert to number if it's a string
+      const realTimeValue = typeof balance === 'string' ? parseFloat(balance) : balance;
+      if (!isNaN(realTimeValue)) {
+        combined[token] = realTimeValue;
+        console.debug(`[BAL-TRACE] Using real-time balance for ${token}:`, realTimeValue);
+      } else {
+        console.debug(`[BAL-TRACE] Invalid real-time balance for ${token}, keeping existing:`, combined[token]);
+      }
+    });
+    
+    console.debug('[BAL-TRACE] Final combined balances:', combined);
+    return combined;
+  }, [userTokenBalances, realTimeBalances]);
 
   if (!showAssetsPanel) {
     return null;
@@ -352,7 +370,7 @@ const Wallet: React.FC<WalletProps> = ({
             return (
               <div key={artistId} className="mb-3 bg-black bg-opacity-30 rounded-lg p-3 border border-purple-400 border-opacity-50">
                 <h3 className="text-md font-bold text-white mb-2" style={{ color: config.theme.accentColor }}>
-                  {config.displayName}
+                  {config.displayName || config.name}
                 </h3>
                 
                 {tokenBalance > 0 && (
@@ -363,7 +381,7 @@ const Wallet: React.FC<WalletProps> = ({
                   </div>
                 )}
                 
-                {downloads.map((download) => {
+                {downloads.map(download => {
                   const assetKey = `${download.artistId}_${download.assetNumber}`;
                   const metadata = assetMetadata[assetKey];
                   const isDownloading = downloadingAssets.has(assetKey);

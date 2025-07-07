@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { ethers } from 'ethers';
-import { getArtistContracts } from '../utils/addressRegistry';
+import { useArtistRegistryContext } from '../contexts/ArtistRegistryContext';
+import { getArtistContracts as getFallbackArtistContracts } from '../utils/addressRegistryFallback';
 import { supabase } from '../utils/supabaseClient';
 
 // ERC-1155 ABI for checking balances
@@ -20,77 +21,79 @@ export interface DownloadAccess {
 }
 
 export function useDownloadAccess(userAddress: string | null, artistId: string | null) {
+  const { registry, isLoading: isRegistryLoading } = useArtistRegistryContext();
   const [downloadAccess, setDownloadAccess] = useState<DownloadAccess[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
 
-  const checkDownloadAccess = async () => {
-    if (!userAddress || !artistId) {
-      setDownloadAccess([]);
-      return;
-    }
-
-    setIsLoading(true);
-    setError(null);
-    
-    try {
-      console.log(`🔍 Checking download access for ${userAddress} on ${artistId}`);
-      
-      // Get artist contracts (artistId is guaranteed to be non-null here)
-      const artistContracts = getArtistContracts(artistId!) as any;
-      if (!artistContracts?.download) {
-        console.log(`⚠️ No download contract found for ${artistId}`);
+  useEffect(() => {
+    const checkDownloadAccess = async () => {
+      if (!userAddress || !artistId || isRegistryLoading) {
         setDownloadAccess([]);
         return;
       }
 
-      // Create contract instance
-      const downloadContract = new ethers.Contract(
-        artistContracts.download,
-        ERC1155_ABI,
-        provider
-      );
-
-      // Check access for assets 1-10 (common range)
-      const assetNumbers = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
-      const accessChecks: DownloadAccess[] = [];
-
-      for (const assetNumber of assetNumbers) {
-        try {
-          const balance = await downloadContract.balanceOf(userAddress, assetNumber);
-          const hasAccess = balance > 0;
-          
-          if (hasAccess) {
-            console.log(`✅ ${artistId} asset ${assetNumber}: balance ${balance.toString()}`);
-            accessChecks.push({
-              artistId: artistId!,
-              assetNumber,
-              hasAccess: true,
-              balance: Number(balance)
-            });
-          }
-        } catch (error: any) {
-          console.warn(`⚠️ Error checking ${artistId} asset ${assetNumber}:`, error.message);
-          // Continue checking other assets
-        }
-      }
-
-      setDownloadAccess(accessChecks);
-      console.log(`📊 Found ${accessChecks.length} accessible downloads for ${artistId}`);
+      setIsLoading(true);
+      setError(null);
       
-    } catch (error: any) {
-      console.error('Error checking download access:', error);
-      setError(error.message || 'Failed to check download access');
-      setDownloadAccess([]);
-    } finally {
-      setIsLoading(false);
-    }
-  };
+      try {
+        console.log(`🔍 Checking download access for ${userAddress} on ${artistId}`);
+        
+        const artistContracts = registry ? registry[artistId] : getFallbackArtistContracts(artistId);
 
-  useEffect(() => {
+        if (!artistContracts?.downloads) {
+          console.log(`⚠️ No download contract found for ${artistId}`);
+          setDownloadAccess([]);
+          setIsLoading(false);
+          return;
+        }
+
+        // Create contract instance
+        const downloadContract = new ethers.Contract(
+          artistContracts.downloads,
+          ERC1155_ABI,
+          provider
+        );
+
+        // Check access for assets 1-10 (common range)
+        const assetNumbers = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+        const accessChecks: DownloadAccess[] = [];
+
+        for (const assetNumber of assetNumbers) {
+          try {
+            const balance = await downloadContract.balanceOf(userAddress, assetNumber);
+            const hasAccess = balance > 0;
+            
+            if (hasAccess) {
+              console.log(`✅ ${artistId} asset ${assetNumber}: balance ${balance.toString()}`);
+              accessChecks.push({
+                artistId: artistId!,
+                assetNumber,
+                hasAccess: true,
+                balance: Number(balance)
+              });
+            }
+          } catch (error: any) {
+            console.warn(`⚠️ Error checking ${artistId} asset ${assetNumber}:`, error.message);
+            // Continue checking other assets
+          }
+        }
+
+        setDownloadAccess(accessChecks);
+        console.log(`📊 Found ${accessChecks.length} accessible downloads for ${artistId}`);
+        
+      } catch (error: any) {
+        console.error('Error checking download access:', error);
+        setError(error.message || 'Failed to check download access');
+        setDownloadAccess([]);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
     checkDownloadAccess();
-  }, [userAddress, artistId, refreshTrigger]);
+  }, [userAddress, artistId, refreshTrigger, registry, isRegistryLoading]);
 
   // Manual refresh function
   const refreshDownloadAccess = () => {
@@ -151,11 +154,11 @@ export function useAllArtistsDownloadAccess(userAddress: string | null, allArtis
 
         // 2. For each artist, check balances for the assets that actually exist
         await Promise.all(artistIds.map(async (artistId) => {
-          const artistContracts = getArtistContracts(artistId) as any;
-          if (!artistContracts?.download) return;
+          const artistContracts = allArtistsConfig[artistId];
+          if (!artistContracts?.downloads) return;
 
           const downloadContract = new ethers.Contract(
-            artistContracts.download,
+            artistContracts.downloads,
             ERC1155_ABI,
             provider
           );
