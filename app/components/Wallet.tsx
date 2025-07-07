@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { ethers } from 'ethers';
 import { ARTIST_REGISTRY, getArtistContracts } from '../utils/addressRegistry';
-import { useDownloadAccess } from '../hooks/useDownloadAccess';
+import { useAllArtistsDownloadAccess } from '../hooks/useDownloadAccess';
 import { supabase } from '../utils/supabaseClient';
 
 interface ArtistConfig {
@@ -56,57 +56,56 @@ const Wallet: React.FC<WalletProps> = ({
   const [downloadingAssets, setDownloadingAssets] = useState<Set<string>>(new Set());
   const [assetMetadata, setAssetMetadata] = useState<{ [key: string]: AssetMetadata }>({});
 
-  // Get download access for all artists
-  const downloadAccessResults = allArtistsConfig ? Object.keys(allArtistsConfig).map(artistId => {
-    const { downloadAccess, isLoading: accessLoading, error: accessError } = useDownloadAccess(
-      userAddress || null,
-      artistId
-    );
-    return {
-      artistId,
-      downloadAccess,
-      isLoading: accessLoading,
-      error: accessError
-    };
-  }) : [];
+  // Use the new hook to get all download access data at once
+  const { allDownloads, isLoading: downloadsLoading, error: downloadsError } = useAllArtistsDownloadAccess(
+    userAddress || null,
+    allArtistsConfig
+  );
 
-  // Fetch asset metadata for owned downloads
+  // Memoize the artist IDs to prevent re-renders
+  const artistIds = useMemo(() => {
+    return allArtistsConfig ? Object.keys(allArtistsConfig) : [];
+  }, [allArtistsConfig]);
+
+  // Fetch asset metadata for all owned downloads
   useEffect(() => {
     const fetchAssetMetadata = async () => {
-      if (!downloadAccessResults.length) return;
+      if (Object.keys(allDownloads).length === 0) return;
       
       const metadata: { [key: string]: AssetMetadata } = {};
-      
-      for (const result of downloadAccessResults) {
-        if (result.downloadAccess.length > 0) {
-          for (const access of result.downloadAccess) {
-            const key = `${access.artistId}_${access.assetNumber}`;
-            
-            try {
-              const { data, error } = await supabase
-                .from('artist_assets')
-                .select('*')
-                .eq('artist_id', access.artistId)
-                .eq('asset_number', access.assetNumber)
-                .single();
-              
-              if (data && !error) {
-                metadata[key] = data;
+      const allAccessEntries = Object.values(allDownloads).flat();
+
+      await Promise.all(allAccessEntries.map(async (access) => {
+        const key = `${access.artistId}_${access.assetNumber}`;
+        try {
+          const { data, error } = await supabase
+            .from('artist_assets')
+            .select('*')
+            .eq('artist_id', access.artistId)
+            .eq('asset_number', access.assetNumber)
+            .single();
+          
+          if (data && !error) {
+            metadata[key] = {
+              ...data,
+              metadata: {
+                ...data.metadata,
+                title: data.metadata?.title || `Asset #${access.assetNumber}`
               }
-            } catch (error) {
-              console.warn(`Failed to fetch metadata for ${key}:`, error);
-            }
+            };
           }
+        } catch (error) {
+          console.warn(`Failed to fetch metadata for ${key}:`, error);
         }
-      }
+      }));
       
       setAssetMetadata(metadata);
     };
     
     fetchAssetMetadata();
-  }, [downloadAccessResults]);
+  }, [allDownloads]);
 
-  // Handle download
+  // Handle download logic, now back in the main wallet component
   const handleDownload = async (artistId: string, assetNumber: number) => {
     const key = `${artistId}_${assetNumber}`;
     if (downloadingAssets.has(key)) return;
@@ -114,40 +113,27 @@ const Wallet: React.FC<WalletProps> = ({
     setDownloadingAssets(prev => new Set([...prev, key]));
     
     try {
-      console.log(`📥 Starting download for ${artistId} asset ${assetNumber}`);
-      
       const response = await fetch('/api/createSignedUrl', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          artistId: artistId,
-          assetNumber: assetNumber,
-          userAddress: userAddress
-        })
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ artistId, assetNumber, userAddress })
       });
       
       const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Failed to get download URL');
       
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to get download URL');
-      }
-      
-      // Create download link
       const link = document.createElement('a');
       link.href = data.url;
-      link.download = `${artistId}_asset_${assetNumber}.${data.file_type?.split('/')[1] || 'mp4'}`;
+      const fileType = assetMetadata[key]?.file_type?.split('/')[1] || 'mp4';
+      link.download = `${artistId}_asset_${assetNumber}.${fileType}`;
       link.target = '_blank';
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
       
-      console.log(`✅ Download initiated for ${artistId} asset ${assetNumber}`);
-      
     } catch (error: any) {
       console.error('Download failed:', error);
-      alert(`❌ Download failed: ${error.message}`);
+      alert(`Download failed: ${error.message}`);
     } finally {
       setDownloadingAssets(prev => {
         const newSet = new Set(prev);
@@ -247,12 +233,6 @@ const Wallet: React.FC<WalletProps> = ({
     }
   };
 
-  // Manual refresh function for user control
-  const handleManualRefresh = async () => {
-    setFetchError(null);
-    await fetchRealBalances();
-  };
-
   // Auto-fetch balances when wallet panel opens
   useEffect(() => {
     if (showAssetsPanel) {
@@ -303,154 +283,118 @@ const Wallet: React.FC<WalletProps> = ({
     };
   }, [userAddress, magic, allArtistsConfig]);
 
-  // Combine real-time balances with stored balances
+  const handleManualRefresh = async () => {
+    setFetchError(null);
+    await fetchRealBalances();
+    // Note: The download hook refreshes automatically based on its dependencies
+  };
+
   const combinedBalances = { ...userTokenBalances, ...realTimeBalances };
 
   if (!showAssetsPanel) {
     return null;
   }
 
-  // Get artists with assets (tokens or downloads)
+  // Filter artists to only show those with assets (tokens or downloads)
   const artistsWithAssets = allArtistsConfig ? Object.entries(allArtistsConfig).filter(([id, config]) => {
-    const hasTokens = combinedBalances[config.tokenName] > 0;
-    const hasDownloads = downloadAccessResults.some(result => 
-      result.artistId === id && result.downloadAccess.length > 0
-    );
+    const hasTokens = (combinedBalances[config.tokenName] || 0) > 0;
+    const hasDownloads = allDownloads[id] && allDownloads[id].length > 0;
     return hasTokens || hasDownloads;
   }) : [];
 
+  const isAnythingLoading = isLoading || downloadsLoading;
+
   return (
-    <>
-      {/* Bubble Popup - NO BACKDROP */}
-      <div className="fixed top-16 left-4 w-80 max-h-96 bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900 rounded-2xl shadow-2xl border border-purple-500 z-[9999] overflow-hidden">
-        {/* Header */}
-        <div className="flex justify-between items-center p-4 bg-gradient-to-r from-purple-600 to-blue-600 text-white">
-          <h2 className="text-lg font-bold">💰 Your Assets</h2>
-          <div className="flex items-center space-x-2">
-            {!fetchError && (
-              <button
-                onClick={handleManualRefresh}
-                disabled={isLoading}
-                title="Refresh balances"
-                className="p-1 hover:bg-white hover:bg-opacity-20 rounded transition-colors text-sm disabled:opacity-50"
-              >
-                {isLoading ? '⟳' : '🔄'}
-              </button>
-            )}
-            <button 
-              onClick={onClose}
-              className="p-1 hover:bg-white hover:bg-opacity-20 rounded transition-colors text-xl"
+    <div className="fixed top-16 left-4 w-80 max-h-96 bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900 rounded-2xl shadow-2xl border border-purple-500 z-[9999] overflow-hidden flex flex-col">
+      {/* Header */}
+      <div className="flex justify-between items-center p-4 bg-gradient-to-r from-purple-600 to-blue-600 text-white flex-shrink-0">
+        <h2 className="text-lg font-bold">💰 Your Assets</h2>
+        <div className="flex items-center space-x-2">
+          {!fetchError && (
+            <button
+              onClick={handleManualRefresh}
+              disabled={isAnythingLoading}
+              title="Refresh balances"
+              className="p-1 hover:bg-white hover:bg-opacity-20 rounded transition-colors text-sm disabled:opacity-50"
             >
-              ✕
+              {isAnythingLoading ? '⟳' : '🔄'}
             </button>
-          </div>
-        </div>
-
-        {/* Error Message and Refresh Controls */}
-        {fetchError && (
-          <div className="p-3 bg-yellow-900 bg-opacity-50 border-l-4 border-yellow-500 text-yellow-200">
-            <div className="flex items-start justify-between">
-              <div className="flex-1">
-                <p className="text-sm">{fetchError}</p>
-                {lastFetchTime && (
-                  <p className="text-xs text-yellow-300 mt-1">
-                    Last updated: {lastFetchTime.toLocaleTimeString()}
-                  </p>
-                )}
-              </div>
-              <button
-                onClick={handleManualRefresh}
-                disabled={isLoading}
-                className="ml-3 px-3 py-1 bg-yellow-600 hover:bg-yellow-500 disabled:bg-gray-600 text-white text-xs rounded transition-colors"
-              >
-                {isLoading ? '⟳' : '🔄'} Refresh
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* Content */}
-        <div className="p-4 max-h-80 overflow-y-auto">
-          {isLoading ? (
-            <div className="text-center text-gray-300 py-8">
-              <div className="animate-spin w-6 h-6 border-2 border-purple-500 border-t-transparent rounded-full mx-auto mb-2"></div>
-              <p className="text-sm">Loading balances...</p>
-              <p className="text-xs text-gray-400 mt-1">
-                Fetching token balances from blockchain
-              </p>
-            </div>
-          ) : artistsWithAssets.length === 0 ? (
-            <div className="text-center text-gray-300 py-6">
-              <div className="text-3xl mb-2">🎨</div>
-              <p className="text-sm">No assets yet.</p>
-              <p className="text-xs text-gray-400">Start collecting artistocks!</p>
-            </div>
-          ) : (
-            artistsWithAssets.map(([artistId, config]) => {
-              const tokenBalance = combinedBalances[config.tokenName] || 0;
-              const downloadResult = downloadAccessResults.find(result => result.artistId === artistId);
-              const downloads = downloadResult?.downloadAccess || [];
-              
-              return (
-                <div key={artistId} className="mb-3 bg-black bg-opacity-30 rounded-lg p-3 border border-purple-400 border-opacity-50">
-                  <h3 className="text-md font-bold text-white mb-2" style={{ color: config.theme.accentColor }}>
-                    {config.displayName}
-                  </h3>
-                  
-                  {/* Token Balance */}
-                  {tokenBalance > 0 && (
-                    <div className="flex items-center justify-between mb-2 bg-purple-900 bg-opacity-50 rounded p-2">
-                      <div className="flex items-center">
-                        <span className="text-xl mr-2">⚡</span>
-                        <div>
-                          <div className="text-white font-medium text-sm">
-                            {tokenBalance.toLocaleString()} {config.tokenName}
-                          </div>
-                          <div className="text-purple-300 text-xs">Artistocks</div>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                  
-                  {/* ERC-1155 Downloads */}
-                  {downloads.map((download) => {
-                    const assetKey = `${download.artistId}_${download.assetNumber}`;
-                    const metadata = assetMetadata[assetKey];
-                    const isDownloading = downloadingAssets.has(assetKey);
-                    
-                    return (
-                      <div key={assetKey} className="flex items-center justify-between bg-purple-900 bg-opacity-50 rounded p-2 mt-2">
-                        <div className="flex items-center">
-                          <span className="text-xl mr-2">🎵</span>
-                          <div>
-                            <div className="text-white font-medium text-sm">
-                              {metadata?.metadata?.title || config.artworkTitle} #{download.assetNumber}
-                            </div>
-                            <div className="text-purple-300 text-xs">
-                              Download • Balance: {download.balance}
-                            </div>
-                          </div>
-                        </div>
-                        <button
-                          onClick={() => handleDownload(download.artistId, download.assetNumber)}
-                          disabled={isDownloading}
-                          className="text-purple-300 hover:text-purple-200 text-xs font-medium px-2 py-1 bg-purple-800 bg-opacity-50 rounded disabled:opacity-50"
-                        >
-                          {isDownloading ? '⏳' : '📥'} Download
-                        </button>
-                      </div>
-                    );
-                  })}
-                </div>
-              );
-            })
           )}
+          <button 
+            onClick={onClose}
+            className="p-1 hover:bg-white hover:bg-opacity-20 rounded transition-colors text-xl"
+          >
+            ✕
+          </button>
         </div>
-        
-        {/* Bubble pointer/arrow */}
-        <div className="absolute -top-2 left-8 w-4 h-4 bg-gradient-to-br from-purple-600 to-blue-600 transform rotate-45 border-l border-t border-purple-500"></div>
       </div>
-    </>
+      
+      {/* Content */}
+      <div className="p-4 overflow-y-auto">
+        {isAnythingLoading ? (
+          <div className="text-center text-gray-300 py-8">
+            <div className="animate-spin w-6 h-6 border-2 border-purple-500 border-t-transparent rounded-full mx-auto mb-2"></div>
+            <p className="text-sm">Loading assets...</p>
+          </div>
+        ) : artistsWithAssets.length === 0 ? (
+          <div className="text-center text-gray-300 py-6">
+            <div className="text-3xl mb-2">🎨</div>
+            <p className="text-sm">No assets yet.</p>
+            <p className="text-xs text-gray-400">Start collecting artistocks!</p>
+          </div>
+        ) : (
+          artistsWithAssets.map(([artistId, config]) => {
+            const tokenBalance = combinedBalances[config.tokenName] || 0;
+            const downloads = allDownloads[artistId] || [];
+            
+            return (
+              <div key={artistId} className="mb-3 bg-black bg-opacity-30 rounded-lg p-3 border border-purple-400 border-opacity-50">
+                <h3 className="text-md font-bold text-white mb-2" style={{ color: config.theme.accentColor }}>
+                  {config.displayName}
+                </h3>
+                
+                {tokenBalance > 0 && (
+                  <div className="flex items-center justify-between mb-2 bg-purple-900 bg-opacity-50 rounded p-2">
+                    <div className="text-white font-medium text-sm">
+                      {tokenBalance.toLocaleString(undefined, { maximumFractionDigits: 2 })} {config.tokenName}
+                    </div>
+                  </div>
+                )}
+                
+                {downloads.map((download) => {
+                  const assetKey = `${download.artistId}_${download.assetNumber}`;
+                  const metadata = assetMetadata[assetKey];
+                  const isDownloading = downloadingAssets.has(assetKey);
+                  
+                  return (
+                    <div key={assetKey} className="flex items-center justify-between bg-purple-900 bg-opacity-50 rounded p-2 mt-2">
+                      <div>
+                        <div className="text-white font-medium text-sm">
+                          {metadata?.metadata?.title || `${config.artworkTitle} #${download.assetNumber}`}
+                        </div>
+                        <div className="text-purple-300 text-xs">
+                          Balance: {download.balance}
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => handleDownload(download.artistId, download.assetNumber)}
+                        disabled={isDownloading}
+                        className="text-purple-300 hover:text-purple-200 text-xs font-medium px-2 py-1 bg-purple-800 bg-opacity-50 rounded disabled:opacity-50"
+                      >
+                        {isDownloading ? '...' : 'Download'}
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          })
+        )}
+      </div>
+      
+      {/* Bubble pointer */}
+      <div className="absolute -top-2 left-8 w-4 h-4 bg-gradient-to-br from-purple-600 to-blue-600 transform rotate-45 border-l border-t border-purple-500"></div>
+    </div>
   );
 };
 

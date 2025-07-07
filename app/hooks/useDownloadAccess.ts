@@ -118,4 +118,73 @@ export function useDownloadAccess(userAddress: string | null, artistId: string |
     hasAnyAccess: downloadAccess.length > 0,
     refreshDownloadAccess
   };
+}
+
+export function useAllArtistsDownloadAccess(userAddress: string | null, allArtistsConfig: { [key: string]: any } | null) {
+  const [allDownloads, setAllDownloads] = useState<{ [artistId: string]: DownloadAccess[] }>({});
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const checkAllAccess = async () => {
+      if (!userAddress || !allArtistsConfig) {
+        setAllDownloads({});
+        return;
+      }
+
+      setIsLoading(true);
+      setError(null);
+      const results: { [artistId: string]: DownloadAccess[] } = {};
+      const artistIds = Object.keys(allArtistsConfig);
+
+      // Using Promise.all to fetch in parallel for better performance
+      await Promise.all(artistIds.map(async (artistId) => {
+        try {
+          const artistContracts = getArtistContracts(artistId) as any;
+          if (!artistContracts?.download) {
+            return; // Skip artist if no download contract
+          }
+
+          const downloadContract = new ethers.Contract(
+            artistContracts.download,
+            ERC1155_ABI,
+            provider
+          );
+
+          const assetNumbers = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]; // Assuming a max of 10 assets
+          const accessChecks: DownloadAccess[] = [];
+
+          const balanceChecks = assetNumbers.map(assetNumber => 
+            downloadContract.balanceOf(userAddress, assetNumber).then(balance => ({ assetNumber, balance }))
+          );
+          
+          const balances = await Promise.all(balanceChecks);
+
+          for (const { assetNumber, balance } of balances) {
+            if (balance > 0) {
+              accessChecks.push({
+                artistId,
+                assetNumber,
+                hasAccess: true,
+                balance: Number(balance)
+              });
+            }
+          }
+
+          if (accessChecks.length > 0) {
+            results[artistId] = accessChecks;
+          }
+        } catch (e: any) {
+          console.warn(`Error checking downloads for ${artistId}:`, e.message);
+        }
+      }));
+      
+      setAllDownloads(results);
+      setIsLoading(false);
+    };
+
+    checkAllAccess();
+  }, [userAddress, allArtistsConfig]);
+
+  return { allDownloads, isLoading, error };
 } 
