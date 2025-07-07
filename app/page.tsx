@@ -9,6 +9,7 @@ import { useToast } from './contexts/ToastContext';
 import { ethers } from "ethers";
 import ArtistockArtifact from '../artifacts/contracts/Artistock.sol/Artistock.json';
 import { useArtistConfig } from "./hooks/useArtistConfig";
+import { useFeaturedAsset } from "./hooks/useFeaturedAsset";
 import OwnerControls from "./components/OwnerControls";
 import ArtistVideo from "./components/ArtistVideo";
 import ThemeOrbitRenderer from "./components/ThemeOrbitRenderer";
@@ -16,8 +17,7 @@ import PurchaseFlow from "./components/PurchaseFlow";
 import {
   ArtistConfig,
   RenderableToken,
-  UserTokenBalances,
-  PurchasedDownloadInfo
+  UserTokenBalances
 } from '../types/artist-types';
 
 interface OrbitalToken {
@@ -44,6 +44,9 @@ export default function HomePage() {
   const router = useRouter();
   const artistIdFromUrl = searchParams?.get('artist') || 'gosheesh';
   const { artistConfig, allArtistsConfig, isLoading: configLoading, error: configError } = useArtistConfig(artistIdFromUrl);
+  
+  // NEW: Fetch featured asset for video display
+  const { featuredAsset, videoUrl, isLoading: assetLoading, error: assetError } = useFeaturedAsset(artistIdFromUrl);
 
   const [isMuted, setIsMuted] = useState(true);
   const [shakeActive, setShakeActive] = useState(false);
@@ -64,7 +67,6 @@ export default function HomePage() {
   const [showAssetsPanel, setShowAssetsPanel] = useState<boolean>(false);
   const [downloadIpfsHash, setDownloadIpfsHash] = useState<string | null>(null);
   const [globalSafewordVerified, setGlobalSafewordVerified] = useState(false);
-  const [allPurchasedDownloads, setAllPurchasedDownloads] = useState<PurchasedDownloadInfo[]>([]);
   const [showFullAddress, setShowFullAddress] = useState(false);
   const [isOwner, setIsOwner] = useState(false);
   const [isMinting, setIsMinting] = useState(false);
@@ -231,29 +233,16 @@ export default function HomePage() {
       }
 
       if (allArtistsConfig) {
-        const downloads: PurchasedDownloadInfo[] = [];
-        for (const id in allArtistsConfig) {
-          if (localStorage.getItem('zeyodaHasPurchasedDownload_' + id) === 'true') {
-            downloads.push({
-              artistId: id,
-              artworkTitle: allArtistsConfig[id].artworkTitle,
-              artistDisplayName: allArtistsConfig[id].displayName,
-              ipfsHash: localStorage.getItem('zeyodaIpfsHash_' + id) || null,
-            });
-          }
-        }
-        setAllPurchasedDownloads(downloads);
-        console.log('[WalletData] Populated allPurchasedDownloads:', downloads);
+        // Note: Download management now handled by ERC-1155 tokens in Wallet component
+        console.log('[WalletData] Download management now handled by ERC-1155 tokens');
       } else {
-        console.log('[WalletData] allArtistsConfig not yet available to populate allPurchasedDownloads');
-        setAllPurchasedDownloads([]); // Clear if config is not ready
+        console.log('[WalletData] allArtistsConfig not yet available to populate download data');
       }
     } else {
       // Clear user data when no Magic Link user
       setUserTokenBalances({});
       setUnlockedArtistStates({});
       setGlobalSafewordVerified(false);
-      setAllPurchasedDownloads([]);
     }
   }, [searchParams, artistIdFromUrl, allArtistsConfig, user]);
 
@@ -624,15 +613,6 @@ export default function HomePage() {
   };
 
   useEffect(() => {
-    if (artistConfig && unlockedArtistStates[artistIdFromUrl] && artistConfig.tokenPrice > 0) {
-      if (swapFromAmount.trim() === "" || parseFloat(swapFromAmount || "0") === 0) {
-        const defaultUsdAmount = "20.00";
-        setSwapFromAmount(defaultUsdAmount);
-      }
-    }
-  }, [artistConfig, unlockedArtistStates, artistIdFromUrl, swapFromAmount]);
-
-  useEffect(() => {
     if (!allArtistsConfig || !user) {
       setDynamicOrbitalTokens([]);
       return;
@@ -640,23 +620,19 @@ export default function HomePage() {
 
     const ownedArtistIds = new Set<string>();
 
-    if (userTokenBalances && Object.keys(userTokenBalances).length > 0) {
-      for (const artistId in allArtistsConfig) {
-        const artist = allArtistsConfig[artistId];
-        if (artist.tokenName && userTokenBalances[artist.tokenName] && userTokenBalances[artist.tokenName] > 0) {
-          if (artistId !== artistIdFromUrl) {
-            ownedArtistIds.add(artistId);
+    // Create dynamic orbital tokens based on user assets
+    if (allArtistsConfig && user) {
+      // Get artists that user owns tokens for
+      if (userTokenBalances) {
+        for (const tokenName in userTokenBalances) {
+          if (userTokenBalances[tokenName] > 0) {
+            const artist = Object.values(allArtistsConfig).find(a => a.tokenName === tokenName);
+            if (artist && artist.name !== artistIdFromUrl) {
+              ownedArtistIds.add(artist.name);
+            }
           }
         }
       }
-    }
-
-    if (allPurchasedDownloads && allPurchasedDownloads.length > 0) {
-      allPurchasedDownloads.forEach(download => {
-        if (download.artistId !== artistIdFromUrl) {
-          ownedArtistIds.add(download.artistId);
-        }
-      });
     }
 
     const newOrbitalTokensData: RenderableToken[] = [];
@@ -664,8 +640,8 @@ export default function HomePage() {
     let angleIncrement = totalOwnedArtists > 0 ? 360 / totalOwnedArtists : 0;
     let currentAngle = 0;
 
-    ownedArtistIds.forEach(id => {
-      const artist = allArtistsConfig[id];
+    ownedArtistIds.forEach((id: string) => {
+      const artist = allArtistsConfig![id];
       if (artist) {
         newOrbitalTokensData.push({
           name: artist.displayName || artist.name,
@@ -678,7 +654,7 @@ export default function HomePage() {
     
     setDynamicOrbitalTokens(newOrbitalTokensData);
 
-  }, [allArtistsConfig, userTokenBalances, allPurchasedDownloads, user, artistIdFromUrl]);
+  }, [allArtistsConfig, userTokenBalances, user, artistIdFromUrl]);
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -785,6 +761,15 @@ export default function HomePage() {
     }
   }, [user]);
 
+  // Calculate video source with proper fallback and type safety
+  const getVideoSource = (): string => {
+    if (videoUrl) return videoUrl;
+    if (artistConfig?.videoSrc) return `/${artistConfig.videoSrc}`;
+    return `/assets/1${artistIdFromUrl.toUpperCase()}.mp4`;
+  };
+  
+  const videoSource = getVideoSource();
+
   // Show authentication loading screen first
   if (authLoading || !isReady) {
     return (
@@ -878,7 +863,6 @@ export default function HomePage() {
             artistConfig={artistConfig}
             allArtistsConfig={allArtistsConfig}
             userTokenBalances={userTokenBalances}
-            allPurchasedDownloads={allPurchasedDownloads}
             showAssetsPanel={showAssetsPanel}
             onClose={() => setShowAssetsPanel(false)}
             userAddress={user}
@@ -932,7 +916,7 @@ export default function HomePage() {
                   setIsVideoError={setIsVideoError}
                   toggleMute={toggleMute}
                   videoContainerRef={videoContainerRef}
-                  videoSrc={artistConfig.videoSrc ? `/${artistConfig.videoSrc}` : "/assets/GOSHEESH.mp4"}
+                  videoSrc={videoSource}
                 >
                   <ThemeOrbitRenderer
                     artistConfig={artistConfig}

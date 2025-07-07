@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { ethers } from 'ethers';
 import { ARTIST_REGISTRY, getArtistContracts } from '../utils/addressRegistry';
+import { useDownloadAccess } from '../hooks/useDownloadAccess';
+import { supabase } from '../utils/supabaseClient';
 
 interface ArtistConfig {
   name: string;
@@ -19,18 +21,19 @@ interface UserTokenBalances {
   [tokenSymbol: string]: number;
 }
 
-interface PurchasedDownloadInfo {
-  artistId: string;
-  artworkTitle: string;
-  artistDisplayName: string;
-  ipfsHash: string | null;
+interface AssetMetadata {
+  id: string;
+  artist_id: string;
+  asset_number: number;
+  file_url: string;
+  file_type: string;
+  metadata: any;
 }
 
 interface WalletProps {
   artistConfig: ArtistConfig | null;
   allArtistsConfig: { [key: string]: ArtistConfig } | null;
   userTokenBalances: UserTokenBalances;
-  allPurchasedDownloads: PurchasedDownloadInfo[];
   showAssetsPanel: boolean;
   onClose: () => void;
   userAddress?: string;
@@ -41,7 +44,6 @@ const Wallet: React.FC<WalletProps> = ({
   artistConfig,
   allArtistsConfig,
   userTokenBalances,
-  allPurchasedDownloads,
   showAssetsPanel,
   onClose,
   userAddress,
@@ -51,6 +53,109 @@ const Wallet: React.FC<WalletProps> = ({
   const [isLoading, setIsLoading] = useState(false);
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [lastFetchTime, setLastFetchTime] = useState<Date | null>(null);
+  const [downloadingAssets, setDownloadingAssets] = useState<Set<string>>(new Set());
+  const [assetMetadata, setAssetMetadata] = useState<{ [key: string]: AssetMetadata }>({});
+
+  // Get download access for all artists
+  const downloadAccessResults = allArtistsConfig ? Object.keys(allArtistsConfig).map(artistId => {
+    const { downloadAccess, isLoading: accessLoading, error: accessError } = useDownloadAccess(
+      userAddress || null,
+      artistId
+    );
+    return {
+      artistId,
+      downloadAccess,
+      isLoading: accessLoading,
+      error: accessError
+    };
+  }) : [];
+
+  // Fetch asset metadata for owned downloads
+  useEffect(() => {
+    const fetchAssetMetadata = async () => {
+      if (!downloadAccessResults.length) return;
+      
+      const metadata: { [key: string]: AssetMetadata } = {};
+      
+      for (const result of downloadAccessResults) {
+        if (result.downloadAccess.length > 0) {
+          for (const access of result.downloadAccess) {
+            const key = `${access.artistId}_${access.assetNumber}`;
+            
+            try {
+              const { data, error } = await supabase
+                .from('artist_assets')
+                .select('*')
+                .eq('artist_id', access.artistId)
+                .eq('asset_number', access.assetNumber)
+                .single();
+              
+              if (data && !error) {
+                metadata[key] = data;
+              }
+            } catch (error) {
+              console.warn(`Failed to fetch metadata for ${key}:`, error);
+            }
+          }
+        }
+      }
+      
+      setAssetMetadata(metadata);
+    };
+    
+    fetchAssetMetadata();
+  }, [downloadAccessResults]);
+
+  // Handle download
+  const handleDownload = async (artistId: string, assetNumber: number) => {
+    const key = `${artistId}_${assetNumber}`;
+    if (downloadingAssets.has(key)) return;
+    
+    setDownloadingAssets(prev => new Set([...prev, key]));
+    
+    try {
+      console.log(`📥 Starting download for ${artistId} asset ${assetNumber}`);
+      
+      const response = await fetch('/api/createSignedUrl', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          artistId: artistId,
+          assetNumber: assetNumber,
+          userAddress: userAddress
+        })
+      });
+      
+      const data = await response.json();
+      
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to get download URL');
+      }
+      
+      // Create download link
+      const link = document.createElement('a');
+      link.href = data.url;
+      link.download = `${artistId}_asset_${assetNumber}.${data.file_type?.split('/')[1] || 'mp4'}`;
+      link.target = '_blank';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      
+      console.log(`✅ Download initiated for ${artistId} asset ${assetNumber}`);
+      
+    } catch (error: any) {
+      console.error('Download failed:', error);
+      alert(`❌ Download failed: ${error.message}`);
+    } finally {
+      setDownloadingAssets(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(key);
+        return newSet;
+      });
+    }
+  };
 
   // Fetch real-time token balances from the blockchain
   const fetchRealBalances = async () => {
@@ -205,10 +310,12 @@ const Wallet: React.FC<WalletProps> = ({
     return null;
   }
 
-  // Get artists with assets
+  // Get artists with assets (tokens or downloads)
   const artistsWithAssets = allArtistsConfig ? Object.entries(allArtistsConfig).filter(([id, config]) => {
     const hasTokens = combinedBalances[config.tokenName] > 0;
-    const hasDownloads = allPurchasedDownloads.some(d => d.artistId === id);
+    const hasDownloads = downloadAccessResults.some(result => 
+      result.artistId === id && result.downloadAccess.length > 0
+    );
     return hasTokens || hasDownloads;
   }) : [];
 
@@ -281,7 +388,8 @@ const Wallet: React.FC<WalletProps> = ({
           ) : (
             artistsWithAssets.map(([artistId, config]) => {
               const tokenBalance = combinedBalances[config.tokenName] || 0;
-              const downloads = allPurchasedDownloads.filter(d => d.artistId === artistId);
+              const downloadResult = downloadAccessResults.find(result => result.artistId === artistId);
+              const downloads = downloadResult?.downloadAccess || [];
               
               return (
                 <div key={artistId} className="mb-3 bg-black bg-opacity-30 rounded-lg p-3 border border-purple-400 border-opacity-50">
@@ -304,28 +412,35 @@ const Wallet: React.FC<WalletProps> = ({
                     </div>
                   )}
                   
-                  {/* Downloads */}
-                  {downloads.map((download, index) => (
-                    <div key={index} className="flex items-center justify-between bg-purple-900 bg-opacity-50 rounded p-2 mt-2">
-                      <div className="flex items-center">
-                        <span className="text-xl mr-2">🎵</span>
-                        <div>
-                          <div className="text-white font-medium text-sm">{download.artworkTitle} #{index + 1}</div>
-                          <div className="text-purple-300 text-xs">Download</div>
+                  {/* ERC-1155 Downloads */}
+                  {downloads.map((download) => {
+                    const assetKey = `${download.artistId}_${download.assetNumber}`;
+                    const metadata = assetMetadata[assetKey];
+                    const isDownloading = downloadingAssets.has(assetKey);
+                    
+                    return (
+                      <div key={assetKey} className="flex items-center justify-between bg-purple-900 bg-opacity-50 rounded p-2 mt-2">
+                        <div className="flex items-center">
+                          <span className="text-xl mr-2">🎵</span>
+                          <div>
+                            <div className="text-white font-medium text-sm">
+                              {metadata?.metadata?.title || config.artworkTitle} #{download.assetNumber}
+                            </div>
+                            <div className="text-purple-300 text-xs">
+                              Download • Balance: {download.balance}
+                            </div>
+                          </div>
                         </div>
-                      </div>
-                      {download.ipfsHash && (
-                        <a 
-                          href={`https://ipfs.io/ipfs/${download.ipfsHash}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-purple-300 hover:text-purple-200 text-xs font-medium px-2 py-1 bg-purple-800 bg-opacity-50 rounded"
+                        <button
+                          onClick={() => handleDownload(download.artistId, download.assetNumber)}
+                          disabled={isDownloading}
+                          className="text-purple-300 hover:text-purple-200 text-xs font-medium px-2 py-1 bg-purple-800 bg-opacity-50 rounded disabled:opacity-50"
                         >
-                          Download
-                        </a>
-                      )}
-                    </div>
-                  ))}
+                          {isDownloading ? '⏳' : '📥'} Download
+                        </button>
+                      </div>
+                    );
+                  })}
                 </div>
               );
             })

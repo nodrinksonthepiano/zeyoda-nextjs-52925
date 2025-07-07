@@ -4,6 +4,13 @@ import { SwapService, SwapQuote } from '../utils/swapUtils';
 import { TreasurySwapLiteService, TreasurySwapQuote } from '../utils/treasurySwapUtils';
 import { useWallet } from './MagicProvider';
 import { useDownloadAccess } from '../hooks/useDownloadAccess';
+import { getArtistContracts } from '../utils/addressRegistry';
+
+// ERC-1155 ABI for minting download tokens
+const DOWNLOAD_CONTRACT_ABI = [
+  "function mintDownload(address user, uint256 assetId, uint256 amount) external",
+  "function owner() view returns (address)"
+];
 
 interface PurchaseFlowProps {
   user: string | null;
@@ -64,7 +71,7 @@ const PurchaseFlow: React.FC<PurchaseFlowProps> = ({
     const [downloadingAssets, setDownloadingAssets] = useState<Set<number>>(new Set());
     
     // Check download access for current artist
-    const { hasAccessToAsset, hasAnyAccess, downloadAccess, isLoading: checkingAccess } = useDownloadAccess(
+    const { hasAccessToAsset, hasAnyAccess, downloadAccess, isLoading: checkingAccess, refreshDownloadAccess } = useDownloadAccess(
         user, 
         artistConfig?.name?.toLowerCase() || null
     );
@@ -94,6 +101,18 @@ const PurchaseFlow: React.FC<PurchaseFlowProps> = ({
             const browserProvider = new ethers.BrowserProvider(provider as any);
             const signer = await browserProvider.getSigner();
             
+            // Calculate total USD amount including download fee
+            const baseUsdAmount = parseFloat(swapFromAmount);
+            const downloadFee = includeDownload ? 1.0 : 0.0;
+            const totalUsdAmount = baseUsdAmount + downloadFee;
+            
+            console.log('💰 Purchase breakdown:', {
+                baseSwapAmount: baseUsdAmount,
+                downloadFee: downloadFee,
+                totalAmount: totalUsdAmount,
+                includeDownload: includeDownload
+            });
+            
             // DEBUG: Log the artist configuration for swap debugging
             console.log('🔍 Swap Debug Info for', artistConfig.name, {
                 swapAddress: artistConfig.swapAddress,
@@ -112,6 +131,7 @@ const PurchaseFlow: React.FC<PurchaseFlowProps> = ({
             
             let transactionHash = '';
             let swapType = '';
+            let downloadTxHash = '';
             
             if (hasLiquidityPool && swapFromAsset === "USD") {
                 // ✅ PRIORITY: Use AMM for USD purchases when liquidity pools exist (live pricing)
@@ -119,9 +139,9 @@ const PurchaseFlow: React.FC<PurchaseFlowProps> = ({
                 
                 const swapService = new SwapService(signer);
                 
-                // Convert USD to ETH for AMM with proper precision
-                const ethAmount = (parseFloat(swapFromAmount) / 2500).toFixed(18); // Max 18 decimals for ETH
-                swapType = `$${swapFromAmount} USD → ${artistConfig.tokenName} (AMM Live Price)`;
+                // Convert total USD amount (including download fee) to ETH for AMM with proper precision
+                const ethAmount = (totalUsdAmount / 2500).toFixed(18); // Max 18 decimals for ETH
+                swapType = `$${totalUsdAmount} USD → ${artistConfig.tokenName}${includeDownload ? ' + Download' : ''} (AMM Live Price)`;
                 
                 // Get actual AMM quote with proper slippage tolerance
                 const quote = await swapService.getTokenQuote(artistConfig.contract, ethAmount);
@@ -129,7 +149,8 @@ const PurchaseFlow: React.FC<PurchaseFlowProps> = ({
                     ethAmount,
                     expectedTokens: quote.outputAmount,
                     minimumOutput: quote.minimumOutput,
-                    frontendEstimate: artistocksInput
+                    frontendEstimate: artistocksInput,
+                    includesDownloadFee: includeDownload
                 });
                 
                 const tx = await swapService.swapEthForTokens(
@@ -223,12 +244,11 @@ const PurchaseFlow: React.FC<PurchaseFlowProps> = ({
             } else if (hasTreasurySwap && swapFromAsset === "USD") {
                 // ⚠️ FALLBACK: Use TreasurySwapLite only when no liquidity pools (fixed rate)
                 console.log('🎯 Using TreasurySwapLite for Day-0 MVP swap (fixed rate fallback)');
-                swapType = `$${swapFromAmount} USD → ${artistConfig.tokenName} (Fixed Rate)`;
+                swapType = `$${totalUsdAmount} USD → ${artistConfig.tokenName}${includeDownload ? ' + Download' : ''} (Fixed Rate)`;
                 
                 const treasurySwap = new TreasurySwapLiteService(artistConfig.swapAddress!, signer);
-                const usdAmount = parseFloat(swapFromAmount);
                 
-                const tx = await treasurySwap.buyTokensWithUSD(usdAmount);
+                const tx = await treasurySwap.buyTokensWithUSD(totalUsdAmount);
                 await tx.wait();
                 transactionHash = tx.hash;
                 console.log('✅ TreasurySwapLite swap successful:', tx.hash);
@@ -237,9 +257,119 @@ const PurchaseFlow: React.FC<PurchaseFlowProps> = ({
                 throw new Error('No swap system available for this configuration');
             }
             
+            // 🎯 DOWNLOAD TOKEN MINTING (after successful swap)
+            // Call backend relayer service to mint download token
+            if (includeDownload && transactionHash && user) {
+                console.log('🪙 Starting download token mint via backend relayer...');
+                
+                try {
+                    const mintRequestBody = {
+                        artistId: artistConfig.name?.toLowerCase() || '',
+                        userAddress: user,
+                        assetId: 1, // Featured asset is always #1
+                        txHash: transactionHash,
+                        amount: 1
+                    };
+                    
+                    console.log('🔍 DEBUG: Sending mint request:', mintRequestBody);
+                    
+                    const mintResponse = await fetch('/api/mintDownload', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify(mintRequestBody)
+                    });
+                    
+                    const mintData = await mintResponse.json();
+                    
+                    console.log('🔍 DEBUG: Mint response:', {
+                        status: mintResponse.status,
+                        ok: mintResponse.ok,
+                        data: mintData
+                    });
+                    
+                    if (mintResponse.ok && mintData.success) {
+                        downloadTxHash = mintData.mintTxHash;
+                        console.log('✅ Download token minted successfully:', downloadTxHash);
+                        
+                        if (mintData.alreadyOwned) {
+                            console.log('ℹ️ User already owned this download');
+                        }
+                        
+                        // Refresh download access to show the newly minted token
+                        refreshDownloadAccess();
+                    } else {
+                        // Show the exact error from the API with helpful context
+                        const errorDetails = {
+                            status: mintResponse.status,
+                            error: mintData.error || 'Unknown error',
+                            details: mintData.details || {},
+                            fullResponse: mintData
+                        };
+                        
+                        console.error('❌ Mint API error details:', errorDetails);
+                        
+                        // Create user-friendly error message
+                        let userErrorMessage = `⚠️ Download Token Update\n\n`;
+                        
+                        if (mintData.error === 'Transaction not found on blockchain' || 
+                            mintData.error === 'Transaction still pending confirmation') {
+                            userErrorMessage += `Your payment was successful! 🎉\n\n`;
+                            userErrorMessage += `However, we need to wait for the network to confirm it.\n`;
+                            userErrorMessage += `This usually takes 1-2 minutes.\n\n`;
+                            userErrorMessage += mintData.details?.suggestion || 'Please wait a moment and try again.';
+                            
+                            // Schedule automatic retry
+                            setTimeout(() => {
+                                console.log('🔄 Auto-retrying download token mint...');
+                                handleRealSwap();
+                            }, 60000); // Try again in 1 minute
+                            
+                        } else {
+                            userErrorMessage += `There was an issue processing your download:\n`;
+                            userErrorMessage += mintData.error;
+                            
+                            if (mintData.details?.suggestion) {
+                                userErrorMessage += `\n\n${mintData.details.suggestion}`;
+                            }
+                            
+                            userErrorMessage += `\n\nSwap Transaction: ${transactionHash.substring(0, 10)}...`;
+                            
+                            if (mintData.details?.timeWaited) {
+                                userErrorMessage += `\nTime waited: ${mintData.details.timeWaited}`;
+                            }
+                        }
+                        
+                        alert(userErrorMessage);
+                    }
+                    
+                } catch (mintError: any) {
+                    console.error('❌ Download token mint failed:', mintError);
+                    
+                    // Show detailed error to user for debugging
+                    const errorMessage = mintError.message.includes('❌ Download Token Mint Failed') 
+                        ? mintError.message 
+                        : `⚠️ Your payment was successful, but we couldn't process the download yet.\n\n` +
+                          `This usually means the network is busy.\n` +
+                          `Please wait a minute and try refreshing the page.\n\n` +
+                          `Error: ${mintError.message || 'Connection issue'}\n` +
+                          `Swap TX: ${transactionHash.substring(0, 10)}...`;
+                    
+                    alert(errorMessage);
+                }
+            }
+            
             // 🎉 SUCCESS - Show user-facing feedback
             if (transactionHash) {
-                const successMessage = `🎉 SWAP SUCCESSFUL!\n\n${swapType}\n\nTransaction: ${transactionHash.substring(0, 10)}...`;
+                let successMessage = `🎉 PURCHASE SUCCESSFUL!\n\n${swapType}\n\nSwap Transaction: ${transactionHash.substring(0, 10)}...`;
+                
+                if (includeDownload && downloadTxHash) {
+                    successMessage += `\n\n🎵 Download Token Minted! ✅\nMint Transaction: ${downloadTxHash.substring(0, 10)}...\n\nYour download access is now available in your wallet!`;
+                } else if (includeDownload) {
+                    successMessage += `\n\n💡 Download processing: Your payment included $1 for download access. Download tokens are being credited to your wallet.`;
+                }
+                
                 alert(successMessage);
                 
                 // Force wallet balance refresh with delay to allow blockchain to update
@@ -249,11 +379,20 @@ const PurchaseFlow: React.FC<PurchaseFlowProps> = ({
                     // Clear any cached balances to force fresh fetch
                     localStorage.removeItem('zeyodaUserTokenBalances');
                     
-                    // Trigger a custom event for wallet refresh
+                    // Trigger a custom event for wallet refresh (includes download access refresh)
                     const refreshEvent = new CustomEvent('refreshWalletBalances', {
-                        detail: { transactionHash, swapType, forceRefresh: true }
+                        detail: { 
+                            transactionHash, 
+                            downloadTxHash,
+                            swapType, 
+                            forceRefresh: true,
+                            includeDownload: includeDownload 
+                        }
                     });
                     window.dispatchEvent(refreshEvent);
+                    
+                    // Force re-render of download access by changing a dependency
+                    window.location.reload(); // Simple but effective way to refresh download status
                     
                 }, 8000); // Increased from 3 to 8 seconds for better blockchain propagation
             }

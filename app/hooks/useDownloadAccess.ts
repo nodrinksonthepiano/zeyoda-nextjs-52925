@@ -22,73 +22,79 @@ export function useDownloadAccess(userAddress: string | null, artistId: string |
   const [downloadAccess, setDownloadAccess] = useState<DownloadAccess[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [refreshTrigger, setRefreshTrigger] = useState(0);
 
-  useEffect(() => {
+  const checkDownloadAccess = async () => {
     if (!userAddress || !artistId) {
       setDownloadAccess([]);
       return;
     }
 
-    async function checkDownloadAccess() {
-      setIsLoading(true);
-      setError(null);
+    setIsLoading(true);
+    setError(null);
+    
+    try {
+      console.log(`🔍 Checking download access for ${userAddress} on ${artistId}`);
       
-      try {
-        console.log(`🔍 Checking download access for ${userAddress} on ${artistId}`);
-        
-        // Get artist contracts (artistId is guaranteed to be non-null here)
-        const artistContracts = getArtistContracts(artistId!) as any;
-        if (!artistContracts?.download) {
-          console.log(`⚠️ No download contract found for ${artistId}`);
-          setDownloadAccess([]);
-          return;
-        }
-
-        // Create contract instance
-        const downloadContract = new ethers.Contract(
-          artistContracts.download,
-          ERC1155_ABI,
-          provider
-        );
-
-        // Check access for assets 1-10 (common range)
-        const assetNumbers = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
-        const accessChecks: DownloadAccess[] = [];
-
-        for (const assetNumber of assetNumbers) {
-          try {
-            const balance = await downloadContract.balanceOf(userAddress, assetNumber);
-            const hasAccess = balance > 0;
-            
-            if (hasAccess) {
-              console.log(`✅ ${artistId} asset ${assetNumber}: balance ${balance.toString()}`);
-                             accessChecks.push({
-                artistId: artistId!,
-                assetNumber,
-                hasAccess: true,
-                balance: Number(balance)
-              });
-            }
-          } catch (error: any) {
-            console.warn(`⚠️ Error checking ${artistId} asset ${assetNumber}:`, error.message);
-            // Continue checking other assets
-          }
-        }
-
-        setDownloadAccess(accessChecks);
-        console.log(`📊 Found ${accessChecks.length} accessible downloads for ${artistId}`);
-        
-      } catch (error: any) {
-        console.error('Error checking download access:', error);
-        setError(error.message || 'Failed to check download access');
+      // Get artist contracts (artistId is guaranteed to be non-null here)
+      const artistContracts = getArtistContracts(artistId!) as any;
+      if (!artistContracts?.download) {
+        console.log(`⚠️ No download contract found for ${artistId}`);
         setDownloadAccess([]);
-      } finally {
-        setIsLoading(false);
+        return;
       }
-    }
 
+      // Create contract instance
+      const downloadContract = new ethers.Contract(
+        artistContracts.download,
+        ERC1155_ABI,
+        provider
+      );
+
+      // Check access for assets 1-10 (common range)
+      const assetNumbers = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+      const accessChecks: DownloadAccess[] = [];
+
+      for (const assetNumber of assetNumbers) {
+        try {
+          const balance = await downloadContract.balanceOf(userAddress, assetNumber);
+          const hasAccess = balance > 0;
+          
+          if (hasAccess) {
+            console.log(`✅ ${artistId} asset ${assetNumber}: balance ${balance.toString()}`);
+            accessChecks.push({
+              artistId: artistId!,
+              assetNumber,
+              hasAccess: true,
+              balance: Number(balance)
+            });
+          }
+        } catch (error: any) {
+          console.warn(`⚠️ Error checking ${artistId} asset ${assetNumber}:`, error.message);
+          // Continue checking other assets
+        }
+      }
+
+      setDownloadAccess(accessChecks);
+      console.log(`📊 Found ${accessChecks.length} accessible downloads for ${artistId}`);
+      
+    } catch (error: any) {
+      console.error('Error checking download access:', error);
+      setError(error.message || 'Failed to check download access');
+      setDownloadAccess([]);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
     checkDownloadAccess();
-  }, [userAddress, artistId]);
+  }, [userAddress, artistId, refreshTrigger]);
+
+  // Manual refresh function
+  const refreshDownloadAccess = () => {
+    setRefreshTrigger(prev => prev + 1);
+  };
 
   // Helper function to check specific asset
   const hasAccessToAsset = (assetNumber: number): boolean => {
@@ -109,6 +115,7 @@ export function useDownloadAccess(userAddress: string | null, artistId: string |
     error,
     hasAccessToAsset,
     getAssetBalance,
-    hasAnyAccess: downloadAccess.length > 0
+    hasAnyAccess: downloadAccess.length > 0,
+    refreshDownloadAccess
   };
 } 
