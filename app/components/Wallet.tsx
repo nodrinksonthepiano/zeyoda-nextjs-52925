@@ -3,6 +3,7 @@ import { ethers } from 'ethers';
 import { ARTIST_REGISTRY, getArtistContracts } from '../utils/addressRegistry';
 import { useAllArtistsDownloadAccess } from '../hooks/useDownloadAccess';
 import { supabase } from '../utils/supabaseClient';
+import { useToast } from '../contexts/ToastContext';
 
 interface ArtistConfig {
   name: string;
@@ -55,6 +56,7 @@ const Wallet: React.FC<WalletProps> = ({
   const [lastFetchTime, setLastFetchTime] = useState<Date | null>(null);
   const [downloadingAssets, setDownloadingAssets] = useState<Set<string>>(new Set());
   const [assetMetadata, setAssetMetadata] = useState<{ [key: string]: AssetMetadata }>({});
+  const { showToast } = useToast();
 
   // Use the new hook to get all download access data at once
   const { allDownloads, isLoading: downloadsLoading, error: downloadsError } = useAllArtistsDownloadAccess(
@@ -133,7 +135,7 @@ const Wallet: React.FC<WalletProps> = ({
       
     } catch (error: any) {
       console.error('Download failed:', error);
-      alert(`Download failed: ${error.message}`);
+      showToast(`Download failed: ${error.message}`, 'error');
     } finally {
       setDownloadingAssets(prev => {
         const newSet = new Set(prev);

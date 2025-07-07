@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { ethers } from 'ethers';
 import { getArtistContracts } from '../utils/addressRegistry';
+import { supabase } from '../utils/supabaseClient';
 
 // ERC-1155 ABI for checking balances
 const ERC1155_ABI = [
@@ -134,16 +135,24 @@ export function useAllArtistsDownloadAccess(userAddress: string | null, allArtis
 
       setIsLoading(true);
       setError(null);
-      const results: { [artistId: string]: DownloadAccess[] } = {};
-      const artistIds = Object.keys(allArtistsConfig);
+      
+      try {
+        // 1. Fetch all possible assets from our database first
+        const { data: allPossibleAssets, error: dbError } = await supabase
+          .from('artist_assets')
+          .select('artist_id, asset_number');
 
-      // Using Promise.all to fetch in parallel for better performance
-      await Promise.all(artistIds.map(async (artistId) => {
-        try {
+        if (dbError) {
+          throw new Error(`Failed to fetch asset list from DB: ${dbError.message}`);
+        }
+
+        const results: { [artistId: string]: DownloadAccess[] } = {};
+        const artistIds = Object.keys(allArtistsConfig);
+
+        // 2. For each artist, check balances for the assets that actually exist
+        await Promise.all(artistIds.map(async (artistId) => {
           const artistContracts = getArtistContracts(artistId) as any;
-          if (!artistContracts?.download) {
-            return; // Skip artist if no download contract
-          }
+          if (!artistContracts?.download) return;
 
           const downloadContract = new ethers.Contract(
             artistContracts.download,
@@ -151,22 +160,31 @@ export function useAllArtistsDownloadAccess(userAddress: string | null, allArtis
             provider
           );
 
-          const assetNumbers = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]; // Assuming a max of 10 assets
-          const accessChecks: DownloadAccess[] = [];
+          // Filter for assets belonging to the current artist
+          const assetsForArtist = allPossibleAssets.filter(asset => asset.artist_id === artistId);
+          if (assetsForArtist.length === 0) return;
 
-          const balanceChecks = assetNumbers.map(assetNumber => 
-            downloadContract.balanceOf(userAddress, assetNumber).then(balance => ({ assetNumber, balance }))
+          const accessChecks: DownloadAccess[] = [];
+          
+          // Create a list of balance check promises
+          const balanceChecks = assetsForArtist.map(asset => 
+            downloadContract.balanceOf(userAddress, asset.asset_number)
+              .then(balance => ({ assetNumber: asset.asset_number, balance }))
+              .catch(err => {
+                console.warn(`Balance check failed for ${artistId} asset ${asset.asset_number}:`, err);
+                return { assetNumber: asset.asset_number, balance: 0n }; // On error, assume 0 balance (using BigInt literal for ethers v6)
+              })
           );
           
           const balances = await Promise.all(balanceChecks);
 
           for (const { assetNumber, balance } of balances) {
-            if (balance > 0) {
+            if (balance > 0n) { // Compare with BigInt zero
               accessChecks.push({
                 artistId,
                 assetNumber,
                 hasAccess: true,
-                balance: Number(balance)
+                balance: Number(balance) // Convert BigInt to Number for state and UI
               });
             }
           }
@@ -174,13 +192,16 @@ export function useAllArtistsDownloadAccess(userAddress: string | null, allArtis
           if (accessChecks.length > 0) {
             results[artistId] = accessChecks;
           }
-        } catch (e: any) {
-          console.warn(`Error checking downloads for ${artistId}:`, e.message);
-        }
-      }));
-      
-      setAllDownloads(results);
-      setIsLoading(false);
+        }));
+        
+        setAllDownloads(results);
+      } catch (e: any) {
+        console.error('Error checking all download access:', e);
+        setError(e.message || 'An unexpected error occurred.');
+        setAllDownloads({});
+      } finally {
+        setIsLoading(false);
+      }
     };
 
     checkAllAccess();
