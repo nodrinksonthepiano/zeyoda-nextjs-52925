@@ -8,7 +8,6 @@
       "artworkYear": "2024",
       "tokenPrice": 0.0005,
       "videoSrc": "/assets/2JAITEA.mp4",
-      "contract": "0x0000000000000000000000000000000000000000",
       "theme": {
         "primaryColor": "#0a1a3b",
         "accentColor": "#4073ff",
@@ -43,12 +42,11 @@
     "gosheesh": {
       "name": "GOSHEESH",
       "displayName": "Gosheesh",
-      "tokenName": "GOSH TOKENS",
+      "tokenName": "GOSH33SH",
       "artworkTitle": "Gosheesh Collection X",
       "artworkYear": "2025",
       "tokenPrice": 0.0005,
       "videoSrc": "/assets/1GOSHEESH copy.mp4",
-      "contract": "0x191840a2aeF67234a8E606741d4D1D8b3fCe0Ba3",
       "theme": {
         "primaryColor": "#1a0a3b",
         "accentColor": "#7f40ff",
@@ -73,12 +71,11 @@
     "jaitea": {
       "name": "JAI TEA",
       "displayName": "Jai Tea",
-      "tokenName": "JAI TOKENS",
+      "tokenName": "JAIT33",
       "artworkTitle": "Jai Tea Collection Y",
       "artworkYear": "2025",
       "tokenPrice": 0.0005,
       "videoSrc": "/assets/2JAITEA.mp4",
-      "contract": "0xD20f10F62ba564dA8D541231069E0EA114Df0114",
       "theme": {
         "primaryColor": "#3b0a1a",
         "accentColor": "#ff4073",

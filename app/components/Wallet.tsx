@@ -3,6 +3,7 @@ import { ethers } from 'ethers';
 import { useAllArtistsDownloadAccess } from '../hooks/useDownloadAccess';
 import { supabase } from '../utils/supabaseClient';
 import { useToast } from '../contexts/ToastContext';
+import { ARTIST_REGISTRY } from '../utils/addressRegistryFallback';
 
 interface ArtistConfig {
   name: string;
@@ -14,11 +15,10 @@ interface ArtistConfig {
     primaryColor: string;
     accentColor: string;
   };
-  // Add other relevant fields from ArtistConfig if needed by the wallet
 }
 
 interface UserTokenBalances {
-  [tokenSymbol: string]: number;
+  [tokenSymbol: string]: bigint;
 }
 
 interface AssetMetadata {
@@ -43,7 +43,7 @@ interface WalletProps {
 const Wallet: React.FC<WalletProps> = ({
   artistConfig,
   allArtistsConfig,
-  userTokenBalances,
+  userTokenBalances: initialBalances,
   showAssetsPanel,
   onClose,
   userAddress,
@@ -57,9 +57,18 @@ const Wallet: React.FC<WalletProps> = ({
   const [assetMetadata, setAssetMetadata] = useState<{ [key: string]: AssetMetadata }>({});
   const { showToast } = useToast();
 
-  // Debug logging for balance tracing
-  console.debug('[BAL-TRACE] props.userTokenBalances', userTokenBalances);
-  console.debug('[BAL-TRACE] realTimeBalances', realTimeBalances);
+  // Convert initial balances to BigInt
+  const userTokenBalances = useMemo(() => {
+    const converted: UserTokenBalances = {};
+    if (initialBalances) {
+      Object.entries(initialBalances).forEach(([token, balance]) => {
+        if (balance !== undefined && balance !== null) {
+          converted[token] = typeof balance === 'bigint' ? balance : BigInt(String(balance));
+        }
+      });
+    }
+    return converted;
+  }, [initialBalances]);
 
   // Use the new hook to get all download access data at once
   const { allDownloads, isLoading: downloadsLoading, error: downloadsError } = useAllArtistsDownloadAccess(
@@ -110,7 +119,7 @@ const Wallet: React.FC<WalletProps> = ({
     fetchAssetMetadata();
   }, [allDownloads]);
 
-  // Handle download logic, now back in the main wallet component
+  // Handle download logic
   const handleDownload = async (artistId: string, assetNumber: number) => {
     const key = `${artistId}_${assetNumber}`;
     if (downloadingAssets.has(key)) return;
@@ -164,83 +173,51 @@ const Wallet: React.FC<WalletProps> = ({
     const balances: UserTokenBalances = {};
     
     try {
-      console.debug('[BAL-TRACE] Starting balance fetch for:', userAddress);
-      
-      // Use Magic Link provider (most reliable)
       const provider = new ethers.BrowserProvider(magic.rpcProvider as any);
       
-      // Use the contract addresses from the dynamically loaded config
-      const contractAddresses = Object.entries(allArtistsConfig).reduce((acc, [artistId, config]) => {
-        if (config.contract) {
-          acc[config.tokenName] = config.contract;
-        }
-        return acc;
-      }, {} as Record<string, string>);
-      
-      console.debug('[BAL-TRACE] Contract addresses:', contractAddresses);
-      
-      // Simple ERC20 ABI for balanceOf
-      const erc20Abi = [
-        "function balanceOf(address owner) view returns (uint256)",
-        "function decimals() view returns (uint8)",
-        "function symbol() view returns (string)"
-      ];
-      
-      // Fetch balance for each token
-      for (const [tokenName, contractAddress] of Object.entries(contractAddresses)) {
-        if (!contractAddress) {
-          console.debug(`[BAL-TRACE] No contract address for ${tokenName}`);
-          balances[tokenName] = 0;
-          continue;
-        }
+      // Use the contract addresses from the registry
+      for (const [artistId, registryEntry] of Object.entries(ARTIST_REGISTRY)) {
+        if (!registryEntry.token) continue;
+        
+        const tokenName = artistId === 'gosheesh' ? 'GOSH33SH' : artistId === 'jaitea' ? 'JAIT33' : '';
+        if (!tokenName) continue;
         
         try {
-          console.debug(`[BAL-TRACE] Fetching ${tokenName} balance from ${contractAddress}`);
+          console.debug(`[BAL-TRACE] Fetching ${tokenName} balance from ${registryEntry.token}`);
           
-          const contract = new ethers.Contract(contractAddress, erc20Abi, provider);
-          const [rawBalance, decimals] = await Promise.all([
-            contract.balanceOf(userAddress),
-            contract.decimals()
-          ]);
+          const contract = new ethers.Contract(registryEntry.token, [
+            "function balanceOf(address owner) view returns (uint256)",
+            "function decimals() view returns (uint8)",
+            "function symbol() view returns (string)"
+          ], provider);
           
-          console.debug(`[BAL-TRACE] Raw balance for ${tokenName}:`, rawBalance.toString());
-          console.debug(`[BAL-TRACE] Decimals for ${tokenName}:`, decimals);
+          const rawBalance = await contract.balanceOf(userAddress);
+          const decimals = await contract.decimals();
           
-          // Convert using proper decimals
-          const balance = Number(ethers.formatUnits(rawBalance, decimals));
-          console.debug(`[BAL-TRACE] Converted balance for ${tokenName}:`, balance);
+          console.log(`[BAL-DEBUG] raw balance for ${tokenName}:`, rawBalance.toString());
+          console.log(`[BAL-DEBUG] decimals for ${tokenName}:`, decimals);
           
-          balances[tokenName] = balance;
-          
+          balances[tokenName] = rawBalance;
         } catch (error: any) {
           console.warn(`[BAL-TRACE] Error fetching ${tokenName} balance:`, error.message);
-          balances[tokenName] = 0;
+          balances[tokenName] = BigInt(0);
         }
       }
       
-      console.debug('[BAL-TRACE] Final balances:', balances);
-      
-      // Always update state with whatever we fetched
       setRealTimeBalances(balances);
       setLastFetchTime(new Date());
       
-      // Cache successful balances
       try {
         localStorage.setItem('zeyodaUserTokenBalances', JSON.stringify({
-          balances,
+          balances: Object.fromEntries(
+            Object.entries(balances).map(([k, v]) => [k, v.toString()])
+          ),
           timestamp: Date.now(),
           userAddress
         }));
-        console.debug('[BAL-TRACE] Cached balances:', balances);
       } catch (cacheError) {
         console.warn('[BAL-TRACE] Could not cache balances:', cacheError);
       }
-      
-      // Trigger a custom event to notify other components
-      const balanceUpdateEvent = new CustomEvent('walletBalancesUpdated', {
-        detail: balances
-      });
-      window.dispatchEvent(balanceUpdateEvent);
       
     } catch (error: any) {
       console.error('[BAL-TRACE] Balance fetch failed:', error);
@@ -250,20 +227,15 @@ const Wallet: React.FC<WalletProps> = ({
     }
   };
 
-  // Listen for transaction success events to refresh balances
+  // Listen for transaction success events
   useEffect(() => {
     const handleTransactionSuccess = (event: any) => {
       console.debug('[BAL-TRACE] txSuccess event', event?.detail);
-      console.log('🎉 Transaction success detected, forcing balance refresh...', event.detail);
       setFetchError(null);
-      
-      // Clear cached balances to force a fresh fetch
       localStorage.removeItem('zeyodaUserTokenBalances');
-      
-      // Add a small delay to allow the blockchain to update
       setTimeout(() => {
         fetchRealBalances();
-      }, 2000); // Wait 2 seconds before refreshing
+      }, 2000);
     };
 
     window.addEventListener('transactionSuccess', handleTransactionSuccess);
@@ -273,7 +245,6 @@ const Wallet: React.FC<WalletProps> = ({
   // Auto-refresh balances when wallet panel opens
   useEffect(() => {
     if (showAssetsPanel) {
-      // Clear cached balances when opening panel
       localStorage.removeItem('zeyodaUserTokenBalances');
       fetchRealBalances();
     }
@@ -281,33 +252,26 @@ const Wallet: React.FC<WalletProps> = ({
 
   const handleManualRefresh = async () => {
     setFetchError(null);
-    // Clear cached balances on manual refresh
     localStorage.removeItem('zeyodaUserTokenBalances');
     await fetchRealBalances();
   };
 
-  // Combine balances, preferring real-time balances over passed-in balances
+  // Combine balances
   const combinedBalances = useMemo(() => {
-    console.debug('[BAL-TRACE] Combining balances:', {
-      userTokenBalances,
-      realTimeBalances
-    });
+    const combined: { [tokenSymbol: string]: bigint } = {};
     
-    const combined = { ...userTokenBalances };
-    
-    // Only override with real-time balances if they exist
-    Object.entries(realTimeBalances).forEach(([token, balance]) => {
-      // Convert to number if it's a string
-      const realTimeValue = typeof balance === 'string' ? parseFloat(balance) : balance;
-      if (!isNaN(realTimeValue)) {
-        combined[token] = realTimeValue;
-        console.debug(`[BAL-TRACE] Using real-time balance for ${token}:`, realTimeValue);
-      } else {
-        console.debug(`[BAL-TRACE] Invalid real-time balance for ${token}, keeping existing:`, combined[token]);
+    Object.entries(userTokenBalances).forEach(([token, balance]) => {
+      if (balance !== undefined && balance !== null) {
+        combined[token] = typeof balance === 'bigint' ? balance : BigInt(String(balance));
       }
     });
     
-    console.debug('[BAL-TRACE] Final combined balances:', combined);
+    Object.entries(realTimeBalances).forEach(([token, balance]) => {
+      if (balance !== undefined && balance !== null) {
+        combined[token] = balance;
+      }
+    });
+    
     return combined;
   }, [userTokenBalances, realTimeBalances]);
 
@@ -315,9 +279,10 @@ const Wallet: React.FC<WalletProps> = ({
     return null;
   }
 
-  // Filter artists to only show those with assets (tokens or downloads)
+  // Filter artists to only show those with assets
   const artistsWithAssets = allArtistsConfig ? Object.entries(allArtistsConfig).filter(([id, config]) => {
-    const hasTokens = (combinedBalances[config.tokenName] || 0) > 0;
+    const tokenBalance = combinedBalances[id === 'gosheesh' ? 'GOSH33SH' : id === 'jaitea' ? 'JAIT33' : config.tokenName];
+    const hasTokens = tokenBalance && tokenBalance > BigInt(0);
     const hasDownloads = allDownloads[id] && allDownloads[id].length > 0;
     return hasTokens || hasDownloads;
   }) : [];
@@ -364,48 +329,64 @@ const Wallet: React.FC<WalletProps> = ({
           </div>
         ) : (
           artistsWithAssets.map(([artistId, config]) => {
-            const tokenBalance = combinedBalances[config.tokenName] || 0;
+            const tokenName = artistId === 'gosheesh' ? 'GOSH33SH' : artistId === 'jaitea' ? 'JAIT33' : config.tokenName;
+            const tokenBalance = combinedBalances[tokenName];
             const downloads = allDownloads[artistId] || [];
             
             return (
               <div key={artistId} className="mb-3 bg-black bg-opacity-30 rounded-lg p-3 border border-purple-400 border-opacity-50">
-                <h3 className="text-md font-bold text-white mb-2" style={{ color: config.theme.accentColor }}>
-                  {config.displayName || config.name}
-                </h3>
-                
-                {tokenBalance > 0 && (
-                  <div className="flex items-center justify-between mb-2 bg-purple-900 bg-opacity-50 rounded p-2">
-                    <div className="text-white font-medium text-sm">
-                      {tokenBalance.toLocaleString(undefined, { maximumFractionDigits: 2 })} {config.tokenName}
-                    </div>
-                  </div>
-                )}
-                
-                {downloads.map(download => {
-                  const assetKey = `${download.artistId}_${download.assetNumber}`;
-                  const metadata = assetMetadata[assetKey];
-                  const isDownloading = downloadingAssets.has(assetKey);
+                <div className="flex flex-col">
+                  {/* Artist Name */}
+                  <h3 className="text-lg font-bold text-white mb-2" style={{ color: config.theme.accentColor }}>
+                    {artistId === 'gosheesh' ? 'GOSHEESH' : artistId === 'jaitea' ? 'JAI TEA' : config.displayName}
+                  </h3>
                   
-                  return (
-                    <div key={assetKey} className="flex items-center justify-between bg-purple-900 bg-opacity-50 rounded p-2 mt-2">
-                      <div>
-                        <div className="text-white font-medium text-sm">
-                          {metadata?.metadata?.title || `${config.artworkTitle} #${download.assetNumber}`}
-                        </div>
-                        <div className="text-purple-300 text-xs">
-                          Balance: {download.balance}
-                        </div>
+                  {/* Token Balance */}
+                  {tokenBalance && tokenBalance > BigInt(0) && (
+                    <div className="flex flex-col mb-2 bg-purple-900 bg-opacity-50 rounded p-2">
+                      <div className="text-purple-300 text-xs mb-1">
+                        {tokenName}
                       </div>
-                      <button
-                        onClick={() => handleDownload(download.artistId, download.assetNumber)}
-                        disabled={isDownloading}
-                        className="text-purple-300 hover:text-purple-200 text-xs font-medium px-2 py-1 bg-purple-800 bg-opacity-50 rounded disabled:opacity-50"
-                      >
-                        {isDownloading ? '...' : 'Download'}
-                      </button>
+                      <div className="text-white font-medium text-sm">
+                        {Number(ethers.formatUnits(tokenBalance, 18)).toLocaleString(undefined, {
+                          minimumFractionDigits: 0,
+                          maximumFractionDigits: 0
+                        })}
+                      </div>
                     </div>
-                  );
-                })}
+                  )}
+                  
+                  {/* Downloads Section */}
+                  {downloads.length > 0 && (
+                    <div className="mt-2 space-y-2">
+                      {downloads.map(download => {
+                        const assetKey = `${download.artistId}_${download.assetNumber}`;
+                        const metadata = assetMetadata[assetKey];
+                        const isDownloading = downloadingAssets.has(assetKey);
+                        
+                        return (
+                          <div key={assetKey} className="flex items-center justify-between bg-purple-900 bg-opacity-50 rounded p-2">
+                            <div>
+                              <div className="text-white font-medium text-sm">
+                                {metadata?.metadata?.title || `${config.artworkTitle} #${download.assetNumber}`}
+                              </div>
+                              <div className="text-purple-300 text-xs">
+                                Balance: {download.balance}
+                              </div>
+                            </div>
+                            <button
+                              onClick={() => handleDownload(download.artistId, download.assetNumber)}
+                              disabled={isDownloading}
+                              className="text-purple-300 hover:text-purple-200 text-xs font-medium px-2 py-1 bg-purple-800 bg-opacity-50 rounded disabled:opacity-50"
+                            >
+                              {isDownloading ? '...' : 'Download'}
+                            </button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
               </div>
             );
           })
@@ -418,4 +399,4 @@ const Wallet: React.FC<WalletProps> = ({
   );
 };
 
-export default Wallet; 
+export default Wallet;

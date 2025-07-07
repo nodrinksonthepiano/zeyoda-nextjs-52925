@@ -546,16 +546,18 @@ const PurchaseFlow: React.FC<PurchaseFlowProps> = ({
                         }}
                         className="w-2/5 p-2 border border-gray-600 rounded-md bg-gray-700 text-white focus:ring-accentColor focus:border-accentColor"
                     >
-                        <option value="USD">USD (Cash)</option>
+                        <option key="from-usd" value="USD">USD (Cash)</option>
                         {/* Show ALL tokens the user owns with a balance > 0 */}
                         {allArtistsConfig && Object.entries(allArtistsConfig).map(([id, artist]) => {
+                            if (!artist || !artist.tokenName) return null;
+                            
                             const userBalance = userTokenBalances[artist.tokenName] || 0;
                             const hasTokens = userBalance > 0;
                             
                             // Show token if user has it OR if it's the current artist's token (for swapping TO it)
                             if (hasTokens || artist.tokenName === artistConfig?.tokenName) {
                                 return (
-                                    <option key={artist.tokenName} value={artist.tokenName}>
+                                    <option key={`from-${id}-${artist.tokenName}`} value={artist.tokenName}>
                                         {artist.tokenName} {hasTokens ? `(${Math.floor(userBalance).toLocaleString()})` : ''}
                                     </option>
                                 );
@@ -594,18 +596,22 @@ const PurchaseFlow: React.FC<PurchaseFlowProps> = ({
                             disabled={swapFromAsset === "USD"} // Only disable for USD swaps
                             className="w-2/5 p-2 border border-gray-600 rounded-md bg-gray-700 text-white focus:ring-accentColor focus:border-accentColor disabled:opacity-50"
                             >
-                            {swapFromAsset === "USD" ? (
+                            {swapFromAsset === "USD" && artistConfig ? (
                                 // For USD swaps, only show current artist's token
-                                <option value={artistConfig.tokenName}>{artistConfig.tokenName}</option>
+                                <option key={`to-usd-${artistConfig.tokenName}`} value={artistConfig.tokenName}>
+                                    {artistConfig.tokenName}
+                                </option>
                             ) : (
                                 // For token swaps, show all available tokens except the FROM token
                                 allArtistsConfig && Object.entries(allArtistsConfig).map(([id, artist]) => {
+                                    if (!artist || !artist.tokenName) return null;
+                                    
                                     const userBalance = userTokenBalances[artist.tokenName] || 0;
                                     // Show if different from FROM asset and either has balance or is main tokens
                                     if (artist.tokenName !== swapFromAsset && 
                                         (userBalance > 0 || ['GOSH33SH', 'JAIT33'].includes(artist.tokenName))) {
                                         return (
-                                            <option key={artist.tokenName} value={artist.tokenName}>
+                                            <option key={`to-${id}-${artist.tokenName}`} value={artist.tokenName}>
                                                 {artist.tokenName}
                                             </option>
                                         );
