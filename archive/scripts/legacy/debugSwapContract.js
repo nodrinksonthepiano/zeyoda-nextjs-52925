@@ -1,3 +1,4 @@
+// archived 2024-03-19 — debug script for investigating swap contract issues during initial deployment
 const { ethers } = require("hardhat");
 
 async function main() {
