@@ -41,7 +41,7 @@ export function MagicProvider({ children }: { children: React.ReactNode }) {
         // Create Magic instance
         const magic = new Magic(process.env.NEXT_PUBLIC_MAGIC_PK!, {
           network: {
-            rpcUrl: process.env.NEXT_PUBLIC_RPC!,
+            rpcUrl: 'https://sepolia.base.org',
             chainId: 84532 // Base Sepolia
           }
         })

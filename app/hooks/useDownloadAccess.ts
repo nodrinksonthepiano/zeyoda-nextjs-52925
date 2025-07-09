@@ -11,7 +11,7 @@ const ERC1155_ABI = [
 ];
 
 // RPC provider for contract calls
-const provider = new ethers.JsonRpcProvider(process.env.NEXT_PUBLIC_RPC);
+const provider = new ethers.JsonRpcProvider('https://sepolia.base.org');
 
 export interface DownloadAccess {
   artistId: string;

@@ -242,10 +242,17 @@ const Wallet: React.FC<WalletProps> = ({
     return () => window.removeEventListener('transactionSuccess', handleTransactionSuccess);
   }, [userAddress, magic, allArtistsConfig]);
 
+  // Clear all cached data
+  const clearCache = () => {
+    localStorage.removeItem('zeyodaUserTokenBalances');
+    localStorage.removeItem('magic-auth-state');
+    sessionStorage.removeItem('magic-auth-state');
+  };
+
   // Auto-refresh balances when wallet panel opens
   useEffect(() => {
     if (showAssetsPanel) {
-      localStorage.removeItem('zeyodaUserTokenBalances');
+      clearCache();
       fetchRealBalances();
     }
   }, [userAddress, magic, allArtistsConfig, showAssetsPanel]);
