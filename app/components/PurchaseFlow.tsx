@@ -546,23 +546,24 @@ const PurchaseFlow: React.FC<PurchaseFlowProps> = ({
                         }}
                         className="w-2/5 p-2 border border-gray-600 rounded-md bg-gray-700 text-white focus:ring-accentColor focus:border-accentColor"
                     >
-                        <option key="from-usd" value="USD">USD (Cash)</option>
-                        {/* Show ALL tokens the user owns with a balance > 0 */}
+                        <option value="USD">USD (Cash)</option>
+
+                        {/* Show all artist tokens - user can trade any direction */}
                         {allArtistsConfig && Object.entries(allArtistsConfig).map(([id, artist]) => {
-                            if (!artist || !artist.tokenName) return null;
-                            
-                            const userBalance = userTokenBalances[artist.tokenName] || 0;
-                            const hasTokens = userBalance > 0;
-                            
-                            // Show token if user has it OR if it's the current artist's token (for swapping TO it)
-                            if (hasTokens || artist.tokenName === artistConfig?.tokenName) {
-                                return (
-                                    <option key={`from-${id}-${artist.tokenName}`} value={artist.tokenName}>
-                                        {artist.tokenName} {hasTokens ? `(${Math.floor(userBalance).toLocaleString()})` : ''}
-                                    </option>
-                                );
-                            }
-                            return null;
+                          if (!artist || !artist.tokenName) return null;
+
+                          const userBalance = userTokenBalances[artist.tokenName] || 0;
+                          const hasTokens = userBalance > 0;
+
+                          // Show all main artist tokens (GOSH33SH, JAIT33) for cross-trading
+                          if (artist.tokenName && ['GOSH33SH', 'JAIT33'].includes(artist.tokenName)) {
+                            return (
+                              <option key={`from-${id}-${artist.tokenName}`} value={artist.tokenName!}>
+                                {artist.tokenName} {hasTokens ? `(${Math.floor(userBalance).toLocaleString()})` : '(0)'}
+                              </option>
+                            );
+                          }
+                          return null;
                         })}
                     </select>
                     <input
@@ -593,31 +594,42 @@ const PurchaseFlow: React.FC<PurchaseFlowProps> = ({
                                     setSwapFromAsset(oppositeAsset);
                                 }
                             }}
-                            disabled={swapFromAsset === "USD"} // Only disable for USD swaps
-                            className="w-2/5 p-2 border border-gray-600 rounded-md bg-gray-700 text-white focus:ring-accentColor focus:border-accentColor disabled:opacity-50"
+                            className="w-2/5 p-2 border border-gray-600 rounded-md bg-gray-700 text-white focus:ring-accentColor focus:border-accentColor"
                             >
-                            {swapFromAsset === "USD" && artistConfig ? (
-                                // For USD swaps, only show current artist's token
-                                <option key={`to-usd-${artistConfig.tokenName}`} value={artistConfig.tokenName}>
-                                    {artistConfig.tokenName}
-                                </option>
-                            ) : (
-                                // For token swaps, show all available tokens except the FROM token
+                            {swapFromAsset === "USD" ? (
+                                // For USD swaps, show all available artist tokens
                                 allArtistsConfig && Object.entries(allArtistsConfig).map(([id, artist]) => {
                                     if (!artist || !artist.tokenName) return null;
                                     
-                                    const userBalance = userTokenBalances[artist.tokenName] || 0;
-                                    // Show if different from FROM asset and either has balance or is main tokens
-                                    if (artist.tokenName !== swapFromAsset && 
-                                        (userBalance > 0 || ['GOSH33SH', 'JAIT33'].includes(artist.tokenName))) {
+                                    // Show all main artist tokens for USD purchases
+                                    if (['GOSH33SH', 'JAIT33'].includes(artist.tokenName)) {
                                         return (
-                                            <option key={`to-${id}-${artist.tokenName}`} value={artist.tokenName}>
+                                            <option key={`to-usd-${id}-${artist.tokenName}`} value={artist.tokenName}>
                                                 {artist.tokenName}
                                             </option>
                                         );
                                     }
                                     return null;
                                 })
+                            ) : (
+                                // For token swaps, show USD + all other tokens except the FROM token
+                                <>
+                                    <option value="USD">USD (Cash)</option>
+                                    {allArtistsConfig && Object.entries(allArtistsConfig).map(([id, artist]) => {
+                                        if (!artist || !artist.tokenName) return null;
+                                        
+                                        // Show if different from FROM asset and is main tokens
+                                        if (artist.tokenName !== swapFromAsset && 
+                                            ['GOSH33SH', 'JAIT33'].includes(artist.tokenName)) {
+                                            return (
+                                                <option key={`to-${id}-${artist.tokenName}`} value={artist.tokenName}>
+                                                    {artist.tokenName}
+                                                </option>
+                                            );
+                                        }
+                                        return null;
+                                    })}
+                                </>
                             )}
                         </select>
                         <input

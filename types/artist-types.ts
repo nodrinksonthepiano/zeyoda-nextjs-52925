@@ -26,12 +26,12 @@ export interface ArtistRegistryEntry {
 export interface ArtistDatabaseEntry {
   id: string;
   name: string;
-  display_name: string;
-  token_name: string;
-  artwork_title: string;
-  artwork_year: string;
-  token_price: number;
-  video_src: string;
+  displayname: string;
+  tokenName: string;
+  artworktitle: string;
+  artworkyear: string;
+  tokenprice: number;
+  videosrc: string;
   primary_color: string;
   accent_color: string;
   gradient_start: string;

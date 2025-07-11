@@ -107,12 +107,12 @@ const useArtistConfig = (): UseArtistConfigReturn => {
           if (contracts) {
             combinedConfigs[artistData.id] = {
               name: artistData.name,
-              displayName: artistData.display_name,
-              tokenName: artistData.token_name,
-              artworkTitle: artistData.artwork_title,
-              artworkYear: artistData.artwork_year,
-              tokenPrice: artistData.token_price,
-              videoSrc: artistData.video_src,
+              displayName: artistData.displayname,
+              tokenName: artistData.tokenName,
+              artworkTitle: artistData.artworktitle,
+              artworkYear: artistData.artworkyear,
+              tokenPrice: artistData.tokenprice,
+              videoSrc: artistData.videosrc,
               contract: contracts.token,
               swap: contracts.swap,
               downloads: contracts.downloads || undefined,
