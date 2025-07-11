@@ -1,8 +1,8 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { supabase } from '@/app/utils/supabaseClient';
-import { ARTIST_REGISTRY as fallbackRegistry } from '@/app/utils/addressRegistryFallback';
+import { supabase } from '../utils/supabaseClient';
+import { ARTIST_REGISTRY as fallbackRegistry } from '../utils/addressRegistryFallback';
 
 export interface ArtistRegistryEntry {
   token: string;
@@ -31,7 +31,6 @@ const useArtistRegistry = () => {
         throw dbError;
       }
 
-      console.log('✅ [DEBUG] Supabase data received:', data);
       const formattedRegistry = data.reduce((acc: ArtistRegistry, row) => {
         acc[row.id] = {
           token: row.token,
@@ -46,7 +45,6 @@ const useArtistRegistry = () => {
       setRegistry(formattedRegistry);
 
     } catch (e: any) {
-      console.error('🛑 [DEBUG] Supabase query failed. Error:', e);
       console.warn('⚠️ Failed to load artist registry from Supabase, using fallback.', e.message);
       setError(e);
       // @ts-ignore

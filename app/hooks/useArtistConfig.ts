@@ -77,8 +77,8 @@ const useArtistConfig = (): UseArtistConfigReturn => {
 
   useEffect(() => {
     const fetchConfig = async () => {
-      // Don't fetch until we have the artistId and the registry is ready.
-      if (!artistId || isRegistryLoading) {
+      if (isRegistryLoading) {
+        // Wait until the registry is loaded, errored, or has a fallback
         return;
       }
       
@@ -92,8 +92,6 @@ const useArtistConfig = (): UseArtistConfigReturn => {
           .select('*');
         
         if (dbError) throw dbError;
-
-        console.log('✅ [DEBUG] `artists` table data received:', artistsData);
 
         // The registry from context is the primary source of truth for contract addresses
         const currentRegistry = registry;
@@ -134,7 +132,6 @@ const useArtistConfig = (): UseArtistConfigReturn => {
         
         // Fetch real-time prices
         const configsWithPrices = await fetchRealTimePrices(combinedConfigs);
-        console.log('✅ [DEBUG] Final `allArtistsConfig` before setting state:', configsWithPrices);
         setAllArtistsConfig(configsWithPrices);
 
         if (artistId && configsWithPrices[artistId]) {
