@@ -31,6 +31,8 @@
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "autoprefixer": "^10.4.21",
+    "critters": "^0.0.23",
     "eslint": "^9",
     "eslint-config-next": "15.3.2",
     "hardhat": "^2.24.2",

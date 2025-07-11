@@ -8,10 +8,7 @@ const ERC1155_ABI = ["function balanceOf(address owner, uint256 id) view returns
 const SEVEN_DAYS_IN_SECONDS = 7 * 24 * 60 * 60;
 
 // --- Environment Variables ---
-const RPC_URL = process.env.BASE_SEPOLIA_RPC_URL || 'https://sepolia.base.org';
-if (!process.env.BASE_SEPOLIA_RPC_URL) {
-  console.warn("BASE_SEPOLIA_RPC_URL not set, using default public RPC.");
-}
+const RPC_URL = process.env.BASE_SEPOLIA_RPC_URL;
 
 // --- Provider ---
 const provider = new ethers.JsonRpcProvider(RPC_URL);

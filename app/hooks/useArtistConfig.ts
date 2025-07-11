@@ -31,7 +31,7 @@ const useArtistConfig = (): UseArtistConfigReturn => {
   const fetchRealTimePrices = async (artistsData: {[key: string]: ArtistConfig}) => {
     try {
       // Create a dummy signer for read-only operations
-      const provider = new ethers.JsonRpcProvider('https://sepolia.base.org');
+      const provider = new ethers.JsonRpcProvider(process.env.NEXT_PUBLIC_RPC!);
       const swapService = new SwapService(provider);
 
       const updatedArtists = { ...artistsData };

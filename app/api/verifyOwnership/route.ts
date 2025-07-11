@@ -6,7 +6,7 @@ import { getArtistContractsFromServer } from '@/app/utils/server/artistRegistry'
 const ERC1155_ABI = ["function balanceOf(address owner, uint256 id) view returns (uint256)"];
 
 // --- Environment & Provider ---
-const RPC_URL = process.env.BASE_SEPOLIA_RPC_URL || 'https://sepolia.base.org';
+const RPC_URL = process.env.BASE_SEPOLIA_RPC_URL;
 const provider = new ethers.JsonRpcProvider(RPC_URL);
 
 export async function GET(request: NextRequest) {
