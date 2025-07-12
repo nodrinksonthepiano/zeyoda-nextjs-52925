@@ -6,6 +6,7 @@ import Wallet from './components/Wallet';
 import dynamic from 'next/dynamic';
 import { useWallet } from './components/MagicProvider';
 import { useToast } from './contexts/ToastContext';
+import { UsdBalanceProvider } from './contexts/UsdBalanceContext';
 import { ethers } from "ethers";
 import ArtistockArtifact from '../artifacts/contracts/Artistock.sol/Artistock.json';
 import useArtistConfig from "./hooks/useArtistConfig";
@@ -940,7 +941,8 @@ export default function HomePage() {
   if (showPurchaseModal) buyButtonDisabled = true;
 
   return (
-    <div className="flex min-h-screen flex-col items-center justify-between p-24 relative bg-primary text-white font-sans">
+    <UsdBalanceProvider userAddress={user || null}>
+      <div className="flex min-h-screen flex-col items-center justify-between p-24 relative bg-primary text-white font-sans">
         <div id="particles" className="cosmic-particles"></div>
 
         {user && (
@@ -1203,6 +1205,7 @@ export default function HomePage() {
             💰 {showAssetsPanel ? 'Close' : 'Wallet'}
           </button>
         )}
-    </div>
+      </div>
+    </UsdBalanceProvider>
   );
 }
