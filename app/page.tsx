@@ -77,7 +77,7 @@ export default function HomePage() {
   const isOrbitAnimationPaused = useRef(false);
 
   const [swapFromAsset, setSwapFromAsset] = useState<string>("USD");
-  const [swapToAsset, setSwapToAsset] = useState<string>("");
+  const [swapToAsset, setSwapToAsset] = useState<string>("USD");
   const [swapFromAmount, setSwapFromAmount] = useState<string>("20.00");
   const [swapToAmount, setSwapToAmount] = useState<string>("");
 
@@ -534,15 +534,29 @@ export default function HomePage() {
   // Initialize swapToAsset when artistConfig loads
   useEffect(() => {
     if (artistConfig && !swapToAsset) {
-      // Default TO asset: if we're on GOSHEESH page, default TO is JAIT33, and vice versa
-      const defaultToAsset = artistConfig.tokenName === "GOSH33SH" ? "JAIT33" : "GOSH33SH";
+      // Default TO asset: if FROM is USD, default TO is current artist token
+      // If FROM is token, default TO is USD
+      const defaultToAsset = swapFromAsset === "USD" ? artistConfig.tokenName : "USD";
       setSwapToAsset(defaultToAsset);
     }
-  }, [artistConfig, swapToAsset]);
+  }, [artistConfig, swapToAsset, swapFromAsset]);
 
   useEffect(() => {
     const calculateSwapOutput = async () => {
       if (!artistConfig || !allArtistsConfig) return;
+      
+      // Debug state values
+      console.log('🔍 CALCULATION PATH DEBUG:', {
+        swapFromAsset,
+        swapToAsset,
+        swapFromAmount,
+        swapToAmount,
+        pathCheck: {
+          isUSDToToken: swapFromAsset === "USD",
+          isTokenToUSD: swapFromAsset !== "USD" && swapToAsset === "USD",
+          isTokenToToken: swapFromAsset !== "USD" && swapToAsset !== "USD"
+        }
+      });
       
       const effectivePrice = artistConfig?.realTimePrice ?? artistConfig?.tokenPrice ?? 0;
       
@@ -558,7 +572,7 @@ export default function HomePage() {
         }
       }
       // Token to Token swap (FIXED - use AMM quotes with proper provider)
-      else if (swapFromAsset !== "USD" && artistConfig?.hasLiquidityPool && magic) {
+      else if (swapFromAsset !== "USD" && swapToAsset !== "USD" && artistConfig?.hasLiquidityPool && magic) {
         const fromTokenConfig = Object.values(allArtistsConfig).find(
           config => config.tokenName === swapFromAsset
         );
@@ -586,6 +600,51 @@ export default function HomePage() {
             setArtistocksInput("0");
           }
         } else {
+          setSwapToAmount("");
+          setArtistocksInput("0");
+        }
+      }
+      // Token to USD swap (CASH-OUT) - FIXED PRICE CALCULATION
+      else if (swapFromAsset !== "USD" && swapToAsset === "USD") {
+        // Find the correct artist config for the token being cashed out
+        const fromTokenConfig = Object.values(allArtistsConfig).find(
+          config => config.tokenName === swapFromAsset
+        );
+        
+        if (fromTokenConfig) {
+          // Use the correct live price for the token being swapped
+          const fromTokenPrice = fromTokenConfig.realTimePrice ?? fromTokenConfig.tokenPrice ?? 0;
+          
+          console.log(`🔍 CASH-OUT DEBUG:`, {
+            swapFromAsset,
+            swapFromAmount,
+            fromTokenConfig: fromTokenConfig.name,
+            realTimePrice: fromTokenConfig.realTimePrice,
+            fallbackPrice: fromTokenConfig.tokenPrice,
+            usingPrice: fromTokenPrice,
+            hasLiquidityPool: fromTokenConfig.hasLiquidityPool
+          });
+          
+          if (fromTokenPrice > 0) {
+            const fromTokenAmount = parseFloat(swapFromAmount);
+            if (!isNaN(fromTokenAmount) && fromTokenAmount > 0) {
+              // Calculate USD value: tokenAmount * tokenPrice = USD
+              const usdValue = fromTokenAmount * fromTokenPrice;
+              setSwapToAmount(usdValue.toFixed(2));
+              setArtistocksInput("0"); // Not applicable for cash-out
+              
+              console.log(`💰 Cash-out quote: ${fromTokenAmount.toLocaleString()} ${swapFromAsset} × $${fromTokenPrice.toFixed(6)} = $${usdValue.toFixed(2)} USD`);
+            } else {
+              setSwapToAmount("");
+              setArtistocksInput("0");
+            }
+          } else {
+            console.log(`❌ No price available for ${swapFromAsset}`);
+            setSwapToAmount("");
+            setArtistocksInput("0");
+          }
+        } else {
+          console.log(`❌ No config found for ${swapFromAsset}`);
           setSwapToAmount("");
           setArtistocksInput("0");
         }

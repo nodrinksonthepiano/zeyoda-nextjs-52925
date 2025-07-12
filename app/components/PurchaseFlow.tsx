@@ -268,6 +268,98 @@ const PurchaseFlow: React.FC<PurchaseFlowProps> = ({
                     detail: { type: 'swap', hash: tx.hash }
                 }));
                 
+            } else if (swapFromAsset !== "USD" && swapToAsset === "USD") {
+                // 💰 CASH-OUT: Convert tokens to USD via TreasurySwapLite or AMM
+                console.log('💰 Processing cash-out transaction');
+                
+                const tokenAmount = parseFloat(swapFromAmount);
+                swapType = `${tokenAmount} ${swapFromAsset} → $${swapToAmount} USD (Cash-Out)`;
+                
+                console.log('🏦 Cash-out details:', {
+                    fromToken: swapFromAsset,
+                    tokenAmount: tokenAmount,
+                    expectedUSD: swapToAmount,
+                    hasLiquidityPool: hasLiquidityPool,
+                    hasTreasurySwap: hasTreasurySwap
+                });
+                
+                // Find the token config for the FROM token
+                const fromTokenConfig = Object.values(allArtistsConfig || {}).find(
+                    config => config.tokenName === swapFromAsset
+                );
+                
+                if (!fromTokenConfig?.contract) {
+                    throw new Error(`Cannot find contract for token: ${swapFromAsset}`);
+                }
+                
+                if (hasLiquidityPool) {
+                    // ✅ Use AMM for cash-out (convert tokens → ETH → USD)
+                    console.log('🏊 Using AMM system for cash-out');
+                    
+                    const swapService = new SwapService(signer);
+                    
+                    // Approve tokens before swap
+                    const { ethers: ethersLib } = await import('ethers');
+                    const fromTokenContract = new ethersLib.Contract(
+                        fromTokenConfig.contract,
+                        ["function approve(address spender, uint256 amount) external returns (bool)"],
+                        signer
+                    );
+                    
+                    const swapAmountWei = ethersLib.parseUnits(swapFromAmount, 18);
+                    console.log('🔑 Approving tokens for cash-out...');
+                    const approveTx = await fromTokenContract.approve(
+                        '0xdBBfFD696484bBFCa3dA059FB1d8e2Cf40c450dE', // Main swap contract
+                        swapAmountWei
+                    );
+                    await approveTx.wait();
+                    console.log('✅ Tokens approved for cash-out');
+                    
+                    // Get ETH quote and execute swap
+                    const ethQuote = await swapService.getEthQuote(fromTokenConfig.contract, swapFromAmount);
+                    const minimumEth = (parseFloat(ethQuote.outputAmount) * 0.90).toString(); // 10% slippage tolerance
+                    
+                    console.log('📊 AMM cash-out quote:', {
+                        tokenAmount: swapFromAmount,
+                        expectedETH: ethQuote.outputAmount,
+                        minimumETH: minimumEth,
+                        estimatedUSD: swapToAmount
+                    });
+                    
+                    const tx = await swapService.swapTokensForEth(
+                        fromTokenConfig.contract,
+                        swapFromAmount,
+                        minimumEth
+                    );
+                    
+                    await tx.wait();
+                    transactionHash = tx.hash;
+                    console.log('✅ AMM cash-out successful:', tx.hash);
+                    
+                } else if (hasTreasurySwap && fromTokenConfig.swap) {
+                    // ✅ Use TreasurySwapLite for cash-out (fixed rate)
+                    console.log('🎯 Using TreasurySwapLite for cash-out');
+                    
+                    const treasurySwap = new TreasurySwapLiteService(fromTokenConfig.swap, signer);
+                    
+                    const tx = await treasurySwap.sellTokensForETH(
+                        swapFromAmount,
+                        fromTokenConfig.contract
+                    );
+                    
+                    await tx.wait();
+                    transactionHash = tx.hash;
+                    console.log('✅ TreasurySwapLite cash-out successful:', tx.hash);
+                    
+                } else {
+                    throw new Error('No cash-out system available for this token');
+                }
+                
+                // Trigger balance refresh
+                window.dispatchEvent(new CustomEvent('transactionSuccess', {
+                    detail: { type: 'cashout', hash: transactionHash }
+                }));
+                
             } else {
                 throw new Error('No swap system available for this configuration');
             }
@@ -582,9 +674,15 @@ const PurchaseFlow: React.FC<PurchaseFlowProps> = ({
                         <select 
                             id="toAsset"
                             value={swapFromAsset === "USD" ? artistConfig.tokenName : 
-                                   (swapToAsset || (artistConfig.tokenName === "GOSH33SH" ? "JAIT33" : "GOSH33SH"))}
+                                   (swapToAsset || "USD")}
                             onChange={(e) => {
                                 const newToAsset = e.target.value;
+                                console.log('🔧 TO Dropdown changed:', { 
+                                    from: swapToAsset, 
+                                    to: newToAsset,
+                                    swapFromAsset,
+                                    dropdownValue: e.target.value 
+                                });
                                 setSwapToAsset(newToAsset);
                                 
                                 // For token swaps, if user changes TO asset, we might want to suggest opposite FROM
@@ -635,7 +733,11 @@ const PurchaseFlow: React.FC<PurchaseFlowProps> = ({
                         <input
                             type="text"
                             id="toAmount"
-                            value={Math.floor(parseFloat(swapToAmount || artistocksInput || '0')).toLocaleString()}
+                            value={
+                                swapToAsset === "USD" 
+                                    ? `$${parseFloat(swapToAmount || '0').toFixed(2)}`
+                                    : Math.floor(parseFloat(swapToAmount || artistocksInput || '0')).toLocaleString()
+                            }
                             onChange={handleArtistocksInputChange}
                             className="flex-grow p-2 border border-gray-600 rounded-md bg-gray-700 text-white focus:ring-accentColor focus:border-accentColor custom-token-input"
                             readOnly={true}
@@ -645,17 +747,43 @@ const PurchaseFlow: React.FC<PurchaseFlowProps> = ({
 
                 {/* Token Price Info and Swap System Status */}
                 <div className="text-center text-sm text-gray-400 mb-4">
-                    {/* Price Information */}
-                    {(artistConfig.realTimePrice || artistConfig.tokenPrice) && (
-                        <p>
-                            1 {artistConfig.tokenName} = ${(artistConfig.realTimePrice || artistConfig.tokenPrice).toFixed(6)} USD
-                            {artistConfig.hasLiquidityPool ? (
-                                <span className="ml-2 text-green-400">● Live Price</span>
-                            ) : (
-                                <span className="ml-2 text-yellow-400">● Fallback Price</span>
-                            )}
-                        </p>
-                    )}
+                    {/* Price Information - Show price for the token being swapped FROM */}
+                    {(() => {
+                        // For USD swaps, show current artist price
+                        if (swapFromAsset === "USD" && artistConfig) {
+                            return (
+                                <p>
+                                    1 {artistConfig.tokenName} = ${(artistConfig.realTimePrice || artistConfig.tokenPrice).toFixed(6)} USD
+                                    {artistConfig.hasLiquidityPool ? (
+                                        <span className="ml-2 text-green-400">● Live Price</span>
+                                    ) : (
+                                        <span className="ml-2 text-yellow-400">● Fallback Price</span>
+                                    )}
+                                </p>
+                            );
+                        }
+                        
+                        // For token swaps, show price of the FROM token
+                        if (swapFromAsset !== "USD" && allArtistsConfig) {
+                            const fromTokenConfig = Object.values(allArtistsConfig).find(
+                                config => config.tokenName === swapFromAsset
+                            );
+                            if (fromTokenConfig) {
+                                return (
+                                    <p>
+                                        1 {fromTokenConfig.tokenName} = ${(fromTokenConfig.realTimePrice || fromTokenConfig.tokenPrice).toFixed(6)} USD
+                                        {fromTokenConfig.hasLiquidityPool ? (
+                                            <span className="ml-2 text-green-400">● Live Price</span>
+                                        ) : (
+                                            <span className="ml-2 text-yellow-400">● Fallback Price</span>
+                                        )}
+                                    </p>
+                                );
+                            }
+                        }
+                        
+                        return null;
+                    })()}
                     
                     {/* Swap System Status */}
                     <div className="mt-2 p-2 bg-gray-700 rounded-lg">
@@ -721,7 +849,22 @@ const PurchaseFlow: React.FC<PurchaseFlowProps> = ({
                                 ? `🔄 GET DOWNLOAD + ${Math.floor(parseFloat(swapToAmount || artistocksInput || '0')).toLocaleString()} ARTISTOCKS ($${(parseFloat(swapFromAmount || '0') + 1).toFixed(2)})`
                                 : `🔄 GET ${Math.floor(parseFloat(swapToAmount || artistocksInput || '0')).toLocaleString()} ARTISTOCKS ($${swapFromAmount || '0'})`
                         ) : (
-                            `🔄 Swap ${swapFromAmount || '0'} ${swapFromAsset} for ${Math.floor(parseFloat(swapToAmount || artistocksInput || '0')).toLocaleString()} ${swapToAsset || artistConfig.tokenName}`
+                            // Check if swapping TO USD (cash-out)
+                            (() => {
+                                // Debug logging
+                                console.log('🔍 Button logic debug:', {
+                                    swapFromAsset,
+                                    swapToAsset,
+                                    swapFromAmount,
+                                    swapToAmount,
+                                    isUSDCashOut: swapToAsset === "USD",
+                                    artistConfigTokenName: artistConfig?.tokenName
+                                });
+                                
+                                return swapToAsset === "USD" ? 
+                                    `🔄 Cash Out ${swapFromAmount || '0'} ${swapFromAsset} for $${parseFloat(swapToAmount || '0').toFixed(2)} USD` :
+                                    `🔄 Swap ${swapFromAmount || '0'} ${swapFromAsset} for ${Math.floor(parseFloat(swapToAmount || artistocksInput || '0')).toLocaleString()} ${swapToAsset || artistConfig.tokenName}`;
+                            })()
                         )}
                     </button>
                     
