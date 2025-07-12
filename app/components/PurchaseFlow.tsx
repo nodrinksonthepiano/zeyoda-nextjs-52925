@@ -1,9 +1,12 @@
 import React, { useState } from 'react';
+import { ethers } from 'ethers';
 import { ArtistConfig, UserTokenBalances } from '../../types/artist-types';
 import { SwapService, SwapQuote } from '../utils/swapUtils';
 import { TreasurySwapLiteService, TreasurySwapQuote } from '../utils/treasurySwapUtils';
+import { UsdcSwapRouter } from '../utils/usdcSwapRouter';
 import { useWallet } from './MagicProvider';
 import { useDownloadAccess } from '../hooks/useDownloadAccess';
+import { useUsdBalance } from '../contexts/UsdBalanceContext';
 import { getArtistContracts } from '../utils/addressRegistryFallback';
 
 // ERC-1155 ABI for minting download tokens
@@ -66,6 +69,7 @@ const PurchaseFlow: React.FC<PurchaseFlowProps> = ({
   swapToAmount
 }) => {
     const { magic } = useWallet();
+    const { setUsdBalance } = useUsdBalance();
     const [swapQuote, setSwapQuote] = useState<SwapQuote | null>(null);
     const [isSwapping, setIsSwapping] = useState(false);
     const [downloadingAssets, setDownloadingAssets] = useState<Set<number>>(new Set());
@@ -129,6 +133,8 @@ const PurchaseFlow: React.FC<PurchaseFlowProps> = ({
             const hasLiquidityPool = artistConfig.hasLiquidityPool;
             const hasTreasurySwap = artistConfig.swap && !artistConfig.paused;
             
+            // Routing logic: Check for USD cash-out path
+            
             let transactionHash = '';
             let swapType = '';
             let downloadTxHash = '';
@@ -168,7 +174,7 @@ const PurchaseFlow: React.FC<PurchaseFlowProps> = ({
                     detail: { type: 'swap', hash: tx.hash }
                 }));
                 
-            } else if (hasLiquidityPool && swapFromAsset !== "USD") {
+            } else if (hasLiquidityPool && swapFromAsset !== "USD" && swapToAsset !== "USD") {
                 // ✅ Use AMM for token-to-token swaps
                 console.log('🏊 Using AMM system for token-to-token swap');
                 console.log('📋 Swap details:', {
@@ -269,18 +275,17 @@ const PurchaseFlow: React.FC<PurchaseFlowProps> = ({
                 }));
                 
             } else if (swapFromAsset !== "USD" && swapToAsset === "USD") {
-                // 💰 CASH-OUT: Convert tokens to USD via TreasurySwapLite or AMM
-                console.log('💰 Processing cash-out transaction');
+                // 💰 CASH-OUT: Convert tokens to USDC → USD balance via new router
+                console.log('💰 Processing USDC cash-out transaction');
                 
                 const tokenAmount = parseFloat(swapFromAmount);
-                swapType = `${tokenAmount} ${swapFromAsset} → $${swapToAmount} USD (Cash-Out)`;
+                swapType = `${tokenAmount} ${swapFromAsset} → $${swapToAmount} USD (USDC Cash-Out)`;
                 
-                console.log('🏦 Cash-out details:', {
+                console.log('🏦 USDC cash-out details:', {
                     fromToken: swapFromAsset,
                     tokenAmount: tokenAmount,
                     expectedUSD: swapToAmount,
-                    hasLiquidityPool: hasLiquidityPool,
-                    hasTreasurySwap: hasTreasurySwap
+                    userAddress: user
                 });
                 
                 // Find the token config for the FROM token
@@ -292,73 +297,36 @@ const PurchaseFlow: React.FC<PurchaseFlowProps> = ({
                     throw new Error(`Cannot find contract for token: ${swapFromAsset}`);
                 }
                 
-                if (hasLiquidityPool) {
-                    // ✅ Use AMM for cash-out (convert tokens → ETH → USD)
-                    console.log('🏊 Using AMM system for cash-out');
-                    
-                    const swapService = new SwapService(signer);
-                    
-                    // Approve tokens before swap
-                    const { ethers: ethersLib } = await import('ethers');
-                    const fromTokenContract = new ethersLib.Contract(
-                        fromTokenConfig.contract,
-                        ["function approve(address spender, uint256 amount) external returns (bool)"],
-                        signer
-                    );
-                    
-                    const swapAmountWei = ethersLib.parseUnits(swapFromAmount, 18);
-                    console.log('🔑 Approving tokens for cash-out...');
-                    const approveTx = await fromTokenContract.approve(
-                        '0xdBBfFD696484bBFCa3dA059FB1d8e2Cf40c450dE', // Main swap contract
-                        swapAmountWei
-                    );
-                    await approveTx.wait();
-                    console.log('✅ Tokens approved for cash-out');
-                    
-                    // Get ETH quote and execute swap
-                    const ethQuote = await swapService.getEthQuote(fromTokenConfig.contract, swapFromAmount);
-                    const minimumEth = (parseFloat(ethQuote.outputAmount) * 0.90).toString(); // 10% slippage tolerance
-                    
-                    console.log('📊 AMM cash-out quote:', {
-                        tokenAmount: swapFromAmount,
-                        expectedETH: ethQuote.outputAmount,
-                        minimumETH: minimumEth,
-                        estimatedUSD: swapToAmount
+                // ✅ Use USDC Swap Router (0x → Uniswap V3 fallback)
+                console.log('🔄 Using USDC Swap Router for cash-out');
+                
+                const usdcRouter = new UsdcSwapRouter(signer);
+                
+                const result = await usdcRouter.executeCashOut(
+                    fromTokenConfig.contract,
+                    swapFromAmount,
+                    user!
+                );
+                
+                if (result.success && result.usdcReceived) {
+                    transactionHash = result.txHash || '';
+                    console.log('✅ USDC cash-out successful:', {
+                        usdReceived: result.usdcReceived,
+                        txHash: transactionHash
                     });
                     
-                    const tx = await swapService.swapTokensForEth(
-                        fromTokenConfig.contract,
-                        swapFromAmount,
-                        minimumEth
-                    );
+                    // Update USD balance via context
+                    await setUsdBalance(result.usdcReceived);
+                    console.log('💰 USD balance updated:', result.usdcReceived);
                     
-                    await tx.wait();
-                    transactionHash = tx.hash;
-                    console.log('✅ AMM cash-out successful:', tx.hash);
-                    
-                } else if (hasTreasurySwap && fromTokenConfig.swap) {
-                    // ✅ Use TreasurySwapLite for cash-out (fixed rate)
-                    console.log('🎯 Using TreasurySwapLite for cash-out');
-                    
-                    const treasurySwap = new TreasurySwapLiteService(fromTokenConfig.swap, signer);
-                    
-                    const tx = await treasurySwap.sellTokensForETH(
-                        swapFromAmount,
-                        fromTokenConfig.contract
-                    );
-                    
-                    await tx.wait();
-                    transactionHash = tx.hash;
-                    console.log('✅ TreasurySwapLite cash-out successful:', tx.hash);
+                    // Trigger balance refresh
+                    window.dispatchEvent(new CustomEvent('transactionSuccess', {
+                        detail: { type: 'cashout', hash: transactionHash }
+                    }));
                     
                 } else {
-                    throw new Error('No cash-out system available for this token');
+                    throw new Error(result.error || 'USDC cash-out failed');
                 }
-                
-                // Trigger balance refresh
-                window.dispatchEvent(new CustomEvent('transactionSuccess', {
-                    detail: { type: 'cashout', hash: transactionHash }
-                }));
                 
             } else {
                 throw new Error('No swap system available for this configuration');
@@ -651,7 +619,7 @@ const PurchaseFlow: React.FC<PurchaseFlowProps> = ({
                           if (artist.tokenName && ['GOSH33SH', 'JAIT33'].includes(artist.tokenName)) {
                             return (
                               <option key={`from-${id}-${artist.tokenName}`} value={artist.tokenName!}>
-                                {artist.tokenName} {hasTokens ? `(${Math.floor(userBalance).toLocaleString()})` : '(0)'}
+                                {artist.tokenName} {hasTokens ? `(${Number(ethers.formatUnits(userBalance, 18)).toLocaleString(undefined, {maximumFractionDigits: 0})})` : '(0)'}
                               </option>
                             );
                           }
@@ -850,21 +818,9 @@ const PurchaseFlow: React.FC<PurchaseFlowProps> = ({
                                 : `🔄 GET ${Math.floor(parseFloat(swapToAmount || artistocksInput || '0')).toLocaleString()} ARTISTOCKS ($${swapFromAmount || '0'})`
                         ) : (
                             // Check if swapping TO USD (cash-out)
-                            (() => {
-                                // Debug logging
-                                console.log('🔍 Button logic debug:', {
-                                    swapFromAsset,
-                                    swapToAsset,
-                                    swapFromAmount,
-                                    swapToAmount,
-                                    isUSDCashOut: swapToAsset === "USD",
-                                    artistConfigTokenName: artistConfig?.tokenName
-                                });
-                                
-                                return swapToAsset === "USD" ? 
-                                    `🔄 Cash Out ${swapFromAmount || '0'} ${swapFromAsset} for $${parseFloat(swapToAmount || '0').toFixed(2)} USD` :
-                                    `🔄 Swap ${swapFromAmount || '0'} ${swapFromAsset} for ${Math.floor(parseFloat(swapToAmount || artistocksInput || '0')).toLocaleString()} ${swapToAsset || artistConfig.tokenName}`;
-                            })()
+                            swapToAsset === "USD" ? 
+                                `🔄 Cash Out ${swapFromAmount || '0'} ${swapFromAsset} for $${parseFloat(swapToAmount || '0').toFixed(2)} USD` :
+                                `🔄 Swap ${swapFromAmount || '0'} ${swapFromAsset} for ${Math.floor(parseFloat(swapToAmount || artistocksInput || '0')).toLocaleString()} ${swapToAsset || artistConfig.tokenName}`
                         )}
                     </button>
                     

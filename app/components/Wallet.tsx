@@ -3,7 +3,9 @@ import { ethers } from 'ethers';
 import { useAllArtistsDownloadAccess } from '../hooks/useDownloadAccess';
 import { supabase } from '../utils/supabaseClient';
 import { useToast } from '../contexts/ToastContext';
+import { useUsdBalance } from '../contexts/UsdBalanceContext';
 import { ARTIST_REGISTRY } from '../utils/addressRegistryFallback';
+import { toBigIntStrict } from '../utils/bigint';
 
 interface ArtistConfig {
   name: string;
@@ -56,6 +58,9 @@ const Wallet: React.FC<WalletProps> = ({
   const [downloadingAssets, setDownloadingAssets] = useState<Set<string>>(new Set());
   const [assetMetadata, setAssetMetadata] = useState<{ [key: string]: AssetMetadata }>({});
   const { showToast } = useToast();
+  const { usdBalance, isLoading: usdLoading } = useUsdBalance();
+
+  // Using strict BigInt conversion utility to prevent precision loss
 
   // Convert initial balances to BigInt
   const userTokenBalances = useMemo(() => {
@@ -63,7 +68,12 @@ const Wallet: React.FC<WalletProps> = ({
     if (initialBalances) {
       Object.entries(initialBalances).forEach(([token, balance]) => {
         if (balance !== undefined && balance !== null) {
-          converted[token] = typeof balance === 'bigint' ? balance : BigInt(String(balance));
+          try {
+            converted[token] = toBigIntStrict(balance);
+          } catch (error) {
+            console.warn(`[BAL-WARN] Could not convert balance for ${token}:`, balance, error);
+            converted[token] = BigInt(0);
+          }
         }
       });
     }
@@ -219,6 +229,17 @@ const Wallet: React.FC<WalletProps> = ({
         console.warn('[BAL-TRACE] Could not cache balances:', cacheError);
       }
       
+      // 🔄 CRITICAL FIX: Notify parent component of fresh balance data
+      const formattedBalances: { [key: string]: bigint } = {};
+      Object.entries(balances).forEach(([token, balance]) => {
+        formattedBalances[token] = balance;
+      });
+      
+      console.log('📤 Dispatching walletBalancesUpdated event with', Object.keys(formattedBalances).length, 'tokens');
+      window.dispatchEvent(new CustomEvent('walletBalancesUpdated', {
+        detail: formattedBalances
+      }));
+      
     } catch (error: any) {
       console.error('[BAL-TRACE] Balance fetch failed:', error);
       setFetchError(`Failed to fetch balances: ${error.message}`);
@@ -262,7 +283,12 @@ const Wallet: React.FC<WalletProps> = ({
     
     Object.entries(userTokenBalances).forEach(([token, balance]) => {
       if (balance !== undefined && balance !== null) {
-        combined[token] = typeof balance === 'bigint' ? balance : BigInt(String(balance));
+        try {
+          combined[token] = toBigIntStrict(balance);
+        } catch (error) {
+          console.warn(`[BAL-WARN] Could not convert user balance for ${token}:`, balance, error);
+          combined[token] = BigInt(0);
+        }
       }
     });
     
@@ -287,7 +313,7 @@ const Wallet: React.FC<WalletProps> = ({
     return hasTokens || hasDownloads;
   }) : [];
 
-  const isAnythingLoading = isLoading || downloadsLoading;
+  const isAnythingLoading = isLoading || downloadsLoading || usdLoading;
 
   return (
     <div className="fixed top-16 left-4 w-80 max-h-96 bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900 rounded-2xl shadow-2xl border border-purple-500 z-[9999] overflow-hidden flex flex-col">
@@ -316,6 +342,29 @@ const Wallet: React.FC<WalletProps> = ({
       
       {/* Content */}
       <div className="p-4 overflow-y-auto">
+        {/* USD Balance Display */}
+        {(usdBalance > 0 || usdLoading) && (
+          <div className="mb-4 bg-green-900 bg-opacity-50 rounded-lg p-3 border border-green-400 border-opacity-50">
+            <div className="flex flex-col">
+              <div className="text-green-300 text-xs mb-1">USD Balance</div>
+              <div className="text-white font-bold text-lg">
+                {usdLoading ? (
+                  <span className="text-gray-300">Loading...</span>
+                ) : usdBalance < 0.01 && usdBalance > 0 ? (
+                  '< $0.01'
+                ) : (
+                  `$${usdBalance.toFixed(2)}`
+                )}
+              </div>
+              {!usdLoading && usdBalance > 0 && (
+                <div className="text-green-200 text-xs mt-1">
+                  💰 Available for withdrawal
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
         {isAnythingLoading ? (
           <div className="text-center text-gray-300 py-8">
             <div className="animate-spin w-6 h-6 border-2 border-purple-500 border-t-transparent rounded-full mx-auto mb-2"></div>
