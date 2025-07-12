@@ -10,7 +10,7 @@ export const ARTIST_REGISTRY = {
   },
   jaitea: {
     token: '0x9D06564a8D98e146CAb1dE74BF815bf05d24D685',
-    swap: '0xd01cFF08a9962e67914a3A3e446D90513915db6f',
+    swap: '0xd01cFF08a9962e67914a3A3e446D90513915db6f', // FIXED: Updated to correct JAITEA swap address
     downloads: '0xec7BaDb433504aEbeFF747ADc8586E5663C0ea21',
     treasury_wallet: '0x0B893D9D0dA09096C75e43c310316dC61b2773be'
   }
