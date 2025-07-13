@@ -11,7 +11,7 @@ declare global {
 }
 
 // Base Sepolia USDC contract address
-const USDC_BASE_SEPOLIA = "0x036cBD53842c5426634e7929541eC2318f3dCF7e";
+const USDC_BASE_SEPOLIA = "0x6Ac3aB54Dc5019A2e57eCcb214337FF5bbD52897";
 
 // Development logging helper
 const isDevelopment = process.env.NODE_ENV === 'development';
