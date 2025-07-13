@@ -342,29 +342,6 @@ const Wallet: React.FC<WalletProps> = ({
       
       {/* Content */}
       <div className="p-4 overflow-y-auto">
-        {/* USD Balance Display */}
-        {(usdBalance > 0 || usdLoading) && (
-          <div className="mb-4 bg-green-900 bg-opacity-50 rounded-lg p-3 border border-green-400 border-opacity-50">
-            <div className="flex flex-col">
-              <div className="text-green-300 text-xs mb-1">USD Balance</div>
-              <div className="text-white font-bold text-lg">
-                {usdLoading ? (
-                  <span className="text-gray-300">Loading...</span>
-                ) : usdBalance < 0.01 && usdBalance > 0 ? (
-                  '< $0.01'
-                ) : (
-                  `$${usdBalance.toFixed(2)}`
-                )}
-              </div>
-              {!usdLoading && usdBalance > 0 && (
-                <div className="text-green-200 text-xs mt-1">
-                  💰 Available for withdrawal
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-
         {isAnythingLoading ? (
           <div className="text-center text-gray-300 py-8">
             <div className="animate-spin w-6 h-6 border-2 border-purple-500 border-t-transparent rounded-full mx-auto mb-2"></div>
@@ -439,6 +416,29 @@ const Wallet: React.FC<WalletProps> = ({
               </div>
             );
           })
+        )}
+
+        {/* USD Balance Display */}
+        {(usdBalance > 0 || usdLoading) && (
+          <div className="mt-4 bg-green-900 bg-opacity-50 rounded-lg p-3 border border-green-400 border-opacity-50">
+            <div className="flex flex-col">
+              <div className="text-green-300 text-xs mb-1">USD Balance</div>
+              <div className="text-white font-bold text-lg">
+                {usdLoading ? (
+                  <span className="text-gray-300">Loading...</span>
+                ) : usdBalance < 0.01 && usdBalance > 0 ? (
+                  '< $0.01'
+                ) : (
+                  `$${usdBalance.toFixed(2)}`
+                )}
+              </div>
+              {!usdLoading && usdBalance > 0 && (
+                <div className="text-green-200 text-xs mt-1">
+                  💰 Available for withdrawal
+                </div>
+              )}
+            </div>
+          </div>
         )}
       </div>
       
