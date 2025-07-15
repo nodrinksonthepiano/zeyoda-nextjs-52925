@@ -185,7 +185,7 @@ export async function POST(request: NextRequest) {
         }
         
         // Wait for at least 1 confirmation
-        const confirmations = await receipt.confirmations;
+        const confirmations = await receipt.confirmations();
         if (confirmations < 1) {
           verificationAttempts++;
           if (verificationAttempts < maxAttempts) {

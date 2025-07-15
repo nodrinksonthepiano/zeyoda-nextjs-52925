@@ -1,23 +1,13 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { ethers } from 'ethers';
 import { useAllArtistsDownloadAccess } from '../hooks/useDownloadAccess';
+import { useWalletBalances } from '../hooks/useWalletBalances';
 import { supabase } from '../utils/supabaseClient';
 import { useToast } from '../contexts/ToastContext';
 import { useUsdBalance } from '../contexts/UsdBalanceContext';
-import { ARTIST_REGISTRY } from '../utils/addressRegistryFallback';
 import { toBigIntStrict } from '../utils/bigint';
 
-interface ArtistConfig {
-  name: string;
-  displayName: string;
-  tokenName: string;
-  artworkTitle: string;
-  contract?: string;
-  theme: {
-    primaryColor: string;
-    accentColor: string;
-  };
-}
+import { ArtistConfig } from '../../types/artist-types';
 
 interface UserTokenBalances {
   [tokenSymbol: string]: bigint;
@@ -51,14 +41,24 @@ const Wallet: React.FC<WalletProps> = ({
   userAddress,
   magic
 }) => {
-  const [realTimeBalances, setRealTimeBalances] = useState<UserTokenBalances>({});
-  const [isLoading, setIsLoading] = useState(false);
-  const [fetchError, setFetchError] = useState<string | null>(null);
-  const [lastFetchTime, setLastFetchTime] = useState<Date | null>(null);
   const [downloadingAssets, setDownloadingAssets] = useState<Set<string>>(new Set());
   const [assetMetadata, setAssetMetadata] = useState<{ [key: string]: AssetMetadata }>({});
   const { showToast } = useToast();
   const { usdBalance, isLoading: usdLoading } = useUsdBalance();
+
+  // Use the new wallet balances hook
+  const { 
+    balances: realTimeBalances, 
+    isLoading: balancesLoading, 
+    error: balancesError, 
+    lastFetchTime, 
+    refreshBalances 
+  } = useWalletBalances({
+    magic,
+    userAddress: userAddress || null,
+    allArtistsConfig,
+    autoRefreshOnMount: showAssetsPanel
+  });
 
   // Using strict BigInt conversion utility to prevent precision loss
 
@@ -167,114 +167,12 @@ const Wallet: React.FC<WalletProps> = ({
     }
   };
 
-  // Fetch real-time token balances from the blockchain
-  const fetchRealBalances = async () => {
-    if (!userAddress || !magic || !allArtistsConfig) {
-      console.debug('[BAL-TRACE] Missing requirements:', {
-        userAddress: !!userAddress,
-        magic: !!magic,
-        allArtistsConfig: !!allArtistsConfig
-      });
-      return;
-    }
-    
-    setIsLoading(true);
-    setFetchError(null);
-    const balances: UserTokenBalances = {};
-    
-    try {
-      const provider = new ethers.BrowserProvider(magic.rpcProvider as any);
-      
-      // Use the contract addresses from the registry
-      for (const [artistId, registryEntry] of Object.entries(ARTIST_REGISTRY)) {
-        if (!registryEntry.token) continue;
-        
-        const tokenName = artistId === 'gosheesh' ? 'GOSH33SH' : artistId === 'jaitea' ? 'JAIT33' : '';
-        if (!tokenName) continue;
-        
-        try {
-          console.debug(`[BAL-TRACE] Fetching ${tokenName} balance from ${registryEntry.token}`);
-          
-          const contract = new ethers.Contract(registryEntry.token, [
-            "function balanceOf(address owner) view returns (uint256)",
-            "function decimals() view returns (uint8)",
-            "function symbol() view returns (string)"
-          ], provider);
-          
-          const rawBalance = await contract.balanceOf(userAddress);
-          const decimals = await contract.decimals();
-          
-          console.log(`[BAL-DEBUG] raw balance for ${tokenName}:`, rawBalance.toString());
-          console.log(`[BAL-DEBUG] decimals for ${tokenName}:`, decimals);
-          
-          balances[tokenName] = rawBalance;
-        } catch (error: any) {
-          console.warn(`[BAL-TRACE] Error fetching ${tokenName} balance:`, error.message);
-          balances[tokenName] = BigInt(0);
-        }
-      }
-      
-      setRealTimeBalances(balances);
-      setLastFetchTime(new Date());
-      
-      try {
-        localStorage.setItem('zeyodaUserTokenBalances', JSON.stringify({
-          balances: Object.fromEntries(
-            Object.entries(balances).map(([k, v]) => [k, v.toString()])
-          ),
-          timestamp: Date.now(),
-          userAddress
-        }));
-      } catch (cacheError) {
-        console.warn('[BAL-TRACE] Could not cache balances:', cacheError);
-      }
-      
-      // 🔄 CRITICAL FIX: Notify parent component of fresh balance data
-      const formattedBalances: { [key: string]: bigint } = {};
-      Object.entries(balances).forEach(([token, balance]) => {
-        formattedBalances[token] = balance;
-      });
-      
-      console.log('📤 Dispatching walletBalancesUpdated event with', Object.keys(formattedBalances).length, 'tokens');
-      window.dispatchEvent(new CustomEvent('walletBalancesUpdated', {
-        detail: formattedBalances
-      }));
-      
-    } catch (error: any) {
-      console.error('[BAL-TRACE] Balance fetch failed:', error);
-      setFetchError(`Failed to fetch balances: ${error.message}`);
-    } finally {
-      setIsLoading(false);
-    }
-  };
+  // Balance logic is now handled by useWalletBalances hook
 
-  // Listen for transaction success events
-  useEffect(() => {
-    const handleTransactionSuccess = (event: any) => {
-      console.debug('[BAL-TRACE] txSuccess event', event?.detail);
-      setFetchError(null);
-      localStorage.removeItem('zeyodaUserTokenBalances');
-      setTimeout(() => {
-        fetchRealBalances();
-      }, 2000);
-    };
-
-    window.addEventListener('transactionSuccess', handleTransactionSuccess);
-    return () => window.removeEventListener('transactionSuccess', handleTransactionSuccess);
-  }, [userAddress, magic, allArtistsConfig]);
-
-  // Auto-refresh balances when wallet panel opens
-  useEffect(() => {
-    if (showAssetsPanel) {
-      localStorage.removeItem('zeyodaUserTokenBalances');
-      fetchRealBalances();
-    }
-  }, [userAddress, magic, allArtistsConfig, showAssetsPanel]);
-
+  // Manual refresh using the hook
   const handleManualRefresh = async () => {
-    setFetchError(null);
     localStorage.removeItem('zeyodaUserTokenBalances');
-    await fetchRealBalances();
+    await refreshBalances();
   };
 
   // Combine balances
@@ -313,7 +211,7 @@ const Wallet: React.FC<WalletProps> = ({
     return hasTokens || hasDownloads;
   }) : [];
 
-  const isAnythingLoading = isLoading || downloadsLoading || usdLoading;
+  const isAnythingLoading = balancesLoading || downloadsLoading || usdLoading;
 
   return (
     <div className="fixed top-16 left-4 w-80 max-h-96 bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900 rounded-2xl shadow-2xl border border-purple-500 z-[9999] overflow-hidden flex flex-col">
@@ -321,7 +219,7 @@ const Wallet: React.FC<WalletProps> = ({
       <div className="flex justify-between items-center p-4 bg-gradient-to-r from-purple-600 to-blue-600 text-white flex-shrink-0">
         <h2 className="text-lg font-bold">💰 Your Assets</h2>
         <div className="flex items-center space-x-2">
-          {!fetchError && (
+          {!balancesError && (
             <button
               onClick={handleManualRefresh}
               disabled={isAnythingLoading}

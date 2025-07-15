@@ -78,7 +78,7 @@ export interface PriceDetails {
 }
 
 export interface UserTokenBalances {
-  [tokenSymbol: string]: number;
+  [tokenSymbol: string]: bigint;
 }
 
 export interface PurchasedDownloadInfo {

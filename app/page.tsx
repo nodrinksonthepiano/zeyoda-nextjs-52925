@@ -391,7 +391,7 @@ export default function HomePage() {
     try {
       await new Promise(resolve => setTimeout(resolve, 2000));
 
-      const newBalance = (userTokenBalances[artistConfig.tokenName] || 0) + purchaseAmountArtistocks;
+      const newBalance = BigInt(Number(userTokenBalances[artistConfig.tokenName] || 0) + purchaseAmountArtistocks);
       const updatedBalances = { ...userTokenBalances, [artistConfig.tokenName]: newBalance };
       setUserTokenBalances(updatedBalances);
       localStorage.setItem('zeyodaUserTokenBalances', JSON.stringify(updatedBalances));

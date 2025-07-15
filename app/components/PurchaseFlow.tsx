@@ -16,7 +16,7 @@ const DOWNLOAD_CONTRACT_ABI = [
 ];
 
 interface PurchaseFlowProps {
-  user: string | null;
+  user: string | null | undefined;
   artistConfig: ArtistConfig | null;
   allArtistsConfig: { [key: string]: ArtistConfig } | null;
   isActionLoading: boolean;
@@ -76,7 +76,7 @@ const PurchaseFlow: React.FC<PurchaseFlowProps> = ({
     
     // Check download access for current artist
     const { hasAccessToAsset, hasAnyAccess, downloadAccess, isLoading: checkingAccess, refreshDownloadAccess } = useDownloadAccess(
-        user, 
+        user || null, 
         artistConfig?.name?.toLowerCase() || null
     );
 
@@ -583,7 +583,7 @@ const PurchaseFlow: React.FC<PurchaseFlowProps> = ({
                     <input
                         type="range"
                         min={swapFromAsset === "USD" ? minSliderValue : 1}
-                        max={swapFromAsset === "USD" ? maxSliderValue : (userTokenBalances[swapFromAsset] || 1000)}
+                        max={swapFromAsset === "USD" ? maxSliderValue : Number(userTokenBalances[swapFromAsset] || 1000)}
                         value={parseFloat(swapFromAmount || "0")}
                         onChange={handleSliderChange}
                         className="custom-token-slider w-full"
