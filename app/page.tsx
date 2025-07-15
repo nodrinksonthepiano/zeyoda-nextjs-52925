@@ -20,6 +20,8 @@ import {
   RenderableToken,
   UserTokenBalances
 } from '../types/artist-types';
+import { useCommandSystem } from './hooks/useCommandSystem';
+import { clearAllSafewordStorage } from './utils/safewordStorage';
 
 interface OrbitalToken {
   name: string; 
@@ -52,8 +54,6 @@ export default function HomePage() {
   const [shakeActive, setShakeActive] = useState(false);
   const [showPurchaseModal, setShowPurchaseModal] = useState(false);
   const [userTokenBalances, setUserTokenBalances] = useState<UserTokenBalances>({});
-  const [safewordInput, setSafewordInput] = useState('');
-  const [unlockedArtistStates, setUnlockedArtistStates] = useState<{ [key: string]: boolean }>({});
   const [hasPurchasedDownload, setHasPurchasedDownload] = useState<boolean>(false);
   const [showExploreButton, setShowExploreButton] = useState<boolean>(false);
   const [purchaseAmountDollars, setPurchaseAmountDollars] = useState(20);
@@ -62,15 +62,31 @@ export default function HomePage() {
   const [artistocksInput, setArtistocksInput] = useState<string>("");
   const [totalPurchasePrice, setTotalPurchasePrice] = useState(0);
   const [purchaseConfirmationData, setPurchaseConfirmationData] = useState<string | null>(null);
-  const [safewordVerified, setSafewordVerified] = useState(false);
   const [isActionLoading, setIsActionLoading] = useState(false);
   const [showAssetsPanel, setShowAssetsPanel] = useState<boolean>(false);
   const [downloadIpfsHash, setDownloadIpfsHash] = useState<string | null>(null);
-  const [globalSafewordVerified, setGlobalSafewordVerified] = useState(false);
   const [showFullAddress, setShowFullAddress] = useState(false);
   const [isOwner, setIsOwner] = useState(false);
   const [isMinting, setIsMinting] = useState(false);
   const [mintAmount, setMintAmount] = useState("");
+
+  // Command system hook - handles safeword input, unlocking, and commands
+  const {
+    input: safewordInput,
+    globalSafewordVerified,
+    unlockedArtistStates,
+    safewordVerified,
+    onChange: handleSafewordInputChange,
+    onSubmit: handleSafewordSubmit,
+    updateUnlockedStates,
+    setGlobalVerified
+  } = useCommandSystem(
+    artistIdFromUrl,
+    user || null,
+    artistConfig,
+    showToast,
+    setShowAssetsPanel
+  );
 
   const videoContainerRef = useRef<HTMLDivElement>(null);
   const tokenElementRefs = useRef<(HTMLDivElement | null)[]>([]);
@@ -183,7 +199,6 @@ export default function HomePage() {
     const currentArtistId = artistIdFromUrl;
     setHasPurchasedDownload(false);
     setDownloadIpfsHash(null);
-    setSafewordVerified(false);
 
     // Load user data if Magic Link user exists
     if (user) {
@@ -198,27 +213,6 @@ export default function HomePage() {
       } else {
         setUserTokenBalances({});
       }
-
-      const storedUnlockedArtists = localStorage.getItem('zeyodaUnlockedArtists');
-      let initialUnlockedStates: { [key: string]: boolean } = {};
-      let anyArtistUnlocked = false;
-      if (storedUnlockedArtists) {
-        try {
-          initialUnlockedStates = JSON.parse(storedUnlockedArtists);
-          // Check if any artist in the stored object is true
-          for (const artistKey in initialUnlockedStates) {
-            if (initialUnlockedStates.hasOwnProperty(artistKey) && initialUnlockedStates[artistKey]) {
-              anyArtistUnlocked = true;
-              break;
-            }
-          }
-        } catch (e) {
-          console.error("Error parsing unlocked artists from localStorage", e);
-          setUnlockedArtistStates({}); // Reset to empty if error
-        }
-      }
-      setUnlockedArtistStates(initialUnlockedStates);
-      setGlobalSafewordVerified(anyArtistUnlocked);
 
       const storedDownloadStatus = localStorage.getItem('zeyodaHasPurchasedDownload_' + currentArtistId);
       if (storedDownloadStatus === 'true') {
@@ -241,8 +235,6 @@ export default function HomePage() {
     } else {
       // Clear user data when no Magic Link user
       setUserTokenBalances({});
-      setUnlockedArtistStates({});
-      setGlobalSafewordVerified(false);
     }
   }, [searchParams, artistIdFromUrl, allArtistsConfig, user]);
 
@@ -333,24 +325,7 @@ export default function HomePage() {
     setTotalPurchasePrice(calculatedTotal);
   }, [swapFromAmount, includeDownload, hasPurchasedDownload]);
 
-  const handleSafewordAutosubmit = () => {
-    const currentArtistId = artistIdFromUrl;
 
-    if (user && artistConfig && safewordInput.trim().toLowerCase() === 'artistocks') {
-      setSafewordVerified(true);
-      const newUnlockedStates = { ...unlockedArtistStates, [currentArtistId]: true };
-      setUnlockedArtistStates(newUnlockedStates);
-      setGlobalSafewordVerified(true);
-      localStorage.setItem('zeyodaUnlockedArtists', JSON.stringify(newUnlockedStates));
-      
-      showToast(`Artist "${artistConfig.displayName}" unlocked!`, 'success');
-      setSafewordInput('');
-    }
-  };
-
-  useEffect(() => {
-    handleSafewordAutosubmit();
-  }, [safewordInput, user, artistConfig, artistIdFromUrl, unlockedArtistStates]);
 
   const toggleMute = () => {
     const video = document.getElementById('artistVideo') as HTMLVideoElement;
@@ -415,41 +390,7 @@ export default function HomePage() {
     }
   };
 
-  const handleSafewordSubmit = () => {
-    const input = safewordInput.trim().toLowerCase();
-    if (!input) return;
 
-    if (input === 'zeyoda') {
-      router.push('/create');
-      setSafewordInput('');
-      return;
-    }
-    
-    if (input === '/wallet' || input === '/portfolio') {
-      setShowAssetsPanel(true);
-      setSafewordInput('');
-      return;
-    }
-    if (input === '/exit' || input === '/close') {
-      setShowAssetsPanel(false);
-      setSafewordInput('');
-      return;
-    }
-
-    const correctSafeword = "artistocks";
-    if (input === correctSafeword) {
-      setSafewordVerified(true);
-      const newUnlockedStates = { ...unlockedArtistStates, [artistIdFromUrl]: true };
-      setUnlockedArtistStates(newUnlockedStates);
-      setGlobalSafewordVerified(true);
-      localStorage.setItem('zeyodaUnlockedArtists', JSON.stringify(newUnlockedStates));
-      setSafewordInput('');
-      return;
-    }
-
-    showToast(`Command not recognized: "${safewordInput}"`, 'error');
-    setSafewordInput('');
-  };
 
   const handleLogout = async () => {
     if (magic) {
@@ -459,10 +400,10 @@ export default function HomePage() {
     localStorage.removeItem('zeyodaUserTokenBalances');
     localStorage.removeItem('zeyodaHasPurchasedDownload_gosheesh');
     localStorage.removeItem('zeyodaHasPurchasedDownload_jaitea');
-    localStorage.removeItem('zeyodaUnlockedArtists');
+    clearAllSafewordStorage();
 
     setUserTokenBalances({});
-    setUnlockedArtistStates({});
+    updateUnlockedStates({});
     setHasPurchasedDownload(false);
     setShowPurchaseModal(false);
     setPurchaseAmountArtistocks(0);
@@ -473,9 +414,7 @@ export default function HomePage() {
     setTimeout(() => window.location.reload(), 1000);
   };
 
-  const handleSafewordInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setSafewordInput(e.target.value);
-  };
+
 
   const handleExploreOtherArtist = () => {
     const currentArtistId = searchParams?.get('artist') || 'gosheesh';
@@ -840,8 +779,6 @@ export default function HomePage() {
     } else {
       // Clear user data when no Magic Link user
       setUserTokenBalances({});
-      setUnlockedArtistStates({});
-      setGlobalSafewordVerified(false);
     }
   }, [searchParams, artistIdFromUrl, allArtistsConfig, user]);
 
