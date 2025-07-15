@@ -1,0 +1,116 @@
+/* orbit.css - Orbital token animations and stylings */
+
+/* Orbital tokens container */
+.orbit-theme .orbital-tokens {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 100%;
+    height: 100%;
+    transform: translate(-50%, -50%);
+    pointer-events: none;
+    z-index: 10;
+    transform-style: preserve-3d;
+    perspective: 1200px;
+}
+
+/* Orbit token styling */
+.orbit-theme .orbit-token {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 90px;
+    height: 90px;
+    transform: var(--orbit-pos, translate(-50%, -50%)) scale(1);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.7rem;
+    font-weight: 700;
+    pointer-events: auto;
+    transition: transform 0.2s ease-out, opacity 0.3s ease, filter 0.3s ease;
+    will-change: transform, opacity, z-index, filter;
+    backface-visibility: hidden;
+    transform-origin: center center;
+    z-index: 5;
+    opacity: 1;
+    filter: none;
+    box-shadow: 0 0 15px rgba(0, 0, 0, 0.5),
+                inset 0 0 15px rgba(255, 255, 255, 0.2);
+    background-color: rgba(0, 0, 0, 0.7);
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    padding: 5px;
+    word-break: break-word;
+    line-height: 1.1;
+    letter-spacing: -0.2px;
+    white-space: pre-line;
+    text-align: center;
+    cursor: default;
+    color: white;
+    backdrop-filter: blur(3px);
+}
+
+/* Hover effect for orbit tokens */
+.orbit-theme .orbit-token:hover {
+    z-index: 30 !important;
+    transform: var(--orbit-pos, translate(-50%, -50%)) scale(1.18);
+    transition: transform 120ms ease;
+    opacity: 1 !important;
+    filter: blur(0) !important;
+    box-shadow: 0 0 25px rgba(255, 255, 255, 0.8),
+                inset 0 0 15px rgba(255, 255, 255, 0.3);
+    background-color: rgba(255, 255, 255, 0.1);
+}
+
+/* Active effect for orbit tokens */
+.orbit-theme .orbit-token:active {
+    transform: var(--orbit-pos, translate(-50%, -50%)) scale(0.95) !important;
+    transition: transform 80ms ease;
+    box-shadow: 0 0 15px rgba(255, 255, 255, 0.6),
+                inset 0 0 5px rgba(255, 255, 255, 0.3);
+}
+
+/* Specific styling for linkable artist tokens */
+.orbit-theme .orbit-token[data-artist-id] {
+    cursor: pointer;
+    animation: pulse 2s infinite ease-in-out;
+}
+
+/* Pulse animation for clickable artist tokens */
+@keyframes pulse {
+    0% {
+        box-shadow: 0 0 15px rgba(255, 255, 255, 0.4),
+                    inset 0 0 15px rgba(255, 255, 255, 0.2);
+    }
+    50% {
+        box-shadow: 0 0 25px rgba(255, 255, 255, 0.6),
+                    inset 0 0 20px rgba(255, 255, 255, 0.3);
+    }
+    100% {
+        box-shadow: 0 0 15px rgba(255, 255, 255, 0.4),
+                    inset 0 0 15px rgba(255, 255, 255, 0.2);
+    }
+}
+
+/* Small screen adjustments */
+@media (max-width: 768px) {
+    .orbit-theme .orbit-token {
+        width: 70px;
+        height: 70px;
+        font-size: 0.6rem;
+    }
+}
+
+/* Very small screen adjustments */
+@media (max-width: 480px) {
+    .orbit-theme .orbit-token {
+        width: 60px;
+        height: 60px;
+        font-size: 0.55rem;
+    }
+    
+    .orbit-theme .orbital-tokens {
+        perspective: 800px;
+    }
+} 

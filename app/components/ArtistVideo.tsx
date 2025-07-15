@@ -7,7 +7,7 @@ interface ArtistVideoProps {
   toggleMute: () => void;
   videoContainerRef: React.RefObject<HTMLDivElement | null>;
   videoSrc: string;
-  children: React.ReactNode; 
+  children?: React.ReactNode; 
 }
 
 const ArtistVideo: React.FC<ArtistVideoProps> = ({

@@ -1,11 +1,12 @@
 "use client";
 import React, { useEffect, useRef } from 'react';
-import { useRouter } from 'next/navigation';
-import { ArtistConfig, RenderableToken } from '../../types/artist-types'; 
+import Link from 'next/link';
+import { ArtistConfig, RenderableToken } from '../../types/artist-types';
+import { OrbitToken } from '../hooks/useOrbitTokens'; 
 
 interface ThemeOrbitRendererProps {
   artistConfig: ArtistConfig | null;
-  dynamicOrbitalTokens: RenderableToken[];
+  orbitTokens: OrbitToken[];
   videoContainerRef: React.RefObject<HTMLDivElement | null>;
   isOrbitAnimationPaused: React.MutableRefObject<boolean>;
   allArtistsConfig: { [key: string]: ArtistConfig } | null;
@@ -15,22 +16,38 @@ const ORBIT_SPEED = 0.3;
 
 const ThemeOrbitRenderer: React.FC<ThemeOrbitRendererProps> = ({
   artistConfig,
-  dynamicOrbitalTokens,
+  orbitTokens,
   videoContainerRef,
   isOrbitAnimationPaused,
   allArtistsConfig,
 }) => {
-  const router = useRouter();
-  const tokenElementRefs = useRef<(HTMLDivElement | null)[]>([]);
+  const tokenElementRefs = useRef<(HTMLElement | null)[]>([]);
   const animationFrameIdRef = useRef<number | null>(null);
   const [orbitAngleOffset, setOrbitAngleOffset] = React.useState(0);
 
   useEffect(() => {
-    const storedOffset = parseFloat(localStorage.getItem('zeyodaOrbitAngleOffset') || '0');
-    if (storedOffset) {
+    if (typeof window !== 'undefined') {
+      const storedOffset = parseFloat(localStorage.getItem('zeyodaOrbitAngleOffset') || '0');
+      if (storedOffset) {
         setOrbitAngleOffset(storedOffset);
+      }
     }
   }, []);
+
+  // Resize throttling effect
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    
+    const handleResize = () => {
+      isOrbitAnimationPaused.current = true;
+      setTimeout(() => {
+        isOrbitAnimationPaused.current = false;
+      }, 300);
+    };
+
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, [isOrbitAnimationPaused]);
   
   useEffect(() => {
     const videoElement = videoContainerRef.current;
@@ -42,12 +59,29 @@ const ThemeOrbitRenderer: React.FC<ThemeOrbitRendererProps> = ({
         return;
     }
 
-    const allTokens = [...(artistConfig?.orbitalTokens || []), ...dynamicOrbitalTokens].filter((token, index, self) => 
+    const combinedTokens = [...(artistConfig?.orbitalTokens || []), ...orbitTokens.map(token => ({
+      name: token.displayName,
+      angle: 0, // Will be recalculated below
+      artistId: token.artistId
+    }))].filter((token, index, self) => 
         token.name && self.findIndex(t => t.name === token.name) === index
     );
 
+    // Distribute angles evenly across all tokens with offset
+    const allTokens = combinedTokens.map((token, index) => ({
+      ...token,
+      angle: ((index + 0.5) * 360) / (combinedTokens.length || 1) // Even distribution with offset
+    }));
+
     let lastTimestamp = 0;
     const animate = (timestamp: number) => {
+      // SSR guard and visibility throttling
+      if (typeof document === 'undefined') return;
+      if (document.visibilityState === 'hidden') {
+        animationFrameIdRef.current = requestAnimationFrame(animate);
+        return;
+      }
+
       if (!lastTimestamp) {
         lastTimestamp = timestamp;
         animationFrameIdRef.current = requestAnimationFrame(animate);
@@ -78,7 +112,8 @@ const ThemeOrbitRenderer: React.FC<ThemeOrbitRendererProps> = ({
         const y = radiusY * Math.sin(angle);
         const z = -20;
         
-        tokenElement.style.transform = `translate3d(${x.toFixed(1)}px, ${y.toFixed(1)}px, ${z.toFixed(1)}px) scale(1)`;
+        const orbitPos = `translate(-50%, -50%) translate3d(${x.toFixed(1)}px, ${y.toFixed(1)}px, ${z.toFixed(1)}px)`;
+        tokenElement.style.setProperty('--orbit-pos', orbitPos);
         tokenElement.style.opacity = '1';
         tokenElement.style.filter = 'blur(0px)';
       });
@@ -93,54 +128,51 @@ const ThemeOrbitRenderer: React.FC<ThemeOrbitRendererProps> = ({
         cancelAnimationFrame(animationFrameIdRef.current);
         animationFrameIdRef.current = null;
       }
-      localStorage.setItem('zeyodaOrbitAngleOffset', orbitAngleOffset.toString());
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('zeyodaOrbitAngleOffset', orbitAngleOffset.toString());
+      }
     };
-  }, [artistConfig, dynamicOrbitalTokens, orbitAngleOffset, isOrbitAnimationPaused, videoContainerRef]);
+  }, [artistConfig, orbitTokens, orbitAngleOffset, isOrbitAnimationPaused, videoContainerRef]);
 
   if (!artistConfig) return null;
 
   return (
-    <div 
-        className="absolute top-1/2 left-1/2 w-full h-full" 
-        style={{ transform: 'translate(-50%, -50%)', pointerEvents: 'none' }}
+    <div className="orbit-theme">
+      <div 
+        className="orbital-tokens"
         onMouseEnter={() => isOrbitAnimationPaused.current = true}
         onMouseLeave={() => isOrbitAnimationPaused.current = false}
-    >
-        {(([...(artistConfig?.orbitalTokens || []), ...dynamicOrbitalTokens] as RenderableToken[])
-            .filter((token, index, self) => token.name && self.findIndex(t => t.name === token.name) === index)
-            .map((token: RenderableToken, index: number) => {
-            const isClickable = token.artistId && allArtistsConfig && allArtistsConfig[token.artistId];
-            const handleTokenClick = () => {
-                if (isClickable && token.artistId) {
-                    isOrbitAnimationPaused.current = true;
-                    setTimeout(() => {
-                        router.push(`/?artist=${token.artistId}`);
-                        isOrbitAnimationPaused.current = false;
-                    }, 300);
-                }
-            };
+      >
+        {(([...(artistConfig?.orbitalTokens || []), ...orbitTokens.map(token => ({
+          name: token.displayName,
+          angle: 0,
+          artistId: token.artistId
+        }))] as RenderableToken[])
+          .filter((token, index, self) => token.name && self.findIndex(t => t.name === token.name) === index)
+          .map((token: RenderableToken, index: number) => {
             return (
-                <div 
+              <Link 
                 key={`orbit-${token.name}-${token.artistId || 'standalone'}-${index}`}
-                ref={(el: HTMLDivElement | null) => {
-                    tokenElementRefs.current[index] = el;
+                href={`/?artist=${token.artistId?.toLowerCase()}`}
+                className="orbit-token"
+                data-artist-id={token.artistId?.toLowerCase()}
+                ref={(el: HTMLElement | null) => {
+                  tokenElementRefs.current[index] = el;
                 }}
-                className={`absolute top-1/2 left-1/2 p-2 text-xs rounded-full shadow-lg bg-black bg-opacity-50 backdrop-blur-sm text-white font-bold ${isClickable ? 'cursor-pointer hover:bg-opacity-75' : 'cursor-default'}`}
                 style={{
-                    willChange: 'transform, opacity',
-                    opacity: 0,
-                    pointerEvents: 'auto'
+                  willChange: 'transform, opacity',
+                  opacity: 0,
                 }}
-                onClick={handleTokenClick}
                 onMouseEnter={(e) => e.currentTarget.setAttribute('data-hovered', 'true')}
                 onMouseLeave={(e) => e.currentTarget.setAttribute('data-hovered', 'false')}
-                title={isClickable && token.artistId ? `Explore ${allArtistsConfig?.[token.artistId]?.displayName || token.name}` : token.name}
-                >
+                title={token.artistId ? `Explore ${allArtistsConfig?.[token.artistId]?.displayName || token.name}` : token.name}
+              >
                 {token.name}
-                </div>
+              </Link>
             );
-            }))
+          }))
         }
+      </div>
     </div>
   );
 };

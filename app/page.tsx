@@ -1,4 +1,5 @@
-"use client";
+'use client'
+
 import Image from "next/image";
 import { useEffect, useState, useRef, useCallback } from "react";
 import { useSearchParams, useRouter } from 'next/navigation';
@@ -22,6 +23,7 @@ import {
 } from '../types/artist-types';
 import { useCommandSystem } from './hooks/useCommandSystem';
 import { clearAllSafewordStorage } from './utils/safewordStorage';
+import { useOrbitTokens } from './hooks/useOrbitTokens';
 
 interface OrbitalToken {
   name: string; 
@@ -36,7 +38,7 @@ interface PriceDetails {
   investorShare: number;
 }
 
-const ORBIT_SPEED = 0.3;
+
 
 export default function HomePage() {
   const { magic, user, isReady, isLoading: authLoading, error: authError } = useWallet();
@@ -89,8 +91,6 @@ export default function HomePage() {
   );
 
   const videoContainerRef = useRef<HTMLDivElement>(null);
-  const tokenElementRefs = useRef<(HTMLDivElement | null)[]>([]);
-  const animationFrameIdRef = useRef<number | null>(null);
   const isOrbitAnimationPaused = useRef(false);
 
   const [swapFromAsset, setSwapFromAsset] = useState<string>("USD");
@@ -100,85 +100,12 @@ export default function HomePage() {
 
   const [isVideoError, setIsVideoError] = useState(false);
 
-  const [dynamicOrbitalTokens, setDynamicOrbitalTokens] = useState<RenderableToken[]>([]);
+  // Use the new orbit tokens hook with includeUnowned for orbit display
+  const orbitTokens = useOrbitTokens(userTokenBalances, allArtistsConfig, { includeUnowned: true });
 
-  const [orbitAngleOffset, setOrbitAngleOffset] = useState(() => {
-    if (typeof window !== 'undefined') {
-      return parseFloat(localStorage.getItem('zeyodaOrbitAngleOffset') || '0');
-    }
-    return 0;
-  });
 
-  useEffect(() => {
-    const storedOffset = parseFloat(localStorage.getItem('zeyodaOrbitAngleOffset') || '0');
-    if (storedOffset) {
-        setOrbitAngleOffset(storedOffset);
-    }
-  }, []);
 
-  useEffect(() => {
-    const videoElement = videoContainerRef.current;
-    if (!artistConfig || !videoElement) {
-        if (animationFrameIdRef.current) {
-            cancelAnimationFrame(animationFrameIdRef.current);
-            animationFrameIdRef.current = null;
-        }
-        return;
-    }
 
-    const allTokens = [...(artistConfig?.orbitalTokens || []), ...dynamicOrbitalTokens].filter((token, index, self) => 
-        token.name && self.findIndex(t => t.name === token.name) === index
-    );
-
-    let lastTimestamp = 0;
-    const animate = (timestamp: number) => {
-      if (!lastTimestamp) {
-        lastTimestamp = timestamp;
-        animationFrameIdRef.current = requestAnimationFrame(animate);
-        return;
-      }
-      const deltaTime = (timestamp - lastTimestamp) * 0.001; 
-      lastTimestamp = timestamp;
-
-      if (!isOrbitAnimationPaused.current) {
-        setOrbitAngleOffset(prevOffset => (prevOffset + ORBIT_SPEED * deltaTime));
-      }
-
-      const contentWidth = videoElement.offsetWidth;
-      const contentHeight = videoElement.offsetHeight;
-      
-      const radiusX = (contentWidth / 2) + 60;
-      const radiusY = (contentHeight / 2) + 40;
-      const currentGlobalAngleOffset = orbitAngleOffset;
-
-      allTokens.forEach((tokenData, index) => {
-        const tokenElement = tokenElementRefs.current[index];
-        if (!tokenElement) return;
-
-        const tokenSpecificInitialAngle = (typeof tokenData.angle === 'number' ? tokenData.angle : 0) * (Math.PI / 180); 
-        const angle = currentGlobalAngleOffset + tokenSpecificInitialAngle;
-        
-        const x = radiusX * Math.cos(angle);
-        const y = radiusY * Math.sin(angle);
-        const z = -20;
-        
-        tokenElement.style.transform = `translate3d(${x.toFixed(1)}px, ${y.toFixed(1)}px, ${z.toFixed(1)}px) scale(1)`;
-        tokenElement.style.opacity = '1';
-        tokenElement.style.filter = 'blur(0px)';
-      });
-
-      animationFrameIdRef.current = requestAnimationFrame(animate);
-    };
-
-    animationFrameIdRef.current = requestAnimationFrame(animate);
-
-    return () => {
-      if (animationFrameIdRef.current) {
-        cancelAnimationFrame(animationFrameIdRef.current);
-        animationFrameIdRef.current = null;
-      }
-    };
-  }, [artistConfig, dynamicOrbitalTokens, orbitAngleOffset]);
 
   useEffect(() => {
     if (artistConfig && artistConfig.tokenPrice > 0) {
@@ -615,55 +542,9 @@ export default function HomePage() {
     setShowPurchaseModal(true);
   };
 
-  useEffect(() => {
-    if (!allArtistsConfig || !user) {
-      setDynamicOrbitalTokens([]);
-      return;
-    }
 
-    const ownedArtistIds = new Set<string>();
 
-    // Create dynamic orbital tokens based on user assets
-    if (allArtistsConfig && user) {
-      // Get artists that user owns tokens for
-      if (userTokenBalances) {
-        for (const tokenName in userTokenBalances) {
-          if (userTokenBalances[tokenName] > 0) {
-            const artist = Object.values(allArtistsConfig).find(a => a.tokenName === tokenName);
-            if (artist && artist.name !== artistIdFromUrl) {
-              ownedArtistIds.add(artist.name);
-            }
-          }
-        }
-      }
-    }
 
-    const newOrbitalTokensData: RenderableToken[] = [];
-    const totalOwnedArtists = ownedArtistIds.size;
-    let angleIncrement = totalOwnedArtists > 0 ? 360 / totalOwnedArtists : 0;
-    let currentAngle = 0;
-
-    ownedArtistIds.forEach((id: string) => {
-      const artist = allArtistsConfig![id];
-      if (artist) {
-        newOrbitalTokensData.push({
-          name: artist.displayName || artist.name,
-          artistId: id,
-          angle: currentAngle,
-        });
-        currentAngle += angleIncrement;
-      }
-    });
-    
-    setDynamicOrbitalTokens(newOrbitalTokensData);
-
-  }, [allArtistsConfig, userTokenBalances, user, artistIdFromUrl]);
-
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('zeyodaOrbitAngleOffset', orbitAngleOffset.toString());
-    }
-  }, [orbitAngleOffset]);
 
   async function login() {
     if (!magic) return;
@@ -934,22 +815,23 @@ export default function HomePage() {
                   {artistConfig.displayName}
                 </h1>
   
-                <ArtistVideo
-                  isMuted={isMuted}
-                  isVideoError={isVideoError}
-                  setIsVideoError={setIsVideoError}
-                  toggleMute={toggleMute}
-                  videoContainerRef={videoContainerRef}
-                  videoSrc={videoSource}
-                >
+                <div className="relative w-full max-w-4xl mx-auto">
+                  <ArtistVideo
+                    isMuted={isMuted}
+                    isVideoError={isVideoError}
+                    setIsVideoError={setIsVideoError}
+                    toggleMute={toggleMute}
+                    videoContainerRef={videoContainerRef}
+                    videoSrc={videoSource}
+                  />
                   <ThemeOrbitRenderer
                     artistConfig={artistConfig}
-                    dynamicOrbitalTokens={dynamicOrbitalTokens}
+                    orbitTokens={orbitTokens}
                     videoContainerRef={videoContainerRef}
                     isOrbitAnimationPaused={isOrbitAnimationPaused}
                     allArtistsConfig={allArtistsConfig}
                   />
-                </ArtistVideo>
+                </div>
               </>
           </div>
 
