@@ -26,19 +26,19 @@ export interface ArtistRegistryEntry {
 export interface ArtistDatabaseEntry {
   id: string;
   name: string;
-  displayname: string;
-  tokenName: string;
-  artworktitle: string;
-  artworkyear: string;
-  tokenprice: number;
-  videosrc: string;
+  display_name: string;        // Fixed: matches SQL schema
+  token_name: string;          // Fixed: matches SQL schema  
+  artwork_title: string;       // Fixed: matches SQL schema
+  artwork_year: string;        // Fixed: matches SQL schema
+  token_price: number;         // Fixed: matches SQL schema
+  video_src: string;           // Fixed: matches SQL schema
   primary_color: string;
   accent_color: string;
   gradient_start: string;
   gradient_middle: string;
   gradient_end: string;
   font_family: string;
-  orbital_tokens: OrbitalToken[];
+  orbitaltokens: OrbitalToken[];   // Fixed: matches SQL schema (no underscore)
   created_at: string;
   updated_at: string;
 }

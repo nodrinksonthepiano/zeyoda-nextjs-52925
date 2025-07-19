@@ -21,9 +21,15 @@ import {
   RenderableToken,
   UserTokenBalances
 } from '../types/artist-types';
-import { useCommandSystem } from './hooks/useCommandSystem';
+
 import { clearAllSafewordStorage } from './utils/safewordStorage';
 import { useOrbitTokens } from './hooks/useOrbitTokens';
+import ChatBar from './components/ChatBar';
+import useCommandSystem from './hooks/useCommandSystem';
+import { useChatWizard } from './contexts/ChatWizardContext';
+import { RealTimePreview } from './components/ChatWizard/RealTimePreview';
+import { UploadZone } from './components/ChatWizard/UploadZone';
+
 
 interface OrbitalToken {
   name: string; 
@@ -72,14 +78,11 @@ export default function HomePage() {
   const [isMinting, setIsMinting] = useState(false);
   const [mintAmount, setMintAmount] = useState("");
 
-  // Command system hook - handles safeword input, unlocking, and commands
+  // Get command system state directly (no local state duplication)
   const {
-    input: safewordInput,
     globalSafewordVerified,
     unlockedArtistStates,
     safewordVerified,
-    onChange: handleSafewordInputChange,
-    onSubmit: handleSafewordSubmit,
     updateUnlockedStates,
     setGlobalVerified
   } = useCommandSystem(
@@ -87,8 +90,15 @@ export default function HomePage() {
     user || null,
     artistConfig,
     showToast,
-    setShowAssetsPanel
+    setShowAssetsPanel,
+    undefined // No wizard handler for main page
   );
+
+  // Get wizard state for in-chat wizard mode
+  const { wizardState } = useChatWizard();
+  const wizardActive = wizardState.isActive;
+
+
 
   const videoContainerRef = useRef<HTMLDivElement>(null);
   const isOrbitAnimationPaused = useRef(false);
@@ -331,6 +341,7 @@ export default function HomePage() {
 
     setUserTokenBalances({});
     updateUnlockedStates({});
+    setGlobalVerified(false);
     setHasPurchasedDownload(false);
     setShowPurchaseModal(false);
     setPurchaseAmountArtistocks(0);
@@ -761,6 +772,9 @@ export default function HomePage() {
   return (
     <UsdBalanceProvider userAddress={user || null}>
       <div className="flex min-h-screen flex-col items-center justify-between p-24 relative bg-primary text-white font-sans">
+        {/* Wizard Real-time Preview - renders first when active */}
+        {wizardActive && <RealTimePreview />}
+        
         <div id="particles" className="cosmic-particles"></div>
 
         {user && (
@@ -810,6 +824,15 @@ export default function HomePage() {
 
         <main className="app-main">
           <div className="text-center">
+            {wizardActive ? (
+              <>
+                <h1 className="text-2xl md:text-3xl font-bold tracking-wider mb-4" style={{ fontFamily: 'Bungee', color: '#FFD700' }}>
+                  {wizardState.data.artistName || 'New Artist'}
+                </h1>
+                
+                <UploadZone />
+              </>
+            ) : (
               <>
                 <h1 className="text-2xl md:text-3xl font-bold tracking-wider mb-4" style={{ fontFamily: artistConfig.theme.fontFamily, color: artistConfig.theme.accentColor }}>
                   {artistConfig.displayName}
@@ -833,6 +856,7 @@ export default function HomePage() {
                   />
                 </div>
               </>
+            )}
           </div>
 
           {isOwner && (
@@ -966,48 +990,21 @@ export default function HomePage() {
             )}
           </div>
 
-          <div 
-            className={`unified-input-container mock-ui-section p-4 border-t-2 border-gray-700 mt-8 ${!user && shakeActive ? 'shake' : ''}`}
-          >
-            {user && (
-              <h3 className="text-xl font-semibold mb-3 text-center">Chat / Command</h3>
-            )}
-            <div className="flex items-center max-w-xl mx-auto">
-              <input
-                type={user ? "text" : "email"}
-                value={user ? safewordInput : email}
-                onChange={user ? handleSafewordInputChange : (e) => setEmail(e.target.value)}
-                placeholder={
-                  user 
-                    ? "Type command, search, or safeword..." 
-                    : "Enter your email address to continue"
-                }
-                className="flex-grow p-3 border border-gray-600 rounded-l-lg bg-gray-900 bg-opacity-70 text-white focus:ring-accentColor focus:border-accentColor backdrop-blur-sm"
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    if (!user) {
-                      login();
-                    } else {
-                      handleSafewordSubmit();
-                    }
-                  }
-                }}
-                aria-label={user ? "Chat or command input" : "Email address input"}
-              />
-              <button
-                onClick={() => {
-                  if (!user) {
-                    login();
-                  } else {
-                    handleSafewordSubmit();
-                  }
-                }}
-                className="p-3 bg-accentColor text-white rounded-r-lg hover:bg-opacity-80 focus:outline-none focus:ring-2 focus:ring-accentColor focus:ring-opacity-50"
-              >
-                {user ? "Send" : "Continue"}
-              </button>
-            </div>
-          </div>
+
+
+          <ChatBar
+            email={email}
+            setEmail={setEmail}
+            login={login}
+            shakeActive={shakeActive}
+            showAssetsPanel={showAssetsPanel}
+            setShowAssetsPanel={setShowAssetsPanel}
+            wizardInputHandler={wizardActive ? (input: string) => {
+              // Handle wizard input based on current step
+              // For now, just log - will be expanded later
+              console.log('Wizard input:', input, 'Step:', wizardState.currentStep);
+            } : undefined}
+          />
         </main>
 
         {/* Top-left wallet button - MOVED TO END TO ENSURE TOP Z-INDEX */}

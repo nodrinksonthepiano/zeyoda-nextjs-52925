@@ -87,11 +87,17 @@ const useArtistConfig = (): UseArtistConfigReturn => {
 
       try {
         // Fetch base artist data from the artists table
+        console.log('🔍 [useArtistConfig] Fetching artist data from Supabase...');
         const { data: artistsData, error: dbError } = await supabase
           .from('artists')
           .select('*');
         
-        if (dbError) throw dbError;
+        console.log('📊 [useArtistConfig] Supabase response:', { artistsData, dbError });
+        
+        if (dbError) {
+          console.error('❌ [useArtistConfig] Supabase error:', dbError);
+          throw dbError;
+        }
 
         // The registry from context is the primary source of truth for contract addresses
         const currentRegistry = registry;
@@ -101,18 +107,24 @@ const useArtistConfig = (): UseArtistConfigReturn => {
 
         const combinedConfigs: {[key: string]: ArtistConfig} = {};
 
+        console.log(`🎨 [useArtistConfig] Processing ${artistsData?.length || 0} artists from Supabase`);
+        
         for (const artistData of artistsData as ArtistDatabaseEntry[]) {
+          console.log(`🎭 [useArtistConfig] Processing artist: ${artistData.id}`, artistData);
+          
           const contracts = currentRegistry[artistData.id] || getFallbackArtistContracts(artistData.id);
           
           if (contracts) {
+            console.log(`✅ [useArtistConfig] Found contracts for ${artistData.id}:`, contracts);
+            
             combinedConfigs[artistData.id] = {
               name: artistData.name,
-              displayName: artistData.displayname,
-              tokenName: artistData.tokenName,
-              artworkTitle: artistData.artworktitle,
-              artworkYear: artistData.artworkyear,
-              tokenPrice: artistData.tokenprice,
-              videoSrc: artistData.videosrc,
+              displayName: artistData.display_name, // Fixed: use display_name from schema
+              tokenName: artistData.token_name, // Fixed: use token_name from schema
+              artworkTitle: artistData.artwork_title, // Fixed: use artwork_title from schema
+              artworkYear: artistData.artwork_year, // Fixed: use artwork_year from schema
+              tokenPrice: artistData.token_price || 0.0005, // Fixed: use token_price with fallback
+              videoSrc: artistData.video_src, // Fixed: use video_src from schema
               contract: contracts.token,
               swap: contracts.swap,
               downloads: contracts.downloads || undefined,
@@ -125,8 +137,12 @@ const useArtistConfig = (): UseArtistConfigReturn => {
                 gradientEnd: artistData.gradient_end,
                 fontFamily: artistData.font_family,
               },
-              orbitalTokens: artistData.orbital_tokens,
+              orbitalTokens: artistData.orbitaltokens, // Fixed: use orbitaltokens (no underscore)
             };
+            
+            console.log(`🎨 [useArtistConfig] Created config for ${artistData.id}:`, combinedConfigs[artistData.id]);
+          } else {
+            console.warn(`⚠️ [useArtistConfig] No contracts found for ${artistData.id}`);
           }
         }
         

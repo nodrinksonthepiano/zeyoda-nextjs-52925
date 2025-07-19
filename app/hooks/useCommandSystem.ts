@@ -6,6 +6,8 @@ import {
   saveUnlockedStates, 
   hasAnyUnlockedArtist 
 } from '../utils/safewordStorage';
+import { useChatWizard, WizardStep } from '../contexts/ChatWizardContext';
+import { useGlobalChat } from '../contexts/GlobalChatContext';
 
 export interface CommandSystemHookReturn {
   input: string;
@@ -17,6 +19,7 @@ export interface CommandSystemHookReturn {
   clearInput: () => void;
   updateUnlockedStates: (states: { [key: string]: boolean }) => void;
   setGlobalVerified: (verified: boolean) => void;
+  isWizardActive: boolean;
 }
 
 export const useCommandSystem = (
@@ -24,9 +27,12 @@ export const useCommandSystem = (
   user: string | null,
   artistConfig: ArtistConfig | null,
   showToast: (message: string, type?: "error" | "success" | "info" | undefined) => void,
-  setShowAssetsPanel: (show: boolean) => void
+  setShowAssetsPanel: (show: boolean) => void,
+  wizardInputHandler?: (input: string) => void // Optional wizard input handler
 ): CommandSystemHookReturn => {
   const router = useRouter();
+  const { wizardState, startWizard } = useChatWizard();
+  const { addMessage: addGlobalMessage, setActive: setGlobalChatActive } = useGlobalChat();
   
   // State management
   const [safewordInput, setSafewordInput] = useState('');
@@ -45,19 +51,15 @@ export const useCommandSystem = (
 
   // Auto-submit handler
   const handleSafewordAutosubmit = useCallback(() => {
-    const currentArtistId = artistIdFromUrl;
+    const input = safewordInput.trim().toLowerCase();
 
-    if (user && artistConfig && safewordInput.trim().toLowerCase() === 'artistocks') {
-      setSafewordVerified(true);
-      const newUnlockedStates = { ...unlockedArtistStates, [currentArtistId]: true };
-      setUnlockedArtistStates(newUnlockedStates);
-      setGlobalSafewordVerified(true);
-      saveUnlockedStates(user, newUnlockedStates);
-      
-      showToast(`Artist "${artistConfig.displayName}" unlocked!`, 'success');
+    // Handle zeyoda safeword (auto-trigger wizard with flash transition)
+    if (user && input === 'zeyoda') {
+      startWizard();
       setSafewordInput('');
+      return;
     }
-  }, [safewordInput, user, artistConfig, artistIdFromUrl, unlockedArtistStates, showToast]);
+  }, [safewordInput, user, router, startWizard]);
 
   // Auto-submit effect
   useEffect(() => {
@@ -71,41 +73,79 @@ export const useCommandSystem = (
 
   // Submit handler
   const handleSafewordSubmit = useCallback(() => {
-    const input = safewordInput.trim().toLowerCase();
+    const input = safewordInput.trim();
     if (!input) return;
 
-    if (input === 'zeyoda') {
-      router.push('/create');
+    // Handle wizard mode inputs
+    if (artistIdFromUrl === 'wizard') {
+      if (wizardInputHandler) {
+        // Add user message to global chat
+        addGlobalMessage({
+          type: 'user',
+          content: input
+        });
+        
+        // Delegate to wizard-specific handler
+        wizardInputHandler(input);
+      } else {
+        showToast(`Wizard input received: "${input}" - Step: ${wizardState.currentStep}`, 'info');
+      }
+      setSafewordInput('');
+      return;
+    }
+
+    const inputLower = input.toLowerCase();
+
+    if (inputLower === 'zeyoda') {
+      // Add user message to global chat
+      addGlobalMessage({
+        type: 'user',
+        content: 'zeyoda'
+      });
+      
+      // Add bot transition message  
+      addGlobalMessage({
+        type: 'bot',
+        content: '✨ Launching artist onboarding wizard...'
+      });
+      
+      // Activate global chat and start wizard (no redirect)
+      setGlobalChatActive(true);
+      startWizard();
       setSafewordInput('');
       return;
     }
     
-    if (input === '/wallet' || input === '/portfolio') {
+    if (inputLower === '/wallet' || inputLower === '/portfolio') {
       setShowAssetsPanel(true);
       setSafewordInput('');
       return;
     }
     
-    if (input === '/exit' || input === '/close') {
+    if (inputLower === '/exit' || inputLower === '/close') {
       setShowAssetsPanel(false);
       setSafewordInput('');
       return;
     }
 
     const correctSafeword = "artistocks";
-    if (input === correctSafeword) {
+    if (inputLower === correctSafeword) {
       setSafewordVerified(true);
       const newUnlockedStates = { ...unlockedArtistStates, [artistIdFromUrl]: true };
       setUnlockedArtistStates(newUnlockedStates);
       setGlobalSafewordVerified(true);
       saveUnlockedStates(user, newUnlockedStates);
+      
+      // Also show the assets panel (swap UI)
+      setShowAssetsPanel(true);
+      
       setSafewordInput('');
       return;
     }
 
     showToast(`Command not recognized: "${safewordInput}"`, 'error');
     setSafewordInput('');
-  }, [safewordInput, router, setShowAssetsPanel, unlockedArtistStates, artistIdFromUrl, showToast]);
+  }, [safewordInput, artistIdFromUrl, router, setShowAssetsPanel, unlockedArtistStates, showToast, startWizard, wizardState, addGlobalMessage, setGlobalChatActive, wizardInputHandler]);
 
   // Clear input handler
   const clearInput = useCallback(() => {
@@ -147,6 +187,9 @@ export const useCommandSystem = (
     onSubmit: handleSafewordSubmit,
     clearInput,
     updateUnlockedStates,
-    setGlobalVerified
+    setGlobalVerified,
+    isWizardActive: wizardState.isActive
   };
-}; 
+};
+
+export default useCommandSystem; 

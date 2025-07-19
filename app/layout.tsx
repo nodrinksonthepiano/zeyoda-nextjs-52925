@@ -5,6 +5,8 @@ import "./styles/orbit.css";
 import { MagicProvider } from './components/MagicProvider'
 import { ToastProvider } from './contexts/ToastContext';
 import { ArtistRegistryProvider } from './contexts/ArtistRegistryContext';
+import { ChatWizardProvider } from './contexts/ChatWizardContext';
+import { GlobalChatProvider } from './contexts/GlobalChatContext';
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -42,7 +44,11 @@ export default function RootLayout({
         <ToastProvider>
           <MagicProvider>
             <ArtistRegistryProvider>
-              {children}
+              <GlobalChatProvider>
+                <ChatWizardProvider>
+                  {children}
+                </ChatWizardProvider>
+              </GlobalChatProvider>
             </ArtistRegistryProvider>
           </MagicProvider>
         </ToastProvider>
