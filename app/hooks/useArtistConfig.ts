@@ -105,6 +105,9 @@ const useArtistConfig = (): UseArtistConfigReturn => {
           const contracts = currentRegistry[artistData.id] || getFallbackArtistContracts(artistData.id);
           
           if (contracts) {
+            // Extract theme data with better fallbacks
+            const themeData = artistData.theme as any || {};
+            
             combinedConfigs[artistData.id] = {
               name: artistData.name,
               displayName: artistData.displayname,
@@ -118,15 +121,22 @@ const useArtistConfig = (): UseArtistConfigReturn => {
               downloads: contracts.downloads || undefined,
               treasury_wallet: contracts.treasury_wallet || undefined,
               theme: {
-                primaryColor: artistData.primary_color,
-                accentColor: artistData.accent_color,
-                gradientStart: artistData.gradient_start,
-                gradientMiddle: artistData.gradient_middle,
-                gradientEnd: artistData.gradient_end,
-                fontFamily: artistData.font_family,
+                primaryColor: themeData.primaryColor || artistData.primary_color || '#000000',
+                accentColor: themeData.accentColor || artistData.accent_color || '#4073ff',
+                gradientStart: themeData.gradientStart || themeData.accentColor || artistData.gradient_start || '#FFD700',
+                gradientMiddle: themeData.gradientMiddle || themeData.accentColor || artistData.gradient_middle || '#FFD700',
+                gradientEnd: themeData.gradientEnd || themeData.accentColor || artistData.gradient_end || '#FFD700',
+                fontFamily: themeData.fontFamily || artistData.font_family || 'Geist',
               },
               orbitalTokens: artistData.orbital_tokens,
             };
+            
+            // Debug log the theme extraction
+            console.log(`🎨 Theme extracted for ${artistData.id}:`, {
+              primary: combinedConfigs[artistData.id].theme.primaryColor,
+              accent: combinedConfigs[artistData.id].theme.accentColor,
+              source: themeData.primaryColor ? 'theme object' : 'fallback'
+            });
           }
         }
         
