@@ -641,8 +641,7 @@ const PurchaseFlow: React.FC<PurchaseFlowProps> = ({
                     <div className="flex items-center space-x-2">
                         <select 
                             id="toAsset"
-                            value={swapFromAsset === "USD" ? artistConfig.tokenName : 
-                                   (swapToAsset || "USD")}
+                            value={swapToAsset || "USD"}
                             onChange={(e) => {
                                 const newToAsset = e.target.value;
                                 console.log('🔧 TO Dropdown changed:', { 

@@ -32,12 +32,22 @@ export interface ArtistDatabaseEntry {
   artworkyear: string;
   tokenprice: number;
   videosrc: string;
-  primary_color: string;
-  accent_color: string;
-  gradient_start: string;
-  gradient_middle: string;
-  gradient_end: string;
-  font_family: string;
+  // Theme as JSONB object (new structure)
+  theme?: {
+    primaryColor: string;
+    accentColor: string;
+    gradientStart: string;
+    gradientMiddle: string;
+    gradientEnd: string;
+    fontFamily: string;
+  };
+  // Fallback separate columns (legacy structure)
+  primary_color?: string;
+  accent_color?: string;
+  gradient_start?: string;
+  gradient_middle?: string;
+  gradient_end?: string;
+  font_family?: string;
   orbital_tokens: OrbitalToken[];
   created_at: string;
   updated_at: string;

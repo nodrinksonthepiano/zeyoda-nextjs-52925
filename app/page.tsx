@@ -94,7 +94,7 @@ export default function HomePage() {
   const isOrbitAnimationPaused = useRef(false);
 
   const [swapFromAsset, setSwapFromAsset] = useState<string>("USD");
-  const [swapToAsset, setSwapToAsset] = useState<string>("USD");
+  const [swapToAsset, setSwapToAsset] = useState<string>("");
   const [swapFromAmount, setSwapFromAmount] = useState<string>("20.00");
   const [swapToAmount, setSwapToAmount] = useState<string>("");
 
@@ -224,6 +224,10 @@ export default function HomePage() {
       document.documentElement.style.setProperty('--gradient-middle', theme.gradientMiddle || '#cccccc');
       document.documentElement.style.setProperty('--gradient-end', theme.gradientEnd || '#999999');
       document.body.style.fontFamily = theme.fontFamily || 'Geist Sans, sans-serif';
+      
+      // Apply primary color to body background - NO MORE BLACK!
+      document.body.style.background = theme.primaryColor || '#000000';
+      console.log('🎨 Applied artist background color:', theme.primaryColor);
     }
   }, [artistConfig]);
 
@@ -398,15 +402,14 @@ export default function HomePage() {
     }
   };
 
-  // Initialize swapToAsset when artistConfig loads
+  // Initialize swapToAsset when artistConfig loads or FROM asset changes
   useEffect(() => {
-    if (artistConfig && !swapToAsset) {
-      // Default TO asset: if FROM is USD, default TO is current artist token
-      // If FROM is token, default TO is USD
+    if (artistConfig) {
+      // Always update TO asset based on FROM asset
       const defaultToAsset = swapFromAsset === "USD" ? artistConfig.tokenName : "USD";
       setSwapToAsset(defaultToAsset);
     }
-  }, [artistConfig, swapToAsset, swapFromAsset]);
+  }, [artistConfig, swapFromAsset]);
 
   useEffect(() => {
     const calculateSwapOutput = async () => {
