@@ -24,7 +24,9 @@ export const useCommandSystem = (
   user: string | null,
   artistConfig: ArtistConfig | null,
   showToast: (message: string, type?: "error" | "success" | "info" | undefined) => void,
-  setShowAssetsPanel: (show: boolean) => void
+  setShowAssetsPanel: (show: boolean) => void,
+  setAppMode?: (mode: 'normal' | 'onboarding') => void,
+  setOnboardingArtistName?: (name: string) => void
 ): CommandSystemHookReturn => {
   const router = useRouter();
   
@@ -64,10 +66,23 @@ export const useCommandSystem = (
     handleSafewordAutosubmit();
   }, [handleSafewordAutosubmit]);
 
-  // Input change handler
+  // Input change handler with auto-trigger for zeyoda
   const handleSafewordInputChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    setSafewordInput(e.target.value);
-  }, []);
+    const newValue = e.target.value;
+    setSafewordInput(newValue);
+    
+    // Auto-trigger when "zeyoda" is typed (treasure discovery!)
+    if (newValue.toLowerCase() === 'zeyoda') {
+      if (setAppMode) {
+        setAppMode('onboarding');
+        if (setOnboardingArtistName) {
+          setOnboardingArtistName('WELCOME, ARTIST!');
+        }
+        showToast('🎉 Treasure discovered! Welcome to artist creation!', 'success');
+        setSafewordInput(''); // Clear input after trigger
+      }
+    }
+  }, [setAppMode, setOnboardingArtistName, showToast]);
 
   // Submit handler
   const handleSafewordSubmit = useCallback(() => {
@@ -75,7 +90,15 @@ export const useCommandSystem = (
     if (!input) return;
 
     if (input === 'zeyoda') {
-      router.push('/create');
+      if (setAppMode) {
+        setAppMode('onboarding');
+        if (setOnboardingArtistName) {
+          setOnboardingArtistName('WELCOME, ARTIST!');
+        }
+        showToast('Onboarding mode activated! Start typing your artist name.', 'success');
+      } else {
+        router.push('/create');
+      }
       setSafewordInput('');
       return;
     }

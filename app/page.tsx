@@ -45,6 +45,12 @@ export default function HomePage() {
   const { showToast } = useToast();
   const [email, setEmail] = useState('');
 
+  // Onboarding mode state
+  const [appMode, setAppMode] = useState<'normal' | 'onboarding'>('normal');
+  const [onboardingArtistName, setOnboardingArtistName] = useState('WELCOME, ARTIST!');
+  const [uploadedFile, setUploadedFile] = useState<File | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
   const searchParams = useSearchParams();
   const router = useRouter();
   const { artistConfig, allArtistsConfig, isLoading: configLoading, error: configError } = useArtistConfig();
@@ -87,11 +93,44 @@ export default function HomePage() {
     user || null,
     artistConfig,
     showToast,
-    setShowAssetsPanel
+    setShowAssetsPanel,
+    setAppMode,
+    setOnboardingArtistName
   );
 
   const videoContainerRef = useRef<HTMLDivElement>(null);
   const isOrbitAnimationPaused = useRef(false);
+
+  // File upload handlers
+  const handleFileSelect = useCallback((file: File) => {
+    setUploadedFile(file);
+    console.log('File selected:', file.name, file.type, file.size);
+  }, []);
+
+  const handleUploadClick = useCallback(() => {
+    fileInputRef.current?.click();
+  }, []);
+
+  const handleFileInputChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      handleFileSelect(file);
+    }
+  }, [handleFileSelect]);
+
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+  }, []);
+
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const file = e.dataTransfer.files?.[0];
+    if (file) {
+      handleFileSelect(file);
+    }
+  }, [handleFileSelect]);
 
   const [swapFromAsset, setSwapFromAsset] = useState<string>("USD");
   const [swapToAsset, setSwapToAsset] = useState<string>("");
@@ -210,26 +249,39 @@ export default function HomePage() {
   }, [user, artistConfig, magic]);
 
   useEffect(() => {
-    const { theme } = artistConfig || {};
-    if (theme) {
-      document.documentElement.style.setProperty('--primary-color', theme.primaryColor || '#000000');
-      if (theme.accentColor) {
-        document.documentElement.style.setProperty('--accent-color', theme.accentColor);
-        document.documentElement.style.setProperty(
-          '--accent-color-rgb',
-          theme.accentColor.match(/\d+/g)?.join(', ') ?? '0,0,0'
-        );
+    if (appMode === 'onboarding') {
+      // Onboarding mode: light linen canvas background for better gold contrast
+      document.documentElement.style.setProperty('--primary-color', '#FAF0E6');
+      document.documentElement.style.setProperty('--accent-color', '#ffd700');
+      document.documentElement.style.setProperty('--gradient-start', '#FAF0E6');
+      document.documentElement.style.setProperty('--gradient-middle', '#FDF5E6');
+      document.documentElement.style.setProperty('--gradient-end', '#F5F5DC');
+      document.body.style.background = 'linear-gradient(135deg, #FAF0E6 0%, #FDF5E6 50%, #F5F5DC 100%)';
+      document.body.style.fontFamily = 'Bungee, cursive';
+      console.log('🎨 Applied onboarding linen canvas background');
+    } else {
+      // Normal mode: use artist theme
+      const { theme } = artistConfig || {};
+      if (theme) {
+        document.documentElement.style.setProperty('--primary-color', theme.primaryColor || '#000000');
+        if (theme.accentColor) {
+          document.documentElement.style.setProperty('--accent-color', theme.accentColor);
+          document.documentElement.style.setProperty(
+            '--accent-color-rgb',
+            theme.accentColor.match(/\d+/g)?.join(', ') ?? '0,0,0'
+          );
+        }
+        document.documentElement.style.setProperty('--gradient-start', theme.gradientStart || '#ffffff');
+        document.documentElement.style.setProperty('--gradient-middle', theme.gradientMiddle || '#cccccc');
+        document.documentElement.style.setProperty('--gradient-end', theme.gradientEnd || '#999999');
+        document.body.style.fontFamily = theme.fontFamily || 'Geist Sans, sans-serif';
+        
+        // Apply primary color to body background - NO MORE BLACK!
+        document.body.style.background = theme.primaryColor || '#000000';
+        console.log('🎨 Applied artist background color:', theme.primaryColor);
       }
-      document.documentElement.style.setProperty('--gradient-start', theme.gradientStart || '#ffffff');
-      document.documentElement.style.setProperty('--gradient-middle', theme.gradientMiddle || '#cccccc');
-      document.documentElement.style.setProperty('--gradient-end', theme.gradientEnd || '#999999');
-      document.body.style.fontFamily = theme.fontFamily || 'Geist Sans, sans-serif';
-      
-      // Apply primary color to body background - NO MORE BLACK!
-      document.body.style.background = theme.primaryColor || '#000000';
-      console.log('🎨 Applied artist background color:', theme.primaryColor);
     }
-  }, [artistConfig]);
+  }, [artistConfig, appMode]);
 
   useEffect(() => {
     const dollarValueForTokens = parseFloat(swapFromAmount || '0');
@@ -779,7 +831,6 @@ export default function HomePage() {
         )}
 
         <header className="app-header">
-          <h1 className="text-2xl font-bold">{artistConfig?.displayName?.toUpperCase()}</h1>
           {user ? (
             <div className="flex items-center gap-4">
               <div 
@@ -790,7 +841,6 @@ export default function HomePage() {
                   ✅ Connected: {showFullAddress ? user : `${user.slice(0, 6)}...${user.slice(-4)}`}
                 </p>
               </div>
-              <a href="/create" className="logout-button">Create Profile</a>
               <button onClick={handleLogout} className="logout-button">
                 Data Reset
               </button>
@@ -814,26 +864,94 @@ export default function HomePage() {
         <main className="app-main">
           <div className="text-center">
               <>
-                <h1 className="text-2xl md:text-3xl font-bold tracking-wider mb-4" style={{ fontFamily: artistConfig.theme.fontFamily, color: artistConfig.theme.accentColor }}>
-                  {artistConfig.displayName}
+                <h1 className="text-2xl md:text-3xl font-bold tracking-wider mb-4" style={{ 
+                  fontFamily: appMode === 'onboarding' ? 'Bungee, cursive' : artistConfig.theme.fontFamily, 
+                  color: appMode === 'onboarding' ? '#B8860B' : artistConfig.theme.accentColor 
+                }}>
+                  {appMode === 'onboarding' ? onboardingArtistName : artistConfig.displayName}
                 </h1>
   
                 <div className="relative w-full max-w-4xl mx-auto">
-                  <ArtistVideo
-                    isMuted={isMuted}
-                    isVideoError={isVideoError}
-                    setIsVideoError={setIsVideoError}
-                    toggleMute={toggleMute}
-                    videoContainerRef={videoContainerRef}
-                    videoSrc={videoSource}
-                  />
-                  <ThemeOrbitRenderer
-                    artistConfig={artistConfig}
-                    orbitTokens={orbitTokens}
-                    videoContainerRef={videoContainerRef}
-                    isOrbitAnimationPaused={isOrbitAnimationPaused}
-                    allArtistsConfig={allArtistsConfig}
-                  />
+                  {appMode === 'onboarding' ? (
+                    // Onboarding: Drag & drop upload zone
+                    <>
+                      <input
+                        ref={fileInputRef}
+                        type="file"
+                        accept="audio/*,video/*,image/*,.txt,.md,.pdf"
+                        onChange={handleFileInputChange}
+                        className="hidden"
+                      />
+                      <div 
+                        className="w-full aspect-video bg-white bg-opacity-20 rounded-lg border-2 border-dashed border-yellow-600 flex flex-col items-center justify-center p-8 hover:bg-opacity-30 transition-all duration-200 cursor-pointer"
+                        onDragOver={handleDragOver}
+                        onDrop={handleDrop}
+                        onClick={handleUploadClick}
+                      >
+                        {uploadedFile ? (
+                          // Show uploaded file info
+                          <>
+                            <div className="text-4xl mb-4">🎉</div>
+                            <div className="text-lg font-bold mb-2" style={{ color: '#B8860B', fontFamily: 'Bungee, cursive' }}>
+                              FILE UPLOADED!
+                            </div>
+                            <div className="text-sm mb-2" style={{ color: '#B8860B' }}>
+                              {uploadedFile.name}
+                            </div>
+                            <div className="text-xs opacity-60" style={{ color: '#B8860B' }}>
+                              {(uploadedFile.size / 1024 / 1024).toFixed(1)} MB • {uploadedFile.type || 'Unknown type'}
+                            </div>
+                            <button 
+                              className="mt-4 px-4 py-2 bg-yellow-600 text-white rounded-lg font-medium hover:bg-yellow-700 transition-colors text-sm"
+                              style={{ backgroundColor: '#B8860B' }}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setUploadedFile(null);
+                              }}
+                            >
+                              Change File
+                            </button>
+                          </>
+                        ) : (
+                          // Show upload prompt
+                          <>
+                            <div className="text-6xl mb-4">📁</div>
+                            <div className="text-xl font-bold mb-2" style={{ color: '#B8860B', fontFamily: 'Bungee, cursive' }}>
+                              DROP YOUR CONTENT HERE
+                            </div>
+                            <div className="text-sm mb-4 opacity-80" style={{ color: '#B8860B' }}>
+                              Audio, video, images, text - any format
+                            </div>
+                            <button 
+                              className="px-6 py-3 bg-yellow-600 text-white rounded-lg font-medium hover:bg-yellow-700 transition-colors"
+                              style={{ backgroundColor: '#B8860B' }}
+                            >
+                              Or Click to Upload
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    </>
+                  ) : (
+                    // Normal mode: Video with orbital tokens
+                    <>
+                      <ArtistVideo
+                        isMuted={isMuted}
+                        isVideoError={isVideoError}
+                        setIsVideoError={setIsVideoError}
+                        toggleMute={toggleMute}
+                        videoContainerRef={videoContainerRef}
+                        videoSrc={videoSource}
+                      />
+                      <ThemeOrbitRenderer
+                        artistConfig={artistConfig}
+                        orbitTokens={orbitTokens}
+                        videoContainerRef={videoContainerRef}
+                        isOrbitAnimationPaused={isOrbitAnimationPaused}
+                        allArtistsConfig={allArtistsConfig}
+                      />
+                    </>
+                  )}
                 </div>
               </>
           </div>
@@ -847,32 +965,36 @@ export default function HomePage() {
             />
           )}
 
-          <PurchaseFlow
-            user={user}
-            artistConfig={artistConfig}
-            allArtistsConfig={allArtistsConfig}
-            isActionLoading={isActionLoading}
-            hasPurchasedDownload={hasPurchasedDownload}
-            globalSafewordVerified={globalSafewordVerified}
-            purchaseConfirmationData={purchaseConfirmationData}
-            swapFromAsset={swapFromAsset}
-            setSwapFromAsset={setSwapFromAsset}
-            swapToAsset={swapToAsset}
-            setSwapToAsset={setSwapToAsset}
-            unlockedArtistStates={unlockedArtistStates}
-            userTokenBalances={userTokenBalances}
-            swapFromAmount={swapFromAmount}
-            handleSwapFromAmountChange={handleSwapFromAmountChange}
-            artistocksInput={artistocksInput}
-            handleArtistocksInputChange={handleArtistocksInputChange}
-            includeDownload={includeDownload}
-            handleIncludeDownloadChange={handleIncludeDownloadChange}
-            totalPurchasePrice={totalPurchasePrice}
-            handlePreviewSwap={handlePreviewSwap}
-            handleDollarPurchase={handleDollarPurchase}
-            setShakeActive={setShakeActive}
-            swapToAmount={swapToAmount}
-          />
+          {appMode !== 'onboarding' && (
+            <PurchaseFlow
+              user={user}
+              artistConfig={artistConfig}
+              allArtistsConfig={allArtistsConfig}
+              isActionLoading={isActionLoading}
+              hasPurchasedDownload={hasPurchasedDownload}
+              globalSafewordVerified={globalSafewordVerified}
+              purchaseConfirmationData={purchaseConfirmationData}
+              swapFromAsset={swapFromAsset}
+              setSwapFromAsset={setSwapFromAsset}
+              swapToAsset={swapToAsset}
+              setSwapToAsset={setSwapToAsset}
+              unlockedArtistStates={unlockedArtistStates}
+              userTokenBalances={userTokenBalances}
+              swapFromAmount={swapFromAmount}
+              handleSwapFromAmountChange={handleSwapFromAmountChange}
+              artistocksInput={artistocksInput}
+              handleArtistocksInputChange={handleArtistocksInputChange}
+              includeDownload={includeDownload}
+              handleIncludeDownloadChange={handleIncludeDownloadChange}
+              totalPurchasePrice={totalPurchasePrice}
+              handlePreviewSwap={handlePreviewSwap}
+              handleDollarPurchase={handleDollarPurchase}
+              setShakeActive={setShakeActive}
+              swapToAmount={swapToAmount}
+            />
+          )}
+
+
 
           <div className="action-section text-center mb-4">
             {!user && (
