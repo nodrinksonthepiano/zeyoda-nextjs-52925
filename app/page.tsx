@@ -16,6 +16,7 @@ import OwnerControls from "./components/OwnerControls";
 import ArtistVideo from "./components/ArtistVideo";
 import ThemeOrbitRenderer from "./components/ThemeOrbitRenderer";
 import PurchaseFlow from "./components/PurchaseFlow";
+import OnboardingPanel from "./components/OnboardingPanel";
 import {
   ArtistConfig,
   RenderableToken,
@@ -49,6 +50,7 @@ export default function HomePage() {
   const [appMode, setAppMode] = useState<'normal' | 'onboarding'>('normal');
   const [onboardingArtistName, setOnboardingArtistName] = useState('WELCOME, ARTIST!');
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
+  const [onboardingData, setOnboardingData] = useState<any>({});
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const searchParams = useSearchParams();
@@ -95,7 +97,8 @@ export default function HomePage() {
     showToast,
     setShowAssetsPanel,
     setAppMode,
-    setOnboardingArtistName
+    setOnboardingArtistName,
+    appMode
   );
 
   const videoContainerRef = useRef<HTMLDivElement>(null);
@@ -104,6 +107,7 @@ export default function HomePage() {
   // File upload handlers
   const handleFileSelect = useCallback((file: File) => {
     setUploadedFile(file);
+    setOnboardingData(prev => ({ ...prev, uploadedFile: file }));
     console.log('File selected:', file.name, file.type, file.size);
   }, []);
 
@@ -131,6 +135,79 @@ export default function HomePage() {
       handleFileSelect(file);
     }
   }, [handleFileSelect]);
+
+  // Onboarding form handlers
+  const handleOnboardingDataChange = useCallback((data: any) => {
+    setOnboardingData(data);
+    
+    // Update header if displayname changes
+    if (data.displayname) {
+      setOnboardingArtistName(data.displayname);
+    }
+    
+    // Update uploaded file state
+    if (data.uploadedFile !== undefined) {
+      setUploadedFile(data.uploadedFile);
+    }
+  }, []);
+
+  const handleLivePreview = useCallback((field: string, value: any) => {
+    console.log('Live preview:', field, value);
+    
+    // Apply changes immediately to the page
+    switch(field) {
+      case 'displayname':
+        setOnboardingArtistName(value);
+        break;
+      case 'theme.fontFamily':
+        document.body.style.fontFamily = value;
+        // Also update header font
+        const headerElement = document.querySelector('h1');
+        if (headerElement) {
+          headerElement.style.fontFamily = value;
+        }
+        break;
+      case 'theme.primaryColor':
+        // Apply to entire page background
+        document.body.style.background = value;
+        document.documentElement.style.setProperty('--primary-color', value);
+        break;
+      case 'theme.accentColor':
+        // Apply to text and UI elements
+        document.documentElement.style.setProperty('--accent-color', value);
+        // Also update header text color
+        const headerElement2 = document.querySelector('h1');
+        if (headerElement2) {
+          headerElement2.style.color = value;
+        }
+        break;
+      case 'theme.gradientStart':
+      case 'theme.gradientMiddle':
+      case 'theme.gradientEnd':
+        // Update gradient when any gradient color changes
+        const currentTheme = onboardingData.theme || {};
+        const start = field === 'theme.gradientStart' ? value : currentTheme.gradientStart || '#FAF0E6';
+        const middle = field === 'theme.gradientMiddle' ? value : currentTheme.gradientMiddle || '#FDF5E6';
+        const end = field === 'theme.gradientEnd' ? value : currentTheme.gradientEnd || '#F5F5DC';
+        document.body.style.background = `linear-gradient(135deg, ${start} 0%, ${middle} 50%, ${end} 100%)`;
+        break;
+    }
+  }, [onboardingData]);
+
+  const handleSaveArtist = useCallback(async (artistData: any) => {
+    console.log('Saving artist:', artistData);
+    // TODO: Deploy contracts and save to Supabase
+    showToast('🎉 Artist page created successfully!', 'success');
+    setAppMode('normal');
+  }, [showToast]);
+
+  const handleExitOnboarding = useCallback(() => {
+    setAppMode('normal');
+    setOnboardingArtistName('WELCOME, ARTIST!');
+    setOnboardingData({});
+    setUploadedFile(null);
+    showToast('Onboarding cancelled', 'info');
+  }, [showToast]);
 
   const [swapFromAsset, setSwapFromAsset] = useState<string>("USD");
   const [swapToAsset, setSwapToAsset] = useState<string>("");
@@ -864,10 +941,20 @@ export default function HomePage() {
         <main className="app-main">
           <div className="text-center">
               <>
-                <h1 className="text-2xl md:text-3xl font-bold tracking-wider mb-4" style={{ 
-                  fontFamily: appMode === 'onboarding' ? 'Bungee, cursive' : artistConfig.theme.fontFamily, 
-                  color: appMode === 'onboarding' ? '#B8860B' : artistConfig.theme.accentColor 
-                }}>
+                <h1 
+                  className="text-2xl md:text-3xl font-bold tracking-wider mb-4 cursor-pointer hover:opacity-80 transition-opacity" 
+                  style={{ 
+                    fontFamily: appMode === 'onboarding' ? 'Bungee, cursive' : artistConfig.theme.fontFamily, 
+                    color: appMode === 'onboarding' ? '#B8860B' : artistConfig.theme.accentColor 
+                  }}
+                  onDoubleClick={() => {
+                    if (appMode === 'onboarding') {
+                      const input = document.querySelector('input[type="text"]') as HTMLInputElement;
+                      input?.focus();
+                    }
+                  }}
+                  title={appMode === 'onboarding' ? 'Double-click to edit' : ''}
+                >
                   {appMode === 'onboarding' ? onboardingArtistName : artistConfig.displayName}
                 </h1>
   
@@ -994,8 +1081,6 @@ export default function HomePage() {
             />
           )}
 
-
-
           <div className="action-section text-center mb-4">
             {!user && (
               <div id="login-prompts-container" className="login-prompts mt-6">
@@ -1091,6 +1176,16 @@ export default function HomePage() {
             )}
           </div>
 
+          {/* Onboarding chat appears above input - like purchase slider */}
+          {appMode === 'onboarding' && (
+            <OnboardingPanel
+              artistName={onboardingArtistName}
+              onArtistNameChange={setOnboardingArtistName}
+              onSave={handleSaveArtist}
+              onExit={handleExitOnboarding}
+            />
+          )}
+
           <div 
             className={`unified-input-container mock-ui-section p-4 border-t-2 border-gray-700 mt-8 ${!user && shakeActive ? 'shake' : ''}`}
           >
@@ -1104,7 +1199,11 @@ export default function HomePage() {
                 onChange={user ? handleSafewordInputChange : (e) => setEmail(e.target.value)}
                 placeholder={
                   user 
-                    ? "Type command, search, or safeword..." 
+                    ? (appMode === 'onboarding' 
+                        ? (uploadedFile 
+                            ? "Type your artist name or try: gold, emerald, sapphire..." 
+                            : "Type your artist name, upload content, or try colors: gold, emerald...")
+                        : "Type command, search, or safeword...")
                     : "Enter your email address to continue"
                 }
                 className="flex-grow p-3 border border-gray-600 rounded-l-lg bg-gray-900 bg-opacity-70 text-white focus:ring-accentColor focus:border-accentColor backdrop-blur-sm"

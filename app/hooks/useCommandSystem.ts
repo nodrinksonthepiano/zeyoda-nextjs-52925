@@ -26,7 +26,8 @@ export const useCommandSystem = (
   showToast: (message: string, type?: "error" | "success" | "info" | undefined) => void,
   setShowAssetsPanel: (show: boolean) => void,
   setAppMode?: (mode: 'normal' | 'onboarding') => void,
-  setOnboardingArtistName?: (name: string) => void
+  setOnboardingArtistName?: (name: string) => void,
+  currentAppMode?: 'normal' | 'onboarding'
 ): CommandSystemHookReturn => {
   const router = useRouter();
   
@@ -66,7 +67,7 @@ export const useCommandSystem = (
     handleSafewordAutosubmit();
   }, [handleSafewordAutosubmit]);
 
-  // Input change handler with auto-trigger for zeyoda
+  // Input change handler with auto-trigger for zeyoda and real-time editing
   const handleSafewordInputChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const newValue = e.target.value;
     setSafewordInput(newValue);
@@ -81,21 +82,48 @@ export const useCommandSystem = (
         showToast('🎉 Treasure discovered! Welcome to artist creation!', 'success');
         setSafewordInput(''); // Clear input after trigger
       }
+      return;
+    }
+    
+    // Real-time header editing during onboarding mode
+    if (currentAppMode === 'onboarding' && setOnboardingArtistName) {
+      const isCommand = ['artistocks', '/wallet', '/exit', '/close', '/portfolio'].includes(newValue.toLowerCase());
+      
+      if (!isCommand) {
+        if (newValue.length > 0) {
+          // Update header in real-time preserving exact case
+          setOnboardingArtistName(newValue);
+        } else {
+          // Reset to welcome message when input is empty
+          setOnboardingArtistName('WELCOME, ARTIST!');
+        }
+      }
     }
   }, [setAppMode, setOnboardingArtistName, showToast]);
 
   // Submit handler
   const handleSafewordSubmit = useCallback(() => {
-    const input = safewordInput.trim().toLowerCase();
+    const input = safewordInput.trim();
     if (!input) return;
 
-    if (input === 'zeyoda') {
+    // Handle onboarding input
+    if (currentAppMode === 'onboarding') {
+      // Send input to onboarding chat system
+      if ((window as any).handleOnboardingInput) {
+        (window as any).handleOnboardingInput(input);
+      }
+      setSafewordInput('');
+      return;
+    }
+
+    const lowerInput = input.toLowerCase();
+    if (lowerInput === 'zeyoda') {
       if (setAppMode) {
         setAppMode('onboarding');
         if (setOnboardingArtistName) {
           setOnboardingArtistName('WELCOME, ARTIST!');
         }
-        showToast('Onboarding mode activated! Start typing your artist name.', 'success');
+        showToast('🎉 Treasure discovered! Welcome to artist creation!', 'success');
       } else {
         router.push('/create');
       }
@@ -103,20 +131,20 @@ export const useCommandSystem = (
       return;
     }
     
-    if (input === '/wallet' || input === '/portfolio') {
+    if (lowerInput === '/wallet' || lowerInput === '/portfolio') {
       setShowAssetsPanel(true);
       setSafewordInput('');
       return;
     }
     
-    if (input === '/exit' || input === '/close') {
+    if (lowerInput === '/exit' || lowerInput === '/close') {
       setShowAssetsPanel(false);
       setSafewordInput('');
       return;
     }
 
     const correctSafeword = "artistocks";
-    if (input === correctSafeword) {
+    if (lowerInput === correctSafeword) {
       setSafewordVerified(true);
       const newUnlockedStates = { ...unlockedArtistStates, [artistIdFromUrl]: true };
       setUnlockedArtistStates(newUnlockedStates);
