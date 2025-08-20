@@ -57,7 +57,8 @@ const Wallet: React.FC<WalletProps> = ({
     magic,
     userAddress: userAddress || null,
     allArtistsConfig,
-    autoRefreshOnMount: showAssetsPanel
+    autoRefreshOnMount: showAssetsPanel,
+    suspendAutoRefresh: (window as any).onboardingMode || false
   });
 
   // Using strict BigInt conversion utility to prevent precision loss

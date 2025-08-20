@@ -161,9 +161,9 @@ const useArtistConfig = (): UseArtistConfigReturn => {
     fetchConfig();
   }, [artistId, isRegistryLoading, registry]); // Rerun when artist changes or registry loads
 
-  // Auto-refresh prices every 60 seconds
+  // Auto-refresh prices every 60 seconds (suspended during onboarding)
   useEffect(() => {
-    if (!allArtistsConfig) return;
+    if (!allArtistsConfig || (window as any).onboardingMode) return;
 
     const interval = setInterval(() => {
       console.log('⏰ Auto-refreshing prices...');

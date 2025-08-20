@@ -12,6 +12,7 @@ interface UseWalletBalancesProps {
   userAddress: string | null;
   allArtistsConfig: { [key: string]: ArtistConfig } | null;
   autoRefreshOnMount?: boolean;
+  suspendAutoRefresh?: boolean;
 }
 
 interface UseWalletBalancesReturn {
@@ -26,7 +27,8 @@ export const useWalletBalances = ({
   magic,
   userAddress,
   allArtistsConfig,
-  autoRefreshOnMount = true
+  autoRefreshOnMount = true,
+  suspendAutoRefresh = false
 }: UseWalletBalancesProps): UseWalletBalancesReturn => {
   const [balances, setBalances] = useState<UserTokenBalances>({});
   const [isLoading, setIsLoading] = useState(false);
@@ -121,16 +123,17 @@ export const useWalletBalances = ({
     }
   }, [fetchRealBalances, userAddress, magic, allArtistsConfig, autoRefreshOnMount]);
 
-  // Set up 30-second polling
+  // Set up 30-second polling (suspended during onboarding)
   useEffect(() => {
-    if (!userAddress || !magic || !allArtistsConfig) return;
+    if (!userAddress || !magic || !allArtistsConfig || suspendAutoRefresh) return;
 
     const interval = setInterval(() => {
+      console.log('⏰ Auto-refreshing wallet balances...');
       fetchRealBalances();
     }, 30000); // 30 seconds
 
     return () => clearInterval(interval);
-  }, [fetchRealBalances, userAddress, magic, allArtistsConfig]);
+  }, [fetchRealBalances, userAddress, magic, allArtistsConfig, suspendAutoRefresh]);
 
   // Listen for transaction success events
   useEffect(() => {

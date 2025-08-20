@@ -196,12 +196,19 @@ export default function HomePage() {
 
   const handleSaveArtist = useCallback(async (artistData: any) => {
     console.log('Saving artist:', artistData);
+    
+    // Clear onboarding mode flag
+    (window as any).onboardingMode = false;
+    
     // TODO: Deploy contracts and save to Supabase
     showToast('🎉 Artist page created successfully!', 'success');
     setAppMode('normal');
   }, [showToast]);
 
   const handleExitOnboarding = useCallback(() => {
+    // Clear onboarding mode flag
+    (window as any).onboardingMode = false;
+    
     setAppMode('normal');
     setOnboardingArtistName('WELCOME, ARTIST!');
     setOnboardingData({});
@@ -325,11 +332,15 @@ export default function HomePage() {
     checkOwnership();
   }, [user, artistConfig, magic]);
 
+  // Initialize onboarding theme once when entering onboarding mode
   useEffect(() => {
     if (appMode === 'onboarding') {
-      // Onboarding mode: light linen canvas background for better gold contrast
+      // Set global flag to suspend auto-refreshes
+      (window as any).onboardingMode = true;
+      
+      // Apply initial onboarding theme
       document.documentElement.style.setProperty('--primary-color', '#FAF0E6');
-      document.documentElement.style.setProperty('--accent-color', '#ffd700');
+      document.documentElement.style.setProperty('--accent-color', '#B8860B');
       document.documentElement.style.setProperty('--gradient-start', '#FAF0E6');
       document.documentElement.style.setProperty('--gradient-middle', '#FDF5E6');
       document.documentElement.style.setProperty('--gradient-end', '#F5F5DC');
@@ -337,28 +348,40 @@ export default function HomePage() {
       document.body.style.fontFamily = 'Bungee, cursive';
       console.log('🎨 Applied onboarding linen canvas background');
     } else {
-      // Normal mode: use artist theme
-      const { theme } = artistConfig || {};
-      if (theme) {
-        document.documentElement.style.setProperty('--primary-color', theme.primaryColor || '#000000');
-        if (theme.accentColor) {
-          document.documentElement.style.setProperty('--accent-color', theme.accentColor);
-          document.documentElement.style.setProperty(
-            '--accent-color-rgb',
-            theme.accentColor.match(/\d+/g)?.join(', ') ?? '0,0,0'
-          );
-        }
-        document.documentElement.style.setProperty('--gradient-start', theme.gradientStart || '#ffffff');
-        document.documentElement.style.setProperty('--gradient-middle', theme.gradientMiddle || '#cccccc');
-        document.documentElement.style.setProperty('--gradient-end', theme.gradientEnd || '#999999');
-        document.body.style.fontFamily = theme.fontFamily || 'Geist Sans, sans-serif';
-        
-        // Apply primary color to body background - NO MORE BLACK!
-        document.body.style.background = theme.primaryColor || '#000000';
-        console.log('🎨 Applied artist background color:', theme.primaryColor);
-      }
+      // Clear onboarding flag when exiting onboarding mode
+      (window as any).onboardingMode = false;
     }
-  }, [artistConfig, appMode]);
+  }, [appMode]); // ONLY depend on appMode, not artistConfig
+  
+  // Separate useEffect for normal theme application - NEVER runs during onboarding
+  useEffect(() => {
+    // COMPLETELY SKIP if in onboarding mode
+    if (appMode === 'onboarding') {
+      console.log('🚫 Skipping theme application - onboarding mode active');
+      return;
+    }
+    
+    // Normal mode: use artist theme
+    const { theme } = artistConfig || {};
+    if (theme) {
+      document.documentElement.style.setProperty('--primary-color', theme.primaryColor || '#000000');
+      if (theme.accentColor) {
+        document.documentElement.style.setProperty('--accent-color', theme.accentColor);
+        document.documentElement.style.setProperty(
+          '--accent-color-rgb',
+          theme.accentColor.match(/\d+/g)?.join(', ') ?? '0,0,0'
+        );
+      }
+      document.documentElement.style.setProperty('--gradient-start', theme.gradientStart || '#ffffff');
+      document.documentElement.style.setProperty('--gradient-middle', theme.gradientMiddle || '#cccccc');
+      document.documentElement.style.setProperty('--gradient-end', theme.gradientEnd || '#999999');
+      document.body.style.fontFamily = theme.fontFamily || 'Geist Sans, sans-serif';
+      
+      // Apply primary color to body background - NO MORE BLACK!
+      document.body.style.background = theme.primaryColor || '#000000';
+      console.log('🎨 Applied artist background color:', theme.primaryColor);
+    }
+  }, [artistConfig]); // Only when artistConfig changes, but NEVER during onboarding
 
   useEffect(() => {
     const dollarValueForTokens = parseFloat(swapFromAmount || '0');
