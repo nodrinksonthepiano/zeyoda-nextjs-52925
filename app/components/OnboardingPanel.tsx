@@ -278,30 +278,48 @@ const OnboardingPanel: React.FC<OnboardingPanelProps> = ({
           <div>
             <label className="block text-sm font-medium text-gray-300 mb-2">Download Price (USD)</label>
             
-            {/* Price display */}
+            {/* Editable price display */}
             <div className="mb-3 text-center">
-              <span className="text-xl font-bold text-white">${formData.downloadPrice.toFixed(2)}</span>
-              <span className="text-sm text-gray-400 ml-2">per download</span>
+              <div className="inline-flex items-center gap-1">
+                <span className="text-lg text-gray-300">$</span>
+                <input
+                  type="number"
+                  min="0.01"
+                  max="999999999"
+                  step="0.01"
+                  value={formData.downloadPrice}
+                  onChange={(e) => {
+                    const value = parseFloat(e.target.value) || 1.00;
+                    const clampedValue = Math.min(Math.max(value, 0.01), 999999999);
+                    handleFieldChange('downloadPrice', clampedValue);
+                  }}
+                  className="text-xl font-bold text-white bg-gray-700 bg-opacity-50 border border-gray-600 text-center w-32 focus:outline-none focus:border-yellow-500 focus:bg-gray-600 rounded px-2 py-1 hover:bg-gray-600 hover:bg-opacity-50 transition-all"
+                  style={{ fontFamily: 'inherit' }}
+                  placeholder="1.00"
+                />
+                <span className="text-sm text-gray-400 ml-1">per download</span>
+              </div>
+              <div className="text-xs text-gray-400 mt-1">Click to edit • Use slider for quick adjustment</div>
             </div>
             
-            {/* Simple slider (like swap slider) */}
+            {/* Extended slider (up to $10,000) */}
             <input
               type="range"
               min="1"
-              max="100"
+              max="10000"
               step="1"
-              value={formData.downloadPrice}
+              value={Math.min(formData.downloadPrice, 10000)}
               onChange={(e) => handleFieldChange('downloadPrice', parseFloat(e.target.value))}
               className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer slider"
             />
             
-            {/* Price range indicators */}
-            <div className="flex justify-between text-xs text-gray-500 mt-1">
+            {/* Extended price range indicators */}
+            <div className="flex justify-between text-xs text-gray-500 mt-2">
               <span>$1</span>
-              <span>$25</span>
-              <span>$50</span>
-              <span>$75</span>
               <span>$100</span>
+              <span>$1K</span>
+              <span>$5K</span>
+              <span>$10K+</span>
             </div>
           </div>
         </div>
