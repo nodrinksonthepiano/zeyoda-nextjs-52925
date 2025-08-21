@@ -5,6 +5,9 @@ interface OnboardingPanelProps {
   onArtistNameChange: (name: string) => void;
   onSave: (data: any) => void;
   onExit: () => void;
+  uploadedFile?: File | null;
+  filePreviewUrl?: string | null;
+  onUploadClick?: () => void;
 }
 
 const COLOR_PRESETS = {
@@ -28,13 +31,17 @@ const OnboardingPanel: React.FC<OnboardingPanelProps> = ({
   artistName,
   onArtistNameChange,
   onSave,
-  onExit
+  onExit,
+  uploadedFile,
+  filePreviewUrl,
+  onUploadClick
 }) => {
   const [formData, setFormData] = useState({
     displayname: '',
     tokenName: '',
     artworktitle: 'Featured Content #1',
     artworkyear: '2025',
+    downloadPrice: 1.00, // Price for ERC-1155 featured content downloads
     theme: {
       fontFamily: 'Bungee, cursive',
       primaryColor: '#FAF0E6',
@@ -46,6 +53,11 @@ const OnboardingPanel: React.FC<OnboardingPanelProps> = ({
   });
 
   const handleFieldChange = useCallback((field: string, value: any) => {
+    // Handle artist name change separately to avoid React render error
+    if (field === 'displayname') {
+      onArtistNameChange(value);
+    }
+    
     setFormData(prev => {
       const updated = { ...prev };
       
@@ -53,7 +65,6 @@ const OnboardingPanel: React.FC<OnboardingPanelProps> = ({
         updated.displayname = value;
         // Auto-generate token name
         updated.tokenName = value.replace(/[^a-zA-Z0-9]/g, '').toUpperCase().substring(0, 8);
-        onArtistNameChange(value);
       } else if (field.startsWith('theme.')) {
         const themeField = field.replace('theme.', '');
         updated.theme = { ...updated.theme, [themeField]: value };
@@ -97,10 +108,17 @@ const OnboardingPanel: React.FC<OnboardingPanelProps> = ({
     const completeData = {
       ...formData,
       id: formData.tokenName.toLowerCase(),
+      name: formData.tokenName, // Required for Supabase
       videosrc: 'assets/placeholder.mp4', // Will be updated with actual upload
       orbitaltokens: [],
-      paused: false
+      paused: false,
+      // Auto-generate missing fields
+      contract: null, // Will be set after deployment
+      swap_address: null, // Will be set after deployment  
+      download_address: null // Will be set after deployment
     };
+    
+    console.log('Complete artist data for deployment:', completeData);
     onSave(completeData);
   }, [formData, onSave]);
 
@@ -153,7 +171,7 @@ const OnboardingPanel: React.FC<OnboardingPanelProps> = ({
               maxLength={8}
               className="w-full p-3 bg-gray-700 text-white rounded-lg border border-gray-600 focus:border-yellow-500 focus:ring-1 focus:ring-yellow-500"
             />
-            <div className="text-xs text-gray-400 mt-1">Max 8 characters</div>
+            <div className="text-xs text-gray-400 mt-1">Max 8 characters • ERC-20 token price set by market</div>
           </div>
         </div>
       </div>
@@ -246,14 +264,106 @@ const OnboardingPanel: React.FC<OnboardingPanelProps> = ({
       {/* Content Section */}
       <div className="mb-6">
         <h3 className="text-lg font-semibold text-white mb-3">Featured Content</h3>
-        <input
-          type="text"
-          value={formData.artworktitle}
-          onChange={(e) => handleFieldChange('artworktitle', e.target.value)}
-          placeholder="e.g., Cosmic Dreams #1"
-          className="w-full p-3 bg-gray-700 text-white rounded-lg border border-gray-600 focus:border-yellow-500 focus:ring-1 focus:ring-yellow-500"
-        />
-        <div className="text-xs text-gray-400 mt-1">Upload content using the drag & drop zone above</div>
+        <div className="grid grid-cols-2 gap-4 mb-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-300 mb-2">Content Title</label>
+            <input
+              type="text"
+              value={formData.artworktitle}
+              onChange={(e) => handleFieldChange('artworktitle', e.target.value)}
+              placeholder="e.g., Cosmic Dreams #1"
+              className="w-full p-3 bg-gray-700 text-white rounded-lg border border-gray-600 focus:border-yellow-500 focus:ring-1 focus:ring-yellow-500"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-300 mb-2">Download Price (USD)</label>
+            
+            {/* Price display */}
+            <div className="mb-3 text-center">
+              <span className="text-xl font-bold text-white">${formData.downloadPrice.toFixed(2)}</span>
+              <span className="text-sm text-gray-400 ml-2">per download</span>
+            </div>
+            
+            {/* Simple slider (like swap slider) */}
+            <input
+              type="range"
+              min="1"
+              max="100"
+              step="1"
+              value={formData.downloadPrice}
+              onChange={(e) => handleFieldChange('downloadPrice', parseFloat(e.target.value))}
+              className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer slider"
+            />
+            
+            {/* Price range indicators */}
+            <div className="flex justify-between text-xs text-gray-500 mt-1">
+              <span>$1</span>
+              <span>$25</span>
+              <span>$50</span>
+              <span>$75</span>
+              <span>$100</span>
+            </div>
+          </div>
+        </div>
+        
+        {/* Small upload preview in form */}
+        <div className="mb-4">
+          <label className="block text-sm font-medium text-gray-300 mb-2">Upload Preview</label>
+          {uploadedFile && filePreviewUrl ? (
+            <div className="flex items-center gap-3 p-3 bg-gray-700 rounded-lg">
+              {/* Small thumbnail */}
+              <div className="w-16 h-16 rounded-lg overflow-hidden border border-gray-500 flex-shrink-0">
+                {uploadedFile.type.startsWith('image/') ? (
+                  <img 
+                    src={filePreviewUrl} 
+                    alt={uploadedFile.name}
+                    className="w-full h-full object-cover"
+                  />
+                ) : uploadedFile.type.startsWith('video/') ? (
+                  <video 
+                    src={filePreviewUrl} 
+                    className="w-full h-full object-cover"
+                    muted
+                    preload="metadata"
+                  />
+                ) : (
+                  <div className="w-full h-full bg-gray-600 flex items-center justify-center">
+                    <span className="text-2xl">
+                      {uploadedFile.type.startsWith('audio/') ? '🎵' : '📁'}
+                    </span>
+                  </div>
+                )}
+              </div>
+              
+              {/* File info */}
+              <div className="flex-1">
+                <div className="text-white text-sm font-medium truncate">{uploadedFile.name}</div>
+                <div className="text-gray-400 text-xs">
+                  {(uploadedFile.size / 1024 / 1024).toFixed(1)} MB • {uploadedFile.type}
+                </div>
+              </div>
+              
+              {/* Change button */}
+              <button
+                onClick={onUploadClick}
+                className="px-3 py-1 bg-blue-600 text-white rounded text-xs hover:bg-blue-700"
+              >
+                Change
+              </button>
+            </div>
+          ) : (
+            <div 
+              onClick={onUploadClick}
+              className="border-2 border-dashed border-gray-600 rounded-lg p-4 text-center cursor-pointer hover:border-gray-500 transition-colors"
+            >
+              <div className="text-gray-400 text-sm">Click to upload or use drag & drop above</div>
+            </div>
+          )}
+        </div>
+        
+        <div className="text-xs text-gray-400">
+          Upload content using drag & drop above or form upload • Download price is for ERC-1155 collectibles
+        </div>
       </div>
 
       {/* Action Buttons */}
@@ -274,9 +384,14 @@ const OnboardingPanel: React.FC<OnboardingPanelProps> = ({
       </div>
 
       {/* Progress Indicator */}
+      {/* Progress Indicator */}
       <div className="mt-4 text-center">
         <div className="text-xs text-gray-400">
-          {formData.displayname && formData.tokenName ? 'Ready to launch!' : 'Fill in artist name and token symbol'}
+          {formData.displayname && formData.tokenName ? (
+            <span className="text-green-400">✓ Ready to launch! Download price: ${formData.downloadPrice}</span>
+          ) : (
+            'Fill in artist name and token symbol'
+          )}
         </div>
       </div>
     </div>

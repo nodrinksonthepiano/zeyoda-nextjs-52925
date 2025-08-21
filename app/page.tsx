@@ -105,11 +105,31 @@ export default function HomePage() {
   const isOrbitAnimationPaused = useRef(false);
 
   // File upload handlers
+  const [filePreviewUrl, setFilePreviewUrl] = useState<string | null>(null);
+  
   const handleFileSelect = useCallback((file: File) => {
+    // Clean up previous preview URL
+    if (filePreviewUrl) {
+      URL.revokeObjectURL(filePreviewUrl);
+    }
+    
+    // Create new preview URL
+    const previewUrl = URL.createObjectURL(file);
+    setFilePreviewUrl(previewUrl);
+    
     setUploadedFile(file);
     setOnboardingData(prev => ({ ...prev, uploadedFile: file }));
     console.log('File selected:', file.name, file.type, file.size);
-  }, []);
+  }, [filePreviewUrl]);
+  
+  // Cleanup preview URL when component unmounts
+  useEffect(() => {
+    return () => {
+      if (filePreviewUrl) {
+        URL.revokeObjectURL(filePreviewUrl);
+      }
+    };
+  }, [filePreviewUrl]);
 
   const handleUploadClick = useCallback(() => {
     fileInputRef.current?.click();
@@ -999,16 +1019,35 @@ export default function HomePage() {
                         onClick={handleUploadClick}
                       >
                         {uploadedFile ? (
-                          // Show uploaded file info
+                          // Show uploaded file with preview
                           <>
-                            <div className="text-4xl mb-4">🎉</div>
-                            <div className="text-lg font-bold mb-2" style={{ color: '#B8860B', fontFamily: 'Bungee, cursive' }}>
-                              FILE UPLOADED!
+                            {/* File preview */}
+                            <div className="mb-4">
+                              {filePreviewUrl && uploadedFile.type.startsWith('image/') ? (
+                                <img 
+                                  src={filePreviewUrl} 
+                                  alt={uploadedFile.name}
+                                  className="max-w-full max-h-48 rounded-lg object-cover"
+                                />
+                              ) : filePreviewUrl && uploadedFile.type.startsWith('video/') ? (
+                                <video 
+                                  src={filePreviewUrl} 
+                                  className="max-w-full max-h-48 rounded-lg object-cover"
+                                  controls
+                                  muted
+                                  preload="metadata"
+                                />
+                              ) : (
+                                <div className="text-6xl mb-2">
+                                  {uploadedFile.type.startsWith('audio/') ? '🎵' : '📁'}
+                                </div>
+                              )}
                             </div>
-                            <div className="text-sm mb-2" style={{ color: '#B8860B' }}>
+                            
+                            <div className="text-lg font-bold mb-2" style={{ color: '#B8860B', fontFamily: 'Bungee, cursive' }}>
                               {uploadedFile.name}
                             </div>
-                            <div className="text-xs opacity-60" style={{ color: '#B8860B' }}>
+                            <div className="text-sm mb-2" style={{ color: '#B8860B' }}>
                               {(uploadedFile.size / 1024 / 1024).toFixed(1)} MB • {uploadedFile.type || 'Unknown type'}
                             </div>
                             <button 
@@ -1016,6 +1055,10 @@ export default function HomePage() {
                               style={{ backgroundColor: '#B8860B' }}
                               onClick={(e) => {
                                 e.stopPropagation();
+                                if (filePreviewUrl) {
+                                  URL.revokeObjectURL(filePreviewUrl);
+                                }
+                                setFilePreviewUrl(null);
                                 setUploadedFile(null);
                               }}
                             >
@@ -1206,6 +1249,9 @@ export default function HomePage() {
               onArtistNameChange={setOnboardingArtistName}
               onSave={handleSaveArtist}
               onExit={handleExitOnboarding}
+              uploadedFile={uploadedFile}
+              filePreviewUrl={filePreviewUrl}
+              onUploadClick={handleUploadClick}
             />
           )}
 
