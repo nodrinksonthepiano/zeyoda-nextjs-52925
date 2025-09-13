@@ -43,6 +43,7 @@ const Wallet: React.FC<WalletProps> = ({
 }) => {
   const [downloadingAssets, setDownloadingAssets] = useState<Set<string>>(new Set());
   const [assetMetadata, setAssetMetadata] = useState<{ [key: string]: AssetMetadata }>({});
+  const [showUsdBalance, setShowUsdBalance] = useState<boolean>(true);
   const { showToast } = useToast();
   const { usdBalance, isLoading: usdLoading } = useUsdBalance();
 
@@ -317,25 +318,66 @@ const Wallet: React.FC<WalletProps> = ({
           })
         )}
 
+        {/* ETH Balance Display (as USD) */}
+        {combinedBalances['ETH'] && combinedBalances['ETH'] > BigInt(0) && (
+          <div className="mt-4 bg-blue-900 bg-opacity-50 rounded-lg p-3 border border-blue-400 border-opacity-50">
+            <div className="flex justify-between items-start">
+              <div className="flex flex-col flex-grow">
+                <div className="text-blue-300 text-xs mb-1">⚡ Wallet Balance</div>
+                <div className="text-white font-bold text-lg">
+                  {!showUsdBalance ? (
+                    <span className="text-gray-400">••••••</span>
+                  ) : (
+                    `$${(parseFloat(ethers.formatEther(combinedBalances['ETH'])) * 2500).toFixed(2)}`
+                  )}
+                </div>
+                {showUsdBalance && (
+                  <div className="text-blue-200 text-xs mt-1">
+                    {`${parseFloat(ethers.formatEther(combinedBalances['ETH'])).toFixed(4)} ETH • Base Sepolia`}
+                  </div>
+                )}
+              </div>
+              <button
+                onClick={() => setShowUsdBalance(!showUsdBalance)}
+                className="ml-2 p-1 text-blue-300 hover:text-white transition-colors duration-200 text-lg"
+                title={showUsdBalance ? "Hide balance" : "Show balance"}
+              >
+                {showUsdBalance ? '🔓' : '🔒'}
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* USD Balance Display */}
         {(usdBalance > 0 || usdLoading) && (
           <div className="mt-4 bg-green-900 bg-opacity-50 rounded-lg p-3 border border-green-400 border-opacity-50">
-            <div className="flex flex-col">
-              <div className="text-green-300 text-xs mb-1">USD Balance</div>
-              <div className="text-white font-bold text-lg">
-                {usdLoading ? (
-                  <span className="text-gray-300">Loading...</span>
-                ) : usdBalance < 0.01 && usdBalance > 0 ? (
-                  '< $0.01'
-                ) : (
-                  `$${usdBalance.toFixed(2)}`
+            <div className="flex justify-between items-start">
+              <div className="flex flex-col flex-grow">
+                <div className="text-green-300 text-xs mb-1">💰 Treasure Balance</div>
+                <div className="text-white font-bold text-lg">
+                  {usdLoading ? (
+                    <span className="text-gray-300">Loading...</span>
+                  ) : !showUsdBalance ? (
+                    <span className="text-gray-400">••••••</span>
+                  ) : usdBalance < 0.01 && usdBalance > 0 ? (
+                    '< $0.01'
+                  ) : (
+                    `$${usdBalance.toFixed(2)}`
+                  )}
+                </div>
+                {!usdLoading && usdBalance > 0 && showUsdBalance && (
+                  <div className="text-green-200 text-xs mt-1">
+                    Available for withdrawal
+                  </div>
                 )}
               </div>
-              {!usdLoading && usdBalance > 0 && (
-                <div className="text-green-200 text-xs mt-1">
-                  💰 Available for withdrawal
-                </div>
-              )}
+              <button
+                onClick={() => setShowUsdBalance(!showUsdBalance)}
+                className="ml-2 p-1 text-green-300 hover:text-white transition-colors duration-200 text-lg"
+                title={showUsdBalance ? "Hide balance" : "Show balance"}
+              >
+                {showUsdBalance ? '🔓' : '🔒'}
+              </button>
             </div>
           </div>
         )}

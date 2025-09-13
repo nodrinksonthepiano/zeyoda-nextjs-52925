@@ -5,6 +5,7 @@ import { ArtistConfig } from '../../types/artist-types';
 
 interface UserTokenBalances {
   [tokenSymbol: string]: bigint;
+  ETH?: bigint; // Add ETH balance
 }
 
 interface UseWalletBalancesProps {
@@ -52,6 +53,16 @@ export const useWalletBalances = ({
     
     try {
       const provider = new ethers.BrowserProvider(magic.rpcProvider as any);
+      
+      // Fetch ETH balance first
+      try {
+        const ethBalance = await provider.getBalance(userAddress);
+        freshBalances['ETH'] = ethBalance;
+        console.debug(`[BAL-DEBUG] ETH balance:`, ethers.formatEther(ethBalance));
+      } catch (error: any) {
+        console.warn('[BAL-TRACE] Error fetching ETH balance:', error.message);
+        freshBalances['ETH'] = BigInt(0);
+      }
       
       // Use the contract addresses from the registry
       for (const [artistId, registryEntry] of Object.entries(ARTIST_REGISTRY)) {

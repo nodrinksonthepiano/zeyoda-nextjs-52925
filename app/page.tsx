@@ -48,6 +48,12 @@ export default function HomePage() {
   const { magic, user, isReady, isLoading: authLoading, error: authError } = useWallet();
   const { showToast } = useToast();
   const [email, setEmail] = useState('');
+  
+  // Whitelist and treasure hunt state
+  const [showClueInput, setShowClueInput] = useState(false);
+  const [clueMessage, setClueMessage] = useState('');
+  const [isCheckingWhitelist, setIsCheckingWhitelist] = useState(false);
+  const [treasureMessage, setTreasureMessage] = useState('');
 
   // Onboarding mode state
   const [appMode, setAppMode] = useState<'normal' | 'onboarding'>('normal');
@@ -890,25 +896,107 @@ export default function HomePage() {
 
 
 
-  async function login() {
-    if (!magic) return;
+  // Check whitelist function
+  async function checkWhitelist(emailToCheck: string, clue?: string) {
     try {
+      const response = await fetch('/api/checkWhitelist', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: emailToCheck, clue })
+      });
+      return await response.json();
+    } catch (error) {
+      console.error('Whitelist check failed:', error);
+      return { isWhitelisted: false, error: 'Network error' };
+    }
+  }
+
+  // Handle clue submission
+  async function submitClue() {
+    if (!clueMessage.trim()) {
+      showToast('Please enter a clue message', 'error');
+      return;
+    }
+
+    setIsCheckingWhitelist(true);
+    const result = await checkWhitelist(email, clueMessage);
+    
+    setTreasureMessage('Thank you! Keep looking out for treasure... 🏴‍☠️');
+    setShowClueInput(false);
+    setClueMessage('');
+    setIsCheckingWhitelist(false);
+    
+    // Clear treasure message after 3 seconds
+    setTimeout(() => {
+      setTreasureMessage('');
+    }, 3000);
+  }
+
+  async function login() {
+    if (!magic || !email) return;
+    
+    setIsCheckingWhitelist(true);
+    
+    try {
+      console.log("🔍 Checking whitelist for:", email);
+      
+      // 1. Check whitelist first
+      const whitelistResult = await checkWhitelist(email);
+      
+      if (!whitelistResult.isWhitelisted) {
+        console.log("❌ Email not whitelisted, showing treasure hunt");
+        setShowClueInput(true);
+        setIsCheckingWhitelist(false);
+        showToast('You appear to be rare treasure! We need to dig you up...', 'info');
+        return;
+      }
+      
+      console.log("✅ Email whitelisted, proceeding with Magic.link");
+      
+      // 2. Proceed with Magic.link if whitelisted
       console.log("🔐 Starting Magic.link login process...");
       
       const didToken = await magic.auth.loginWithEmailOTP({ email });
       const meta = await magic.user.getInfo();
       if (meta.publicAddress && meta.email) {
         localStorage.setItem('zeyodaUserEmail', meta.email);
+        
+        // Auto-fund new wallets
+        try {
+          console.log('🏴‍☠️ Checking if wallet needs treasure...');
+          const fundingResponse = await fetch('/api/fundWallet', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ 
+              userAddress: meta.publicAddress, 
+              email: meta.email 
+            })
+          });
+          
+          const fundingResult = await fundingResponse.json();
+          
+          if (fundingResult.success) {
+            showToast(fundingResult.treasureMessage, 'success');
+          } else if (fundingResult.treasureMessage) {
+            showToast(fundingResult.treasureMessage, 'info');
+          }
+        } catch (fundingError) {
+          console.warn('⚠️ Auto-funding failed:', fundingError);
+          // Don't block login if funding fails
+        }
+        
         showToast('Logged in as ' + meta.publicAddress, 'success');
         
         // Trigger a simple refresh after a short delay to let Magic.link settle
         setTimeout(() => {
           window.location.reload();
-        }, 1000);
+        }, 2000); // Slightly longer delay for funding
       }
     } catch (error) {
-      console.error("magic login failed", error);
+      console.error("Login failed:", error);
       showToast('Login failed. Please try again.', 'error');
+    } finally {
+      setIsCheckingWhitelist(false);
     }
   }
 
@@ -1430,25 +1518,43 @@ export default function HomePage() {
             {user && (
               <h3 className="text-xl font-semibold mb-3 text-center">Chat / Command</h3>
             )}
-            <div className="flex items-center max-w-xl mx-auto">
-              <input
-                type={user ? "text" : "email"}
-                value={user ? safewordInput : email}
-                onChange={user ? handleSafewordInputChange : (e) => setEmail(e.target.value)}
-                placeholder={
-                  user 
-                    ? (appMode === 'onboarding' 
-                        ? (uploadedFile 
-                            ? "Type your artist name or try: gold, emerald, sapphire..." 
-                            : "Type your artist name, upload content, or try colors: gold, emerald...")
-                        : "Type command, search, or safeword...")
-                    : "Enter your email address to continue"
-                }
+            <div className="flex flex-col items-center max-w-xl mx-auto gap-3">
+              {/* Treasure message */}
+              {treasureMessage && (
+                <div className="text-center text-gold-400 font-medium animate-pulse">
+                  {treasureMessage}
+                </div>
+              )}
+              
+              {/* Main input */}
+              <div className="flex items-center w-full">
+                <input
+                  type={user ? "text" : "email"}
+                  value={showClueInput ? clueMessage : (user ? safewordInput : email)}
+                  onChange={showClueInput 
+                    ? (e) => setClueMessage(e.target.value)
+                    : (user ? handleSafewordInputChange : (e) => setEmail(e.target.value))
+                  }
+                  placeholder={
+                    user 
+                      ? (appMode === 'onboarding' 
+                          ? (uploadedFile 
+                              ? "Type your artist name or try: gold, emerald, sapphire..." 
+                              : "Type your artist name, upload content, or try colors: gold, emerald...")
+                          : "Type command, search, or safeword...")
+                      : showClueInput 
+                        ? "Who sent you? Enter a clue here..." 
+                        : "Enter your email address to continue"
+                  }
                 className="flex-grow p-3 border border-gray-600 rounded-l-lg bg-gray-900 bg-opacity-70 text-white focus:ring-accentColor focus:border-accentColor backdrop-blur-sm"
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') {
                     if (!user) {
-                      login();
+                      if (showClueInput) {
+                        submitClue();
+                      } else {
+                        login();
+                      }
                     } else {
                       handleSafewordSubmit();
                     }
@@ -1459,15 +1565,28 @@ export default function HomePage() {
               <button
                 onClick={() => {
                   if (!user) {
-                    login();
+                    if (showClueInput) {
+                      submitClue();
+                    } else {
+                      login();
+                    }
                   } else {
                     handleSafewordSubmit();
                   }
                 }}
                 className="p-3 bg-accentColor text-white rounded-r-lg hover:bg-opacity-80 focus:outline-none focus:ring-2 focus:ring-accentColor focus:ring-opacity-50"
+                disabled={isCheckingWhitelist}
               >
-                {user ? "Send" : "Continue"}
+                {isCheckingWhitelist 
+                  ? "🔍" 
+                  : user 
+                    ? "Send" 
+                    : showClueInput 
+                      ? "Submit Clue 🏴‍☠️" 
+                      : "Continue"
+                }
               </button>
+              </div>
             </div>
           </div>
         </main>
