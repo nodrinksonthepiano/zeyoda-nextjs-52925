@@ -25,6 +25,9 @@ import {
 import { useCommandSystem } from './hooks/useCommandSystem';
 import { clearAllSafewordStorage } from './utils/safewordStorage';
 import { useOrbitTokens } from './hooks/useOrbitTokens';
+import { supabase } from './utils/supabaseClient';
+import ArtistTokenArtifact from '../artifacts/contracts/ArtistToken.sol/ArtistToken.json';
+import ArtistDownloadsArtifact from '../artifacts/contracts/ArtistDownloads.sol/ArtistDownloads.json';
 
 interface OrbitalToken {
   name: string; 
@@ -215,15 +218,181 @@ export default function HomePage() {
   }, [onboardingData]);
 
   const handleSaveArtist = useCallback(async (artistData: any) => {
-    console.log('Saving artist:', artistData);
+    console.log('🚀 Starting complete artist deployment...', artistData);
     
-    // Clear onboarding mode flag
-    (window as any).onboardingMode = false;
+    try {
+      showToast('⚡ Deploying contracts and setting up artist...', 'info');
+      
+      // STEP 1: Deploy ArtistToken.sol with 10B distribution
+      console.log('📝 Step 1: Deploying ArtistToken contract...');
+      const tokenDeployment = await deployArtistToken(artistData);
+      
+      // STEP 2: Deploy ArtistDownloads.sol for ERC-1155s
+      console.log('📝 Step 2: Deploying ArtistDownloads contract...');
+      const downloadsDeployment = await deployArtistDownloads(artistData, tokenDeployment.address);
+      
+      // STEP 3: Create AMM liquidity pool
+      console.log('📝 Step 3: Creating AMM liquidity pool...');
+      const poolAddress = await createLiquidityPool(tokenDeployment.address, artistData);
+      
+      // STEP 4: Upload featured content to storage
+      console.log('📝 Step 4: Uploading featured content...');
+      const contentUrl = await uploadFeaturedContent(uploadedFile, artistData.id);
+      
+      // STEP 5: Save everything to Supabase (using service role to bypass RLS)
+      console.log('📝 Step 5: Saving to Supabase...');
+      await saveArtistToDatabase({
+        ...artistData,
+        tokenAddress: tokenDeployment.address,
+        downloadsAddress: downloadsDeployment.address,
+        poolAddress: poolAddress,
+        contentUrl: contentUrl
+      });
+      
+      console.log('🎉 Artist deployment completed successfully!');
+      showToast(`🎉 ${artistData.name} is now live! Redirecting to artist page...`, 'success');
+      
+      // Redirect to new artist page
+      setTimeout(() => {
+        window.location.href = `/?artist=${artistData.id}`;
+      }, 2000);
+      
+    } catch (error: any) {
+      console.error('❌ Deployment failed:', error);
+      showToast(`Failed to deploy artist: ${error.message}`, 'error');
+      return;
+    }
+  }, [showToast, uploadedFile]);
+
+  // DEPLOYMENT HELPER FUNCTIONS
+  const deployArtistToken = async (artistData: any) => {
+    if (!magic) throw new Error('Magic not initialized');
     
-    // TODO: Deploy contracts and save to Supabase
-    showToast('🎉 Artist page created successfully!', 'success');
-    setAppMode('normal');
-  }, [showToast]);
+    const provider = new ethers.BrowserProvider(magic.rpcProvider as any);
+    const signer = await provider.getSigner();
+    
+    const factory = new ethers.ContractFactory(
+      ArtistTokenArtifact.abi,
+      ArtistTokenArtifact.bytecode,
+      signer
+    );
+    
+    const protocolVault = "0x615258a5263DBEe0DDEED3166ddC1f442D937eB3";
+    const contract = await factory.deploy(
+      artistData.tokenName,
+      artistData.tokenName.replace(/\s+/g, '').toUpperCase(),
+      await signer.getAddress(), // Artist wallet
+      protocolVault
+    );
+    
+    await contract.waitForDeployment();
+    const address = await contract.getAddress();
+    
+    // Execute initial mint (10B distribution) - using contract interface
+    const artistToken = new ethers.Contract(address, ArtistTokenArtifact.abi, signer);
+    const mintTx = await artistToken.initialMint();
+    await mintTx.wait();
+    
+    console.log('✅ ArtistToken deployed:', address);
+    return { address, contract };
+  };
+  
+  const deployArtistDownloads = async (artistData: any, tokenAddress: string) => {
+    if (!magic) throw new Error('Magic not initialized');
+    
+    const provider = new ethers.BrowserProvider(magic.rpcProvider as any);
+    const signer = await provider.getSigner();
+    
+    const factory = new ethers.ContractFactory(
+      ArtistDownloadsArtifact.abi,
+      ArtistDownloadsArtifact.bytecode,
+      signer
+    );
+    
+    const contract = await factory.deploy(
+      `${artistData.name} Downloads`,
+      artistData.id,
+      tokenAddress
+    );
+    
+    await contract.waitForDeployment();
+    const address = await contract.getAddress();
+    
+    console.log('✅ ArtistDownloads deployed:', address);
+    return { address, contract };
+  };
+  
+  const createLiquidityPool = async (tokenAddress: string, artistData: any) => {
+    // For now, return placeholder - we'll implement AMM pool creation later
+    console.log('⚠️ AMM pool creation placeholder');
+    return '0x0000000000000000000000000000000000000000';
+  };
+  
+  const uploadFeaturedContent = async (file: File | null, artistId: string) => {
+    if (!file) return '/assets/placeholder.mp4';
+    
+    // For now, return placeholder - we'll implement proper file upload later
+    console.log('⚠️ File upload placeholder');
+    return `/assets/${artistId}-featured.${file.name.split('.').pop()}`;
+  };
+  
+  const saveArtistToDatabase = async (artistData: any) => {
+    // Use service role to bypass RLS - call our API route instead
+    console.log('💾 Saving to database via API route...');
+    
+    // Get signer for treasury wallet
+    const provider = new ethers.BrowserProvider(magic.rpcProvider as any);
+    const signer = await provider.getSigner();
+    
+    // Prepare complete artist data for API
+    const completeArtistData = {
+      // Basic info
+      id: artistData.id,
+      name: artistData.name,
+      displayname: artistData.displayname,
+      artworktitle: artistData.artworktitle,
+      artworkyear: artistData.artworkyear,
+      
+      // Contract addresses
+      tokenAddress: artistData.tokenAddress,
+      downloadsAddress: artistData.downloadsAddress,
+      poolAddress: artistData.poolAddress,
+      contentUrl: artistData.contentUrl,
+      
+      // Theme data
+      primaryColor: artistData.theme?.primaryColor,
+      accentColor: artistData.theme?.accentColor,
+      gradientStart: artistData.theme?.gradientStart,
+      gradientMiddle: artistData.theme?.gradientMiddle,
+      gradientEnd: artistData.theme?.gradientEnd,
+      fontFamily: artistData.theme?.fontFamily,
+      
+      // Treasury wallet
+      treasuryWallet: await signer.getAddress(),
+      
+      // Download price
+      downloadPrice: artistData.downloadPrice || 5
+    };
+    
+    // Call API route to save with service role permissions
+    const response = await fetch('/api/createArtist', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(completeArtistData),
+    });
+    
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(`API Error: ${errorData.error || 'Unknown error'}`);
+    }
+    
+    const result = await response.json();
+    console.log('✅ Artist saved via API:', result);
+    
+    console.log('✅ Artist saved to database');
+  };
 
   const handleExitOnboarding = useCallback(() => {
     // Clear onboarding mode flag

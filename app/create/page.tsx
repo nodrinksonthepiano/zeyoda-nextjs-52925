@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { ethers } from 'ethers';
 import { useWallet } from '../components/MagicProvider'; // Adjust path if needed
-import ArtistockArtifact from '../../artifacts/contracts/Artistock.sol/Artistock.json';
+import ArtistTokenArtifact from '../../artifacts/contracts/ArtistToken.sol/ArtistToken.json';
 import { supabase } from '../utils/supabaseClient';
 
 export default function CreateProfilePage() {
@@ -37,24 +37,26 @@ export default function CreateProfilePage() {
       const signer = await browserProvider.getSigner();
       const ownerAddress = await signer.getAddress();
 
-      const factory = new ethers.ContractFactory(ArtistockArtifact.abi, ArtistockArtifact.bytecode, signer);
+      const factory = new ethers.ContractFactory(ArtistTokenArtifact.abi, ArtistTokenArtifact.bytecode, signer);
       
-      console.log(`Deploying contract for ${tokenName} (${tokenSymbol}) with owner ${ownerAddress}...`);
+      console.log(`Deploying ArtistToken for ${tokenName} (${tokenSymbol}) with artist ${ownerAddress}...`);
       
-      const contract = await factory.deploy(tokenName, tokenSymbol, ownerAddress);
+      // Deploy with artist wallet and protocol vault addresses
+      const protocolVault = "0x615258a5263DBEe0DDEED3166ddC1f442D937eB3"; // Protocol vault
+      const contract = await factory.deploy(tokenName, tokenSymbol, ownerAddress, protocolVault);
       await contract.waitForDeployment();
       
       const contractAddress = await contract.getAddress();
       console.log("Contract deployed successfully at:", contractAddress);
 
-      // Create a new Contract instance with the ABI to get correct typings for the mint function
-      const artistock = new ethers.Contract(contractAddress, ArtistockArtifact.abi, signer);
+      // Create ArtistToken instance and mint 10B supply with automatic distribution
+      const artistToken = new ethers.Contract(contractAddress, ArtistTokenArtifact.abi, signer);
 
-      console.log(`Minting initial supply of 1,000,000,000 ${tokenSymbol} to ${ownerAddress}...`);
-      const initialSupply = ethers.parseUnits("1000000000", 18); // 1 billion tokens
-      const mintTx = await artistock.mint(ownerAddress, initialSupply);
-      await mintTx.wait(); // Wait for the minting transaction to be confirmed
-      console.log("Initial supply minted successfully. Tx:", mintTx.hash);
+      console.log(`Minting 10B ${tokenSymbol} with automatic distribution...`);
+      const mintTx = await artistToken.initialMint();
+      await mintTx.wait();
+      console.log("10B supply minted and distributed. Tx:", mintTx.hash);
+      console.log("Distribution: 1B to artist, 100M to protocol (LP seeding), 8.9B to vault");
 
       // 1. Create the full artist config object.
       const artistId = tokenSymbol.toLowerCase();
