@@ -260,7 +260,10 @@ const Wallet: React.FC<WalletProps> = ({
             const downloads = allDownloads[artistId] || [];
             
             return (
-              <div key={artistId} className="mb-3 bg-black bg-opacity-30 rounded-lg p-3 border border-purple-400 border-opacity-50">
+              <div key={artistId} className="mb-3 rounded-lg p-3 border border-opacity-50" style={{ 
+                backgroundColor: `${config.theme.primaryColor}80`, // 50% opacity
+                borderColor: config.theme.accentColor 
+              }}>
                 <div className="flex flex-col">
                   {/* Artist Name */}
                   <h3 className="text-lg font-bold text-white mb-2" style={{ color: config.theme.accentColor }}>
@@ -269,8 +272,10 @@ const Wallet: React.FC<WalletProps> = ({
                   
                   {/* Token Balance */}
                   {tokenBalance && tokenBalance > BigInt(0) && (
-                    <div className="flex flex-col mb-2 bg-purple-900 bg-opacity-50 rounded p-2">
-                      <div className="text-purple-300 text-xs mb-1">
+                    <div className="flex flex-col mb-2 rounded p-2" style={{ 
+                      backgroundColor: `${config.theme.primaryColor}CC` // 80% opacity for contrast
+                    }}>
+                      <div className="text-xs mb-1" style={{ color: config.theme.accentColor }}>
                         {tokenName}
                       </div>
                       <div className="text-white font-medium text-sm">

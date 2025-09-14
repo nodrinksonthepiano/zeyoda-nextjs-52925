@@ -816,7 +816,7 @@ const PurchaseFlow: React.FC<PurchaseFlowProps> = ({
                             </span>
                         ) : swapFromAsset === "USD" ? (
                             includeDownload 
-                                ? `🔄 GET DOWNLOAD + ${Math.floor(parseFloat(swapToAmount || artistocksInput || '0')).toLocaleString()} ARTISTOCKS ($${(parseFloat(swapFromAmount || '0') + 1).toFixed(2)})`
+                                ? `🔄 GET DOWNLOAD + ${Math.floor(parseFloat(swapToAmount || artistocksInput || '0')).toLocaleString()} ARTISTOCKS ($${(parseFloat(swapFromAmount || '0') + (featuredAsset?.price_usd || 1)).toFixed(2)})`
                                 : `🔄 GET ${Math.floor(parseFloat(swapToAmount || artistocksInput || '0')).toLocaleString()} ARTISTOCKS ($${swapFromAmount || '0'})`
                         ) : (
                             // Check if swapping TO USD (cash-out)
