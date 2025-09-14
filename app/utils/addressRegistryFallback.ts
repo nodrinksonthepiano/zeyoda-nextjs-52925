@@ -13,8 +13,13 @@ export const ARTIST_REGISTRY = {
     swap: '0xd01cFF08a9962e67914a3A3e446D90513915db6f', // FIXED: Updated to correct JAITEA swap address
     downloads: '0xec7BaDb433504aEbeFF747ADc8586E5663C0ea21',
     treasury_wallet: '0x0B893D9D0dA09096C75e43c310316dC61b2773be'
+  },
+  cancakes: {
+    token: '0xdF0f956Be58D0ed027AbdF993A8c61e4cf31CA65',
+    swap: '0xdBBfFD696484bBFCa3dA059FB1d8e2Cf40c450dE',
+    downloads: '0x1942756cA3dc2484b55E3417551159b56F66d467',
+    treasury_wallet: '0xe42C291143e03f3Bd7D5a095815DAD3e82835C05'
   }
-  // Temporarily removed CANCAKES to restore system stability
 };
 
 export const getArtistContracts = (artistId: string) => {

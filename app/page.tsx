@@ -379,9 +379,65 @@ export default function HomePage() {
   };
   
   const createLiquidityPool = async (tokenAddress: string, artistData: any) => {
-    // Use the existing main AMM pool for now - individual pools come later
-    console.log('🏊 Using main AMM pool for liquidity');
-    return "0xdBBfFD696484bBFCa3dA059FB1d8e2Cf40c450dE"; // Main Swap contract
+    if (!magic) throw new Error('Magic not initialized');
+    
+    console.log('🏊 Creating liquidity pool for', artistData.name);
+    
+    const provider = new ethers.BrowserProvider(magic.rpcProvider as any);
+    const signer = await provider.getSigner();
+    
+    // Use the NEW main swap contract (deployer-owned)
+    const MAIN_SWAP_ADDRESS = "0xdBBfFD696484bBFCa3dA059FB1d8e2Cf40c450dE";
+    
+    const swapABI = [
+      "function createPool(address token, uint256 tokenAmount) external payable",
+      "function getPool(address token) external view returns (tuple(address token, uint256 tokenReserve, uint256 ethReserve, bool active))"
+    ];
+    
+    const erc20ABI = [
+      "function approve(address spender, uint256 amount) external returns (bool)",
+      "function balanceOf(address owner) external view returns (uint256)"
+    ];
+    
+    try {
+      const swapContract = new ethers.Contract(MAIN_SWAP_ADDRESS, swapABI, signer);
+      const tokenContract = new ethers.Contract(tokenAddress, erc20ABI, signer);
+      
+      // Check if pool already exists
+      const existingPool = await swapContract.getPool(tokenAddress);
+      if (existingPool.active) {
+        console.log('✅ Liquidity pool already exists');
+        return MAIN_SWAP_ADDRESS;
+      }
+      
+      // LP amounts: 100M tokens + 0.01 ETH (same as other artists)
+      const LP_TOKENS = ethers.parseUnits("100000000", 18);  // 100M tokens
+      const LP_ETH = ethers.parseEther("0.01");               // 0.01 ETH
+      
+      console.log(`Creating pool with ${ethers.formatUnits(LP_TOKENS, 18)} tokens + ${ethers.formatEther(LP_ETH)} ETH`);
+      
+      // Approve tokens for the swap contract
+      const approveTx = await tokenContract.approve(MAIN_SWAP_ADDRESS, LP_TOKENS);
+      await approveTx.wait();
+      console.log('✅ Tokens approved for LP creation');
+      
+      // Create the liquidity pool
+      const createTx = await swapContract.createPool(tokenAddress, LP_TOKENS, {
+        value: LP_ETH,
+        gasLimit: 500000
+      });
+      
+      await createTx.wait();
+      console.log('✅ Liquidity pool created successfully!');
+      
+      return MAIN_SWAP_ADDRESS;
+      
+    } catch (error: any) {
+      console.error('❌ LP creation failed:', error.message);
+      // Don't fail the entire onboarding - LP can be created later
+      showToast('⚠️ LP creation failed, but artist created successfully', 'warning');
+      return MAIN_SWAP_ADDRESS;
+    }
   };
   
   const uploadFeaturedContent = async (file: File | null, artistId: string) => {

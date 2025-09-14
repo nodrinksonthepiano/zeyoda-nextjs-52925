@@ -617,8 +617,8 @@ const PurchaseFlow: React.FC<PurchaseFlowProps> = ({
                           const userBalance = userTokenBalances[artist.tokenName] || 0;
                           const hasTokens = userBalance > 0;
 
-                          // Show all main artist tokens (GOSH33SH, JAIT33) for cross-trading
-                          if (artist.tokenName && ['GOSH33SH', 'JAIT33'].includes(artist.tokenName)) {
+                          // Show all main artist tokens (GOSH33SH, JAIT33, CANCAK33) for cross-trading
+                          if (artist.tokenName && ['GOSH33SH', 'JAIT33', 'CANCAK33'].includes(artist.tokenName)) {
                             return (
                               <option key={`from-${id}-${artist.tokenName}`} value={artist.tokenName!}>
                                 {artist.tokenName} {hasTokens ? `(${Number(ethers.formatUnits(userBalance, 18)).toLocaleString(undefined, {maximumFractionDigits: 0})})` : '(0)'}
@@ -657,7 +657,8 @@ const PurchaseFlow: React.FC<PurchaseFlowProps> = ({
                                 // For token swaps, if user changes TO asset, we might want to suggest opposite FROM
                                 if (swapFromAsset !== "USD" && swapFromAsset === newToAsset) {
                                     // If FROM and TO are same, switch FROM to something else
-                                    const oppositeAsset = newToAsset === "GOSH33SH" ? "JAIT33" : "GOSH33SH";
+                                    const availableAssets = ["GOSH33SH", "JAIT33", "CANCAK33"].filter(token => token !== newToAsset);
+                                    const oppositeAsset = availableAssets[0] || "GOSH33SH";
                                     setSwapFromAsset(oppositeAsset);
                                 }
                             }}
@@ -669,7 +670,7 @@ const PurchaseFlow: React.FC<PurchaseFlowProps> = ({
                                     if (!artist || !artist.tokenName) return null;
                                     
                                     // Show all main artist tokens for USD purchases
-                                    if (['GOSH33SH', 'JAIT33'].includes(artist.tokenName)) {
+                                    if (['GOSH33SH', 'JAIT33', 'CANCAK33'].includes(artist.tokenName)) {
                                         return (
                                             <option key={`to-usd-${id}-${artist.tokenName}`} value={artist.tokenName}>
                                                 {artist.tokenName}
@@ -687,7 +688,7 @@ const PurchaseFlow: React.FC<PurchaseFlowProps> = ({
                                         
                                         // Show if different from FROM asset and is main tokens
                                         if (artist.tokenName !== swapFromAsset && 
-                                            ['GOSH33SH', 'JAIT33'].includes(artist.tokenName)) {
+                                            ['GOSH33SH', 'JAIT33', 'CANCAK33'].includes(artist.tokenName)) {
                                             return (
                                                 <option key={`to-${id}-${artist.tokenName}`} value={artist.tokenName}>
                                                     {artist.tokenName}
