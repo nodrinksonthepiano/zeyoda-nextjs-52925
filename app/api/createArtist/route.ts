@@ -17,26 +17,28 @@ export async function POST(request: NextRequest) {
     const artistData = await request.json();
     console.log('🎨 Creating artist via API:', artistData.name);
 
-    // Save to artists table with service role permissions
+    // Save to artists table with service role permissions (using actual camelCase columns)
     const artistRecord = {
       id: artistData.id,
       name: artistData.name,
       displayname: artistData.displayname,
+      tokenName: artistData.tokenName || artistData.name,
       artworktitle: artistData.artworktitle,
       artworkyear: artistData.artworkyear,
-      // Add theme colors if they exist in your table
-      primary_color: artistData.primaryColor,
-      accent_color: artistData.accentColor,
-      gradient_start: artistData.gradientStart,
-      gradient_middle: artistData.gradientMiddle,
-      gradient_end: artistData.gradientEnd,
-      font_family: artistData.fontFamily,
-      // Add contract addresses if they exist in your table
-      token_address: artistData.tokenAddress,
-      downloads_address: artistData.downloadsAddress,
-      pool_address: artistData.poolAddress,
-      video_src: artistData.contentUrl,
-      token_price: artistData.downloadPrice
+      tokenprice: artistData.downloadPrice,
+      videosrc: artistData.contentUrl,
+      contract: artistData.tokenAddress,
+      download_address: artistData.downloadsAddress,
+      swap_address: artistData.poolAddress,
+      // Theme colors (using actual column names)
+      primarycolor: artistData.primaryColor,
+      accentcolor: artistData.accentColor,
+      gradientstart: artistData.gradientStart,
+      gradientmiddle: artistData.gradientMiddle,
+      gradientend: artistData.gradientEnd,
+      fontfamily: artistData.fontFamily,
+      orbitaltokens: JSON.stringify(artistData.orbitaltokens || []),
+      paused: false
     };
 
     const { data: artistResult, error: artistError } = await supabaseAdmin

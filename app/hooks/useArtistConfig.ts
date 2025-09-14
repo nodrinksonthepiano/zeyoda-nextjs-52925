@@ -27,35 +27,25 @@ const useArtistConfig = (): UseArtistConfigReturn => {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Fetch real-time prices for all artists
+  // Fetch real-time prices for all artists (simplified to avoid ENS issues)
   const fetchRealTimePrices = async (artistsData: {[key: string]: ArtistConfig}) => {
     try {
-      // Create a dummy signer for read-only operations
-      const provider = new ethers.JsonRpcProvider(process.env.NEXT_PUBLIC_RPC!);
-      const swapService = new SwapService(provider);
-
+      console.log('🔄 Loading artist configs without price fetching...');
+      
+      // Temporarily disable real-time pricing to fix the core loading issue
       const updatedArtists = { ...artistsData };
 
       for (const [artistId, config] of Object.entries(updatedArtists)) {
-        if (config.contract) {
-          try {
-            const hasLiquidityPool = await swapService.hasLiquidityPool(config.contract);
-            const realTimePrice = hasLiquidityPool ? 
-              await swapService.getTokenPriceInUSD(config.contract) : 
-              config.tokenPrice;
-            
-            updatedArtists[artistId] = {
-              ...config,
-              hasLiquidityPool,
-              realTimePrice: realTimePrice || config.tokenPrice
-            };
-          } catch (e) {
-            console.warn(`Failed to fetch price for ${artistId}:`, e);
-          }
-        }
+        updatedArtists[artistId] = {
+          ...config,
+          hasLiquidityPool: true, // Assume true for now
+          realTimePrice: config.tokenPrice || 0.000001 // Use static price
+        };
       }
 
+      console.log('✅ Artist configs loaded successfully:', Object.keys(updatedArtists));
       return updatedArtists;
+      
     } catch (e) {
       console.error('Failed to fetch real-time prices:', e);
       return artistsData;

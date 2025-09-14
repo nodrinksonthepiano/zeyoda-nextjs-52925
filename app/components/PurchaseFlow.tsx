@@ -19,6 +19,7 @@ interface PurchaseFlowProps {
   user: string | null | undefined;
   artistConfig: ArtistConfig | null;
   allArtistsConfig: { [key: string]: ArtistConfig } | null;
+  featuredAsset?: any; // Add featured asset for dynamic pricing
   isActionLoading: boolean;
   hasPurchasedDownload: boolean;
   globalSafewordVerified: boolean;
@@ -46,6 +47,7 @@ const PurchaseFlow: React.FC<PurchaseFlowProps> = ({
   user,
   artistConfig,
   allArtistsConfig,
+  featuredAsset,
   isActionLoading,
   hasPurchasedDownload,
   globalSafewordVerified,
@@ -787,7 +789,7 @@ const PurchaseFlow: React.FC<PurchaseFlowProps> = ({
                         className="h-4 w-4 rounded border-gray-300 text-accentColor focus:ring-accentColor"
                     />
                     <label htmlFor="includeDownload" className="ml-2 block text-sm text-gray-200">
-                        Include Featured Download ($1.00)
+                        Include Featured Download (${featuredAsset?.price_usd || 1}.00)
                     </label>
                     </div>
                 </div>

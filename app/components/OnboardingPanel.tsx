@@ -8,6 +8,8 @@ interface OnboardingPanelProps {
   uploadedFile?: File | null;
   filePreviewUrl?: string | null;
   onUploadClick?: () => void;
+  mode?: 'onboarding' | 'upload-asset';
+  existingArtist?: any;
 }
 
 const COLOR_PRESETS = {
@@ -34,12 +36,14 @@ const OnboardingPanel: React.FC<OnboardingPanelProps> = ({
   onExit,
   uploadedFile,
   filePreviewUrl,
-  onUploadClick
+  onUploadClick,
+  mode = 'onboarding',
+  existingArtist
 }) => {
   const [formData, setFormData] = useState({
-    displayname: '',
-    tokenName: '',
-    artworktitle: 'Featured Content #1',
+    displayname: mode === 'upload-asset' ? existingArtist?.name || '' : '',
+    tokenName: mode === 'upload-asset' ? existingArtist?.tokenName || '' : '',
+    artworktitle: mode === 'upload-asset' ? 'New Content' : 'Featured Content #1',
     artworkyear: '2025',
     downloadPrice: 1.00, // Price for ERC-1155 featured content downloads
     theme: {
@@ -130,8 +134,8 @@ const OnboardingPanel: React.FC<OnboardingPanelProps> = ({
       
       {/* Header */}
       <div className="flex justify-between items-center mb-6">
-        <h2 className="text-2xl font-bold text-white" style={{ fontFamily: 'Bungee, cursive', color: '#B8860B' }}>
-          CREATE ARTIST
+        <h2 className="text-2xl font-bold text-white" style={{ fontFamily: 'Bungee, cursive', color: mode === 'upload-asset' ? (existingArtist?.theme?.accentColor || '#B8860B') : '#B8860B' }}>
+          {mode === 'upload-asset' ? 'UPLOAD NEW ASSET' : 'CREATE ARTIST'}
         </h2>
         <button
           onClick={onExit}
@@ -141,7 +145,8 @@ const OnboardingPanel: React.FC<OnboardingPanelProps> = ({
         </button>
       </div>
 
-      {/* Artist Identity Section */}
+      {/* Artist Identity Section - Only show for new artists */}
+      {mode === 'onboarding' && (
       <div className="mb-6">
         <h3 className="text-lg font-semibold text-white mb-3">Artist Identity</h3>
         <div className="grid grid-cols-1 gap-4">
@@ -175,8 +180,10 @@ const OnboardingPanel: React.FC<OnboardingPanelProps> = ({
           </div>
         </div>
       </div>
+      )}
 
-      {/* Typography Section */}
+      {/* Typography Section - Only show for new artists */}
+      {mode === 'onboarding' && (
       <div className="mb-6">
         <h3 className="text-lg font-semibold text-white mb-3">Typography</h3>
         <div className="grid grid-cols-3 gap-3">
@@ -196,8 +203,10 @@ const OnboardingPanel: React.FC<OnboardingPanelProps> = ({
           ))}
         </div>
       </div>
+      )}
 
-      {/* Color Theme Section */}
+      {/* Color Theme Section - Only show for new artists */}
+      {mode === 'onboarding' && (
       <div className="mb-6">
         <h3 className="text-lg font-semibold text-white mb-3">Color Theme</h3>
         <div className="grid grid-cols-4 gap-3 mb-4">
@@ -260,6 +269,7 @@ const OnboardingPanel: React.FC<OnboardingPanelProps> = ({
           </div>
         </div>
       </div>
+      )}
 
       {/* Content Section */}
       <div className="mb-6">
@@ -388,10 +398,10 @@ const OnboardingPanel: React.FC<OnboardingPanelProps> = ({
       <div className="flex gap-3">
         <button
           onClick={handleSave}
-          disabled={!formData.displayname || !formData.tokenName}
+          disabled={mode === 'onboarding' ? (!formData.displayname || !formData.tokenName) : (!formData.artworktitle || !uploadedFile)}
           className="flex-1 px-6 py-3 bg-gradient-to-r from-green-600 to-green-700 text-white rounded-lg font-bold hover:from-green-700 hover:to-green-800 disabled:opacity-50 disabled:cursor-not-allowed transition-all transform hover:scale-105"
         >
-          🚀 CREATE ARTIST PAGE
+          {mode === 'upload-asset' ? '📤 UPLOAD & MINT ASSET' : '🚀 CREATE ARTIST PAGE'}
         </button>
         <button
           onClick={onExit}
@@ -402,13 +412,20 @@ const OnboardingPanel: React.FC<OnboardingPanelProps> = ({
       </div>
 
       {/* Progress Indicator */}
-      {/* Progress Indicator */}
       <div className="mt-4 text-center">
         <div className="text-xs text-gray-400">
-          {formData.displayname && formData.tokenName ? (
-            <span className="text-green-400">✓ Ready to launch! Download price: ${formData.downloadPrice}</span>
+          {mode === 'upload-asset' ? (
+            formData.artworktitle && uploadedFile ? (
+              <span className="text-green-400">✓ Ready to upload! Download price: ${formData.downloadPrice}</span>
+            ) : (
+              'Add content title and upload file'
+            )
           ) : (
-            'Fill in artist name and token symbol'
+            formData.displayname && formData.tokenName ? (
+              <span className="text-green-400">✓ Ready to launch! Download price: ${formData.downloadPrice}</span>
+            ) : (
+              'Fill in artist name and token symbol'
+            )
           )}
         </div>
       </div>

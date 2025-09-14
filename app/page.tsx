@@ -56,11 +56,18 @@ export default function HomePage() {
   const [treasureMessage, setTreasureMessage] = useState('');
 
   // Onboarding mode state
-  const [appMode, setAppMode] = useState<'normal' | 'onboarding'>('normal');
+  const [appMode, setAppMode] = useState<'normal' | 'onboarding' | 'upload-asset'>('normal');
   const [onboardingArtistName, setOnboardingArtistName] = useState('WELCOME, ARTIST!');
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
   const [onboardingData, setOnboardingData] = useState<any>({});
   const fileInputRef = useRef<HTMLInputElement>(null);
+  
+  // Upload mode state
+  const [uploadAssetData, setUploadAssetData] = useState({
+    title: '',
+    price: 5,
+    description: ''
+  });
 
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -229,9 +236,18 @@ export default function HomePage() {
     try {
       showToast('⚡ Deploying contracts and setting up artist...', 'info');
       
-      // STEP 1: Deploy ArtistToken.sol with 10B distribution
-      console.log('📝 Step 1: Deploying ArtistToken contract...');
-      const tokenDeployment = await deployArtistToken(artistData);
+      // Check if ERC-20 already exists for this artist
+      const existingTokenAddress = await checkExistingToken(artistData.id);
+      
+      let tokenDeployment;
+      if (existingTokenAddress) {
+        console.log(`📝 Using existing ERC-20 token: ${existingTokenAddress}`);
+        tokenDeployment = { address: existingTokenAddress };
+      } else {
+        // STEP 1: Deploy ArtistToken.sol with 10B distribution
+        console.log('📝 Step 1: Deploying ArtistToken contract...');
+        tokenDeployment = await deployArtistToken(artistData);
+      }
       
       // STEP 2: Deploy ArtistDownloads.sol for ERC-1155s
       console.log('📝 Step 2: Deploying ArtistDownloads contract...');
@@ -271,11 +287,33 @@ export default function HomePage() {
   }, [showToast, uploadedFile]);
 
   // DEPLOYMENT HELPER FUNCTIONS
+  const checkExistingToken = async (artistId: string) => {
+    try {
+      // Check Supabase for existing token address
+      const { data, error } = await supabase
+        .from('artists')
+        .select('token_address')
+        .eq('id', artistId)
+        .single();
+      
+      if (error || !data?.token_address) {
+        return null;
+      }
+      
+      console.log(`🔍 Found existing token for ${artistId}: ${data.token_address}`);
+      return data.token_address;
+    } catch (error) {
+      console.warn('Error checking existing token:', error);
+      return null;
+    }
+  };
+
   const deployArtistToken = async (artistData: any) => {
     if (!magic) throw new Error('Magic not initialized');
     
     const provider = new ethers.BrowserProvider(magic.rpcProvider as any);
     const signer = await provider.getSigner();
+    const ownerAddress = await signer.getAddress();
     
     const factory = new ethers.ContractFactory(
       ArtistTokenArtifact.abi,
@@ -283,23 +321,32 @@ export default function HomePage() {
       signer
     );
     
+    // Generate token symbol from artist name (like CANCAKES -> CANCAKES)
+    const tokenName = artistData.tokenName || artistData.name;
+    const tokenSymbol = (artistData.tokenName || artistData.name).replace(/\s+/g, '').toUpperCase();
+    
+    console.log(`Deploying ArtistToken for ${tokenName} (${tokenSymbol}) with artist ${ownerAddress}...`);
+    
     const protocolVault = "0x615258a5263DBEe0DDEED3166ddC1f442D937eB3";
     const contract = await factory.deploy(
-      artistData.tokenName,
-      artistData.tokenName.replace(/\s+/g, '').toUpperCase(),
-      await signer.getAddress(), // Artist wallet
-      protocolVault
+      tokenName,      // ✅ Token name (e.g., "CANCAKES")
+      tokenSymbol,    // ✅ Token symbol (e.g., "CANCAKES") 
+      ownerAddress,   // ✅ Artist wallet
+      protocolVault   // ✅ Protocol vault
     );
     
     await contract.waitForDeployment();
     const address = await contract.getAddress();
+    console.log("✅ Contract deployed successfully at:", address);
     
     // Execute initial mint (10B distribution) - using contract interface
     const artistToken = new ethers.Contract(address, ArtistTokenArtifact.abi, signer);
+    console.log(`Minting 10B ${tokenSymbol} with automatic distribution...`);
     const mintTx = await artistToken.initialMint();
     await mintTx.wait();
+    console.log("✅ 10B supply minted and distributed. Tx:", mintTx.hash);
+    console.log("Distribution: 1B to artist, 100M to protocol (LP seeding), 8.9B to vault");
     
-    console.log('✅ ArtistToken deployed:', address);
     return { address, contract };
   };
   
@@ -315,31 +362,66 @@ export default function HomePage() {
       signer
     );
     
+    console.log(`Deploying ArtistDownloads for ${artistData.id}...`);
+    
+    // ArtistDownloads constructor: (artistId, baseURI)
+    const baseURI = `https://api.zeyoda.com/metadata/${artistData.id}/`;
     const contract = await factory.deploy(
-      `${artistData.name} Downloads`,
-      artistData.id,
-      tokenAddress
+      artistData.id,    // ✅ Artist ID (e.g., "cancakes")
+      baseURI          // ✅ Base URI for metadata
     );
     
     await contract.waitForDeployment();
     const address = await contract.getAddress();
     
-    console.log('✅ ArtistDownloads deployed:', address);
+    console.log('✅ ArtistDownloads deployed successfully at:', address);
     return { address, contract };
   };
   
   const createLiquidityPool = async (tokenAddress: string, artistData: any) => {
-    // For now, return placeholder - we'll implement AMM pool creation later
-    console.log('⚠️ AMM pool creation placeholder');
-    return '0x0000000000000000000000000000000000000000';
+    // Use the existing main AMM pool for now - individual pools come later
+    console.log('🏊 Using main AMM pool for liquidity');
+    return "0xdBBfFD696484bBFCa3dA059FB1d8e2Cf40c450dE"; // Main Swap contract
   };
   
   const uploadFeaturedContent = async (file: File | null, artistId: string) => {
-    if (!file) return '/assets/placeholder.mp4';
+    if (!file) {
+      console.log('📁 No file uploaded, using placeholder');
+      return 'assets/placeholder.mp4';
+    }
     
-    // For now, return placeholder - we'll implement proper file upload later
-    console.log('⚠️ File upload placeholder');
-    return `/assets/${artistId}-featured.${file.name.split('.').pop()}`;
+    try {
+      console.log('📤 Uploading featured content to Supabase storage...');
+      
+      // Generate unique filename
+      const fileExt = file.name.split('.').pop();
+      const fileName = `${artistId}_featured.${fileExt}`;
+      
+      // Upload to Supabase storage
+      const { data, error } = await supabase.storage
+        .from('artist-content')
+        .upload(`featured/${fileName}`, file, {
+          cacheControl: '3600',
+          upsert: true
+        });
+      
+      if (error) {
+        console.warn('⚠️ File upload failed, using placeholder:', error.message);
+        return 'assets/placeholder.mp4';
+      }
+      
+      // Get public URL
+      const { data: urlData } = supabase.storage
+        .from('artist-content')
+        .getPublicUrl(`featured/${fileName}`);
+      
+      console.log('✅ File uploaded successfully:', urlData.publicUrl);
+      return urlData.publicUrl;
+      
+    } catch (error) {
+      console.warn('⚠️ File upload error, using placeholder:', error);
+      return 'assets/placeholder.mp4';
+    }
   };
   
   const saveArtistToDatabase = async (artistData: any) => {
@@ -356,6 +438,7 @@ export default function HomePage() {
       id: artistData.id,
       name: artistData.name,
       displayname: artistData.displayname,
+      tokenName: artistData.tokenName || artistData.name, // Add missing tokenName field
       artworktitle: artistData.artworktitle,
       artworkyear: artistData.artworkyear,
       
@@ -408,8 +491,46 @@ export default function HomePage() {
     setOnboardingArtistName('WELCOME, ARTIST!');
     setOnboardingData({});
     setUploadedFile(null);
-    showToast('Onboarding cancelled', 'info');
-  }, [showToast]);
+    setUploadAssetData({ title: '', price: 5, description: '' });
+    showToast(appMode === 'upload-asset' ? 'Upload cancelled' : 'Onboarding cancelled', 'info');
+  }, [showToast, appMode]);
+
+  const handleUploadAsset = useCallback(async (assetData: any) => {
+    if (!artistConfig || !uploadedFile || !user) {
+      showToast('Please select a file and enter asset details', 'error');
+      return;
+    }
+
+    console.log('🎨 Uploading new asset for', artistConfig.name, assetData);
+    
+    try {
+      const formData = new FormData();
+      formData.append('file', uploadedFile);
+      formData.append('artistId', artistIdFromUrl);
+      formData.append('title', assetData.artworktitle);
+      formData.append('price', assetData.downloadPrice.toString());
+      formData.append('userAddress', user);
+
+      const response = await fetch('/api/uploadAsset', {
+        method: 'POST',
+        body: formData,
+      });
+
+      const result = await response.json();
+
+      if (response.ok) {
+        showToast(result.message, 'success');
+        setAppMode('normal');
+        setUploadedFile(null);
+        setUploadAssetData({ title: '', price: 5, description: '' });
+        // TODO: Refresh the page to show new asset
+      } else {
+        showToast(`Upload failed: ${result.error}`, 'error');
+      }
+    } catch (error: any) {
+      showToast(`Upload failed: ${error.message}`, 'error');
+    }
+  }, [artistConfig, uploadedFile, user, showToast, setAppMode, setUploadedFile, setUploadAssetData]);
 
   const [swapFromAsset, setSwapFromAsset] = useState<string>("USD");
   const [swapToAsset, setSwapToAsset] = useState<string>("");
@@ -527,13 +648,13 @@ export default function HomePage() {
     checkOwnership();
   }, [user, artistConfig, magic]);
 
-  // Initialize onboarding theme once when entering onboarding mode
+  // Initialize onboarding theme once when entering onboarding mode (NEW ARTISTS ONLY)
   useEffect(() => {
     if (appMode === 'onboarding') {
       // Set global flag to suspend auto-refreshes
       (window as any).onboardingMode = true;
       
-      // Apply initial onboarding theme
+      // Apply initial onboarding theme (tan canvas for new artists)
       document.documentElement.style.setProperty('--primary-color', '#FAF0E6');
       document.documentElement.style.setProperty('--accent-color', '#B8860B');
       document.documentElement.style.setProperty('--gradient-start', '#FAF0E6');
@@ -550,7 +671,8 @@ export default function HomePage() {
   
   // Separate useEffect for normal theme application - NEVER runs during onboarding
   useEffect(() => {
-    // COMPLETELY SKIP if in onboarding mode
+    // COMPLETELY SKIP if in onboarding mode (new artists get tan canvas)
+    // BUT allow theme for upload-asset mode (existing artists keep their colors)
     if (appMode === 'onboarding') {
       console.log('🚫 Skipping theme application - onboarding mode active');
       return;
@@ -590,7 +712,8 @@ export default function HomePage() {
     
     // Only add download cost if checkbox is checked and not already purchased
     if (includeDownload && !hasPurchasedDownload) {
-      calculatedTotal += 1;
+      const downloadPrice = featuredAsset?.price_usd || 1;
+      calculatedTotal += downloadPrice;
     }
     
     console.log("💰 Price calculation:", {
@@ -601,7 +724,7 @@ export default function HomePage() {
     });
     
     setTotalPurchasePrice(calculatedTotal);
-  }, [swapFromAmount, includeDownload, hasPurchasedDownload]);
+  }, [swapFromAmount, includeDownload, hasPurchasedDownload, featuredAsset]);
 
 
 
@@ -1255,11 +1378,11 @@ export default function HomePage() {
                   }}
                   title={appMode === 'onboarding' ? 'Double-click to edit' : ''}
                 >
-                  {appMode === 'onboarding' ? onboardingArtistName : artistConfig.displayName}
+                  {(appMode === 'onboarding' || appMode === 'upload-asset') ? onboardingArtistName : artistConfig.displayName}
                 </h1>
   
                 <div className="relative w-full max-w-4xl mx-auto">
-                  {appMode === 'onboarding' ? (
+                  {(appMode === 'onboarding' || appMode === 'upload-asset') ? (
                     // Onboarding: Drag & drop upload zone
                     <>
                       <input
@@ -1352,6 +1475,7 @@ export default function HomePage() {
                         toggleMute={toggleMute}
                         videoContainerRef={videoContainerRef}
                         videoSrc={videoSource}
+                        fileType={featuredAsset?.file_type}
                       />
                       <ThemeOrbitRenderer
                         artistConfig={artistConfig}
@@ -1375,11 +1499,12 @@ export default function HomePage() {
             />
           )}
 
-          {appMode !== 'onboarding' && (
+          {appMode === 'normal' && (
             <PurchaseFlow
               user={user}
               artistConfig={artistConfig}
               allArtistsConfig={allArtistsConfig}
+              featuredAsset={featuredAsset}
               isActionLoading={isActionLoading}
               hasPurchasedDownload={hasPurchasedDownload}
               globalSafewordVerified={globalSafewordVerified}
@@ -1500,17 +1625,20 @@ export default function HomePage() {
           </div>
 
           {/* Onboarding chat appears above input - like purchase slider */}
-          {appMode === 'onboarding' && (
+          {(appMode === 'onboarding' || appMode === 'upload-asset') && (
             <OnboardingPanel
               artistName={onboardingArtistName}
               onArtistNameChange={setOnboardingArtistName}
-              onSave={handleSaveArtist}
+              onSave={appMode === 'upload-asset' ? handleUploadAsset : handleSaveArtist}
               onExit={handleExitOnboarding}
               uploadedFile={uploadedFile}
               filePreviewUrl={filePreviewUrl}
               onUploadClick={handleUploadClick}
+              mode={appMode} // Pass mode to panel
+              existingArtist={artistConfig} // Pass artist config
             />
           )}
+
 
           <div 
             className={`unified-input-container mock-ui-section p-4 border-t-2 border-gray-700 mt-8 ${!user && shakeActive ? 'shake' : ''}`}
@@ -1528,6 +1656,26 @@ export default function HomePage() {
               
               {/* Main input */}
               <div className="flex items-center w-full">
+                {/* Upload button - only show for logged in users on existing artist pages */}
+                {user && artistConfig && artistConfig.contract && (
+                  <button
+                    onClick={() => {
+                      if (appMode === 'upload-asset') {
+                        setAppMode('normal');
+                        setUploadedFile(null);
+                        setUploadAssetData({ title: '', price: 5, description: '' });
+                      } else {
+                        setAppMode('upload-asset');
+                        setOnboardingArtistName(`ADD NEW ASSET TO ${artistConfig.name}`);
+                      }
+                    }}
+                    className="p-3 bg-purple-600 text-white rounded-l-lg hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-purple-500 mr-0"
+                    title="Upload new asset"
+                  >
+                    {appMode === 'upload-asset' ? '✕' : '📤'}
+                  </button>
+                )}
+                
                 <input
                   type={user ? "text" : "email"}
                   value={showClueInput ? clueMessage : (user ? safewordInput : email)}
@@ -1546,7 +1694,7 @@ export default function HomePage() {
                         ? "Who sent you? Enter a clue here..." 
                         : "Enter your email address to continue"
                   }
-                className="flex-grow p-3 border border-gray-600 rounded-l-lg bg-gray-900 bg-opacity-70 text-white focus:ring-accentColor focus:border-accentColor backdrop-blur-sm"
+                className={`flex-grow p-3 border border-gray-600 ${user ? '' : 'rounded-l-lg'} bg-gray-900 bg-opacity-70 text-white focus:ring-accentColor focus:border-accentColor backdrop-blur-sm`}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') {
                     if (!user) {

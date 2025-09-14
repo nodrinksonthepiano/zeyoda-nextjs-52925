@@ -25,9 +25,9 @@ export const useCommandSystem = (
   artistConfig: ArtistConfig | null,
   showToast: (message: string, type?: "error" | "success" | "info" | undefined) => void,
   setShowAssetsPanel: (show: boolean) => void,
-  setAppMode?: (mode: 'normal' | 'onboarding') => void,
+  setAppMode?: (mode: 'normal' | 'onboarding' | 'upload-asset') => void,
   setOnboardingArtistName?: (name: string) => void,
-  currentAppMode?: 'normal' | 'onboarding'
+  currentAppMode?: 'normal' | 'onboarding' | 'upload-asset'
 ): CommandSystemHookReturn => {
   const router = useRouter();
   
@@ -75,11 +75,22 @@ export const useCommandSystem = (
     // Auto-trigger when "zeyoda" is typed (treasure discovery!)
     if (newValue.toLowerCase() === 'zeyoda') {
       if (setAppMode) {
-        setAppMode('onboarding');
-        if (setOnboardingArtistName) {
-          setOnboardingArtistName('WELCOME, ARTIST!');
+        // Check if current artist already exists (has contract)
+        if (artistConfig && artistConfig.contract) {
+          // Existing artist - upload new asset mode (keep their colors)
+          setAppMode('upload-asset');
+          if (setOnboardingArtistName) {
+            setOnboardingArtistName(`ADD NEW ASSET TO ${artistConfig.name}`);
+          }
+          showToast('🎉 Upload new content to your artist page!', 'success');
+        } else {
+          // New artist - full onboarding mode (tan canvas)
+          setAppMode('onboarding');
+          if (setOnboardingArtistName) {
+            setOnboardingArtistName('WELCOME, ARTIST!');
+          }
+          showToast('🎉 Treasure discovered! Welcome to artist creation!', 'success');
         }
-        showToast('🎉 Treasure discovered! Welcome to artist creation!', 'success');
         setSafewordInput(''); // Clear input after trigger
       }
       return;

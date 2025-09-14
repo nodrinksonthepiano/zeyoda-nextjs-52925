@@ -64,10 +64,29 @@ export function useFeaturedAsset(artistId: string | null) {
     fetchFeaturedAsset();
   }, [artistId]);
 
+  // Convert file_url to proper format for display
+  const getDisplayUrl = (fileUrl: string | null) => {
+    if (!fileUrl) return null;
+    
+    // If it's already a full URL (starts with http), use as-is
+    if (fileUrl.startsWith('http')) {
+      return fileUrl;
+    }
+    
+    // If it's a storage path (starts with artistId/), convert to public URL
+    if (fileUrl.includes('/') && !fileUrl.startsWith('/')) {
+      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+      return `${supabaseUrl}/storage/v1/object/public/artist-assets/${fileUrl}`;
+    }
+    
+    // Legacy format (starts with /assets/ or assets/), use as-is
+    return fileUrl;
+  };
+
   return {
     featuredAsset,
     isLoading,
     error,
-    videoUrl: featuredAsset?.file_url ?? null
+    videoUrl: getDisplayUrl(featuredAsset?.file_url ?? null)
   };
 } 

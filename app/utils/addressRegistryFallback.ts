@@ -14,6 +14,7 @@ export const ARTIST_REGISTRY = {
     downloads: '0xec7BaDb433504aEbeFF747ADc8586E5663C0ea21',
     treasury_wallet: '0x0B893D9D0dA09096C75e43c310316dC61b2773be'
   }
+  // Temporarily removed CANCAKES to restore system stability
 };
 
 export const getArtistContracts = (artistId: string) => {

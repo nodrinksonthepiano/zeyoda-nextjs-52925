@@ -10,7 +10,11 @@ const DOWNLOAD_CONTRACT_ABI = [
 ];
 
 // RPC provider for contract calls
-const provider = new ethers.JsonRpcProvider(process.env.NEXT_PUBLIC_RPC);
+const provider = new ethers.JsonRpcProvider(process.env.NEXT_PUBLIC_RPC, {
+  chainId: 84532,
+  name: "base-sepolia",
+  ensAddress: null // Disable ENS
+});
 
 interface MintRequest {
   artistId: string;

@@ -68,7 +68,11 @@ export const useWalletBalances = ({
       for (const [artistId, registryEntry] of Object.entries(ARTIST_REGISTRY)) {
         if (!registryEntry.token) continue;
         
-        const tokenName = artistId === 'gosheesh' ? 'GOSH33SH' : artistId === 'jaitea' ? 'JAIT33' : '';
+        // Map artist IDs to token names (including CANCAKES)
+        const tokenName = artistId === 'gosheesh' ? 'GOSH33SH' 
+                        : artistId === 'jaitea' ? 'JAIT33'
+                        : artistId === 'cancakes' ? 'CANCAK33'
+                        : '';
         if (!tokenName) continue;
         
         try {
