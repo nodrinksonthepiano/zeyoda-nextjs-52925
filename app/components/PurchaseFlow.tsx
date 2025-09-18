@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { ethers } from 'ethers';
 import { ArtistConfig, UserTokenBalances } from '../../types/artist-types';
 import { SwapService, SwapQuote } from '../utils/swapUtils';
-import { TreasurySwapLiteService, TreasurySwapQuote } from '../utils/treasurySwapUtils';
+// TreasurySwapLite removed - using AMM only
 import { UsdcSwapRouter } from '../utils/usdcSwapRouter';
 import { useWallet } from './MagicProvider';
 import { useDownloadAccess } from '../hooks/useDownloadAccess';
@@ -260,21 +260,8 @@ const PurchaseFlow: React.FC<PurchaseFlowProps> = ({
                 }
                 
             } else if (hasTreasurySwap && swapFromAsset === "USD") {
-                // ⚠️ FALLBACK: Use TreasurySwapLite only when no liquidity pools (fixed rate)
-                console.log('🎯 Using TreasurySwapLite for Day-0 MVP swap (fixed rate fallback)');
-                swapType = `$${totalUsdAmount} USD → ${artistConfig.tokenName}${includeDownload ? ' + Download' : ''} (Fixed Rate)`;
-                
-                const treasurySwap = new TreasurySwapLiteService(artistConfig.swap!, signer);
-                
-                const tx = await treasurySwap.buyTokensWithUSD(totalUsdAmount);
-                await tx.wait();
-                transactionHash = tx.hash;
-                console.log('✅ TreasurySwapLite swap successful:', tx.hash);
-                
-                // Trigger balance refresh
-                window.dispatchEvent(new CustomEvent('transactionSuccess', {
-                    detail: { type: 'swap', hash: tx.hash }
-                }));
+                // TreasurySwapLite removed - AMM only
+                throw new Error('TreasurySwapLite no longer supported. Use AMM pools only.');
                 
             } else if (swapFromAsset !== "USD" && swapToAsset === "USD") {
                 // 💰 CASH-OUT: Convert tokens to USDC → USD balance via new router
@@ -765,9 +752,8 @@ const PurchaseFlow: React.FC<PurchaseFlowProps> = ({
                             </div>
                         ) : artistConfig.swap && !artistConfig.paused ? (
                             <div>
-                                <p className="text-blue-400">🎯 Day-0 MVP Active</p>
-                                <p className="text-xs">Fixed Rate: 1 ETH = 1,000,000 tokens</p>
-                                <p className="text-xs">TreasurySwapLite fallback</p>
+                                <p className="text-blue-400">🎯 AMM Pool Active</p>
+                                <p className="text-xs">Live market pricing</p>
                             </div>
                         ) : (
                             <div>

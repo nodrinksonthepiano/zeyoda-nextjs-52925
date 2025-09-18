@@ -2,6 +2,8 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { ethers } from 'ethers';
 import { useAllArtistsDownloadAccess } from '../hooks/useDownloadAccess';
 import { useWalletBalances } from '../hooks/useWalletBalances';
+import { useArtistEarnings } from '../hooks/useArtistEarnings';
+import { useTreasuryEarnings } from '../hooks/useTreasuryEarnings';
 import { supabase } from '../utils/supabaseClient';
 import { useToast } from '../contexts/ToastContext';
 import { useUsdBalance } from '../contexts/UsdBalanceContext';
@@ -87,6 +89,41 @@ const Wallet: React.FC<WalletProps> = ({
     userAddress || null,
     allArtistsConfig
   );
+
+  // Determine which artist this wallet owns (if any)
+  const ownedArtistId = useMemo(() => {
+    if (!userAddress || !allArtistsConfig) return null;
+    
+    // Check if this wallet matches any artist's treasury_wallet
+    for (const [artistId, config] of Object.entries(allArtistsConfig)) {
+      if (config.treasury_wallet && config.treasury_wallet.toLowerCase() === userAddress.toLowerCase()) {
+        return artistId;
+      }
+    }
+    
+    // For testing: if connected with your wallet, check if gosheesh or jaitea has earnings
+    if (userAddress.toLowerCase() === '0xb8933d90d0da09096c75e43c310316dc61b2773be') {
+      // Check which artist has earnings for this wallet
+      // This is temporary - in production this should be based on proper ownership
+      return 'gosheesh'; // Default to gosheesh for now
+    }
+    
+    return null;
+  }, [userAddress, allArtistsConfig]);
+
+  // Use artist earnings hook for the specific artist this wallet owns
+  const { isArtist, data: artistEarnings, isLoading: earningsLoading } = useArtistEarnings({
+    artistId: ownedArtistId,
+    userAddress: userAddress || null,
+    allArtistsConfig,
+    autoRefresh: showAssetsPanel
+  });
+
+  // Use treasury earnings hook for treasury mode
+  const { isTreasury, data: treasuryEarnings, isLoading: treasuryLoading } = useTreasuryEarnings({
+    userAddress: userAddress || null,
+    autoRefresh: showAssetsPanel
+  });
 
   // Memoize the artist IDs to prevent re-renders
   const artistIds = useMemo(() => {
@@ -384,6 +421,122 @@ const Wallet: React.FC<WalletProps> = ({
                 {showUsdBalance ? '🔓' : '🔒'}
               </button>
             </div>
+          </div>
+        )}
+
+        {/* Artist Earnings Display - Only shows THIS artist's earnings */}
+        {isArtist && artistEarnings && (artistEarnings.totals.totalEarnings > 0 || earningsLoading) && (
+          <div className="mt-4 bg-purple-900 bg-opacity-50 rounded-lg p-3 border border-purple-400 border-opacity-50">
+            <div className="flex justify-between items-start">
+              <div className="flex flex-col flex-grow">
+                <div className="text-purple-300 text-xs mb-1">🎨 {artistEarnings.artist.displayName} Earnings</div>
+                <div className="text-white font-bold text-lg">
+                  {earningsLoading ? (
+                    <span className="text-gray-300">Loading...</span>
+                  ) : !showUsdBalance ? (
+                    <span className="text-gray-400">••••••</span>
+                  ) : artistEarnings.totals.totalEarnings < 0.01 && artistEarnings.totals.totalEarnings > 0 ? (
+                    '< $0.01'
+                  ) : (
+                    `$${artistEarnings.totals.totalEarnings.toFixed(2)}`
+                  )}
+                </div>
+                {!earningsLoading && artistEarnings && showUsdBalance && (
+                  <div className="text-purple-200 text-xs mt-1">
+                    {artistEarnings.totals.totalSales} sales • {artistEarnings.totals.mintedCount} minted
+                  </div>
+                )}
+              </div>
+              <button
+                onClick={() => setShowUsdBalance(!showUsdBalance)}
+                className="ml-2 p-1 text-purple-300 hover:text-white transition-colors duration-200 text-lg"
+                title={showUsdBalance ? "Hide balance" : "Show balance"}
+              >
+                {showUsdBalance ? '🔓' : '🔒'}
+              </button>
+            </div>
+            
+            {/* Recent Sales List */}
+            {!earningsLoading && artistEarnings && showUsdBalance && artistEarnings.recentEarnings.length > 0 && (
+              <div className="mt-3 pt-3 border-t border-purple-400 border-opacity-30">
+                <div className="text-purple-300 text-xs mb-2">Recent Sales</div>
+                <div className="space-y-1 max-h-32 overflow-y-auto">
+                  {artistEarnings.recentEarnings.slice(0, 5).map((earning) => (
+                    <div key={earning.id} className="flex justify-between items-center text-xs">
+                      <div className="text-gray-300">
+                        {earning.assetTitle} • {new Date(earning.createdAt).toLocaleDateString()}
+                      </div>
+                      <div className="text-white font-medium">
+                        +${earning.netEarnings.toFixed(2)}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                {artistEarnings.recentEarnings.length > 5 && (
+                  <div className="text-purple-300 text-xs mt-2 opacity-70">
+                    +{artistEarnings.recentEarnings.length - 5} more sales
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Treasury Earnings Display */}
+        {isTreasury && (treasuryEarnings?.totalProtocolFees > 0 || treasuryLoading) && (
+          <div className="mt-4 bg-yellow-900 bg-opacity-50 rounded-lg p-3 border border-yellow-400 border-opacity-50">
+            <div className="flex justify-between items-start">
+              <div className="flex flex-col flex-grow">
+                <div className="text-yellow-300 text-xs mb-1">🏦 Protocol Treasury</div>
+                <div className="text-white font-bold text-lg">
+                  {treasuryLoading ? (
+                    <span className="text-gray-300">Loading...</span>
+                  ) : !showUsdBalance ? (
+                    <span className="text-gray-400">••••••</span>
+                  ) : treasuryEarnings?.totalProtocolFees < 0.01 && treasuryEarnings?.totalProtocolFees > 0 ? (
+                    '< $0.01'
+                  ) : (
+                    `$${(treasuryEarnings?.totalProtocolFees || 0).toFixed(4)}`
+                  )}
+                </div>
+                {!treasuryLoading && treasuryEarnings && showUsdBalance && (
+                  <div className="text-yellow-200 text-xs mt-1">
+                    {treasuryEarnings.totalSales} transactions • 0.3% protocol fee
+                  </div>
+                )}
+              </div>
+              <button
+                onClick={() => setShowUsdBalance(!showUsdBalance)}
+                className="ml-2 p-1 text-yellow-300 hover:text-white transition-colors duration-200 text-lg"
+                title={showUsdBalance ? "Hide balance" : "Show balance"}
+              >
+                {showUsdBalance ? '🔓' : '🔒'}
+              </button>
+            </div>
+            
+            {/* Recent Protocol Fees List */}
+            {!treasuryLoading && treasuryEarnings && showUsdBalance && treasuryEarnings.recentFees.length > 0 && (
+              <div className="mt-3 pt-3 border-t border-yellow-400 border-opacity-30">
+                <div className="text-yellow-300 text-xs mb-2">Recent Protocol Fees</div>
+                <div className="space-y-1 max-h-32 overflow-y-auto">
+                  {treasuryEarnings.recentFees.slice(0, 5).map((fee) => (
+                    <div key={fee.id} className="flex justify-between items-center text-xs">
+                      <div className="text-gray-300">
+                        {fee.artistName} • {new Date(fee.createdAt).toLocaleDateString()}
+                      </div>
+                      <div className="text-white font-medium">
+                        +${fee.protocolFee.toFixed(4)}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                {treasuryEarnings.recentFees.length > 5 && (
+                  <div className="text-yellow-300 text-xs mt-2 opacity-70">
+                    +{treasuryEarnings.recentFees.length - 5} more fees
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         )}
       </div>

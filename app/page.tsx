@@ -818,30 +818,87 @@ export default function HomePage() {
     }
     
     setIsActionLoading(true);
-    showToast("Processing your purchase...", "info");
 
     try {
-      await new Promise(resolve => setTimeout(resolve, 2000));
-
-      const newBalance = BigInt(Number(userTokenBalances[artistConfig.tokenName] || 0) + purchaseAmountArtistocks);
-      const updatedBalances = { ...userTokenBalances, [artistConfig.tokenName]: newBalance };
-      setUserTokenBalances(updatedBalances);
-      localStorage.setItem('zeyodaUserTokenBalances', JSON.stringify(updatedBalances));
-
+      // Handle download purchase with new record→mint flow
       if (includeDownload) {
-        setHasPurchasedDownload(true);
-        const ipfsHash = 'Qm...'; // Placeholder
-        setDownloadIpfsHash(ipfsHash);
-        localStorage.setItem('zeyodaHasPurchasedDownload_' + artistIdFromUrl, 'true');
-        localStorage.setItem('zeyodaIpfsHash_' + artistIdFromUrl, ipfsHash);
-      }
-      
-      showToast(`Successfully purchased ${purchaseAmountArtistocks} ${artistConfig.tokenName}!`, "success");
-      setShowPurchaseModal(false);
+        console.log('🛒 Starting download purchase flow for:', artistConfig.name);
+        showToast("Recording your purchase...", "info");
 
-    } catch (e) {
-      console.error("Purchase failed", e);
-      showToast(e instanceof Error ? e.message : "An unknown error occurred.", "error");
+        // 1) Generate unique external ID for idempotency
+        const externalId = `eth-${user}-${artistConfig.name}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+        const assetNumber = 1; // Featured asset for now
+
+        // 2) Record the sale
+        const recordResponse = await fetch('/api/record-sale', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            userAddress: user,
+            artistId: artistConfig.name,
+            assetNumber,
+            externalId
+          })
+        });
+
+        const recordResult = await recordResponse.json();
+
+        if (!recordResult.success && !recordResult.duplicate) {
+          throw new Error(recordResult.error || 'Failed to record sale');
+        }
+
+        if (recordResult.duplicate) {
+          showToast('Purchase already processed', 'info');
+          setShowPurchaseModal(false);
+          return;
+        }
+
+        console.log('✅ Sale recorded, earning ID:', recordResult.earningId);
+        showToast("Minting your collectible...", "info");
+
+        // 3) Mint the collectible (gas-sponsored)
+        const mintResponse = await fetch('/api/mint-collectible', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            userAddress: user,
+            artistId: artistConfig.name,
+            assetNumber
+          })
+        });
+
+        const mintResult = await mintResponse.json();
+
+        if (!mintResult.success) {
+          if (mintResult.budget === 'exceeded') {
+            showToast('Network busy; sale recorded. We\'ll retry minting shortly.', 'warning');
+          } else {
+            showToast('Sale recorded; mint pending. We\'ll retry.', 'warning');
+          }
+        } else {
+          console.log('✅ Collectible minted, tx:', mintResult.txHash);
+          showToast('✅ Download collectible minted!', 'success');
+          
+          // Update local state
+          setHasPurchasedDownload(true);
+          localStorage.setItem('zeyodaHasPurchasedDownload_' + artistIdFromUrl, 'true');
+        }
+
+        // Trigger balance update event for wallet refresh
+        window.dispatchEvent(new CustomEvent('balanceUpdate'));
+        
+        showToast(`Purchase complete! Artist receives $${recordResult.netEarnings?.toFixed(2) || '0.00'}`, 'success');
+        setShowPurchaseModal(false);
+
+      } else {
+        // Handle artistock token purchase (existing AMM flow)
+        showToast("Token purchases coming soon!", "info");
+        setShowPurchaseModal(false);
+      }
+
+    } catch (error: any) {
+      console.error("Purchase failed:", error);
+      showToast(error.message || "Purchase failed", "error");
     } finally {
       setIsActionLoading(false);
     }

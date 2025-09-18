@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "SKIP_ENV_VALIDATION=true next dev --turbo",
+    "dev": "SKIP_ENV_VALIDATION=true next dev ",
     "dev-safe": "next dev",
     "build": "next build",
     "start": "next start",
@@ -23,7 +23,8 @@
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "viem": "^2.31.2",
-    "wagmi": "^2.15.6"
+    "wagmi": "^2.15.6",
+    "zod": "^3.25.76"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3",

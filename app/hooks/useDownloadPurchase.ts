@@ -7,7 +7,7 @@ import { useUsdBalance } from '../contexts/UsdBalanceContext';
 import { useDownloadAccess } from './useDownloadAccess';
 import { ArtistConfig } from '../../types/artist-types';
 import { SwapService } from '../utils/swapUtils';
-import { TreasurySwapLiteService } from '../utils/treasurySwapUtils';
+// TreasurySwapLite removed - downloads use record→mint flow
 
 export interface UseDownloadPurchaseResult {
   purchaseDownload: () => Promise<void>;
@@ -137,16 +137,8 @@ export const useDownloadPurchase = (
         console.log('✅ AMM swap successful for download:', tx.hash);
         
       } else if (hasTreasurySwap) {
-        // ⚠️ FALLBACK: Use TreasurySwapLite for download purchase (fixed rate)
-        console.log('🎯 Using TreasurySwapLite for download purchase (fixed rate fallback)');
-        swapType = `$${totalUsdAmount} USD → ${artistConfig.tokenName} + Download (Fixed Rate)`;
-        
-        const treasurySwap = new TreasurySwapLiteService(artistConfig.swap!, signer);
-        
-        const tx = await treasurySwap.buyTokensWithUSD(totalUsdAmount);
-        await tx.wait();
-        swapTransactionHash = tx.hash;
-        console.log('✅ TreasurySwapLite swap successful for download:', tx.hash);
+        // TreasurySwapLite removed - downloads now use record→mint flow
+        throw new Error('Download purchases now handled by main record→mint flow');
       } else {
         throw new Error('No swap mechanism available for this artist');
       }

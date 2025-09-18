@@ -1,6 +1,6 @@
 import { ethers } from 'ethers';
 import { SwapService, SWAP_CONTRACT_ADDRESS } from './swapUtils';
-import { TreasurySwapLiteService } from './treasurySwapUtils';
+// TreasurySwapLite removed - AMM only
 import { toBigIntStrict } from './bigint';
 
 // TypeScript declaration for window.ethereum

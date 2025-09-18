@@ -39,28 +39,37 @@ const useArtistConfig = (): UseArtistConfigReturn => {
         let hasLiquidityPool = false;
         
         try {
-          // For CANCAKES, calculate price from our LP
-          if (artistId === 'cancakes' && config.swap) {
-            console.log('💰 Calculating CANCAKES AMM price...');
+          // Try to get live AMM price for all artists (including CANCAKES)
+          if (config.swap && config.token) {
+            console.log(`💰 Fetching live AMM price for ${artistId}...`);
             
-            // Use our LP data: 100M CANCAK33 + 0.01 ETH
-            const tokenReserve = 100000000; // 100M tokens
-            const ethReserve = 0.01; // 0.01 ETH
-            const ethPriceUSD = 2500; // Assume ETH = $2500
+            // Create SwapService instance with a provider
+            const provider = new ethers.JsonRpcProvider(process.env.NEXT_PUBLIC_BASE_SEPOLIA_RPC_URL || 'https://sepolia.base.org');
+            const swapService = new SwapService(provider);
             
-            // Calculate price: (ETH Reserve / Token Reserve) * ETH Price
-            realTimePrice = (ethReserve / tokenReserve) * ethPriceUSD;
-            hasLiquidityPool = true;
+            // Get live price from AMM reserves
+            const livePrice = await swapService.getTokenPriceInUSD(config.token);
             
-            console.log(`✅ CANCAKES AMM price: $${realTimePrice.toFixed(8)} per CANCAK33`);
+            if (livePrice > 0) {
+              realTimePrice = livePrice;
+              hasLiquidityPool = true;
+              console.log(`✅ Live AMM price for ${artistId}: $${realTimePrice.toFixed(8)}`);
+            } else {
+              // Fallback to configured price if no liquidity
+              realTimePrice = config.tokenPrice || 0.000001;
+              hasLiquidityPool = false;
+              console.log(`⚠️ No liquidity for ${artistId}, using fallback price: $${realTimePrice.toFixed(8)}`);
+            }
           } else {
-            // For other artists, use their existing tokenPrice
+            // No swap contract configured, use fallback price
             realTimePrice = config.tokenPrice || 0.000001;
-            hasLiquidityPool = config.tokenPrice > 0;
+            hasLiquidityPool = false;
+            console.log(`ℹ️ No swap contract for ${artistId}, using configured price: $${realTimePrice.toFixed(8)}`);
           }
         } catch (error) {
           console.warn(`⚠️ Price fetch failed for ${artistId}:`, error);
           realTimePrice = config.tokenPrice || 0.000001;
+          hasLiquidityPool = false;
         }
         
         updatedArtists[artistId] = {
@@ -136,7 +145,7 @@ const useArtistConfig = (): UseArtistConfigReturn => {
               contract: contracts.token,
               swap: contracts.swap,
               downloads: contracts.downloads || undefined,
-              treasury_wallet: contracts.treasury_wallet || undefined,
+              treasury_wallet: artistData.treasury_wallet || contracts.treasury_wallet || undefined,
               theme: {
                 primaryColor: themeData.primaryColor || artistData.primary_color || '#000000',
                 accentColor: themeData.accentColor || artistData.accent_color || '#4073ff',

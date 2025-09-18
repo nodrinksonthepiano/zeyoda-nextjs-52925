@@ -65,7 +65,7 @@ export interface ArtistConfig {
   hasLiquidityPool?: boolean;
   videoSrc: string;
   contract?: string;
-  swap?: string;               // TreasurySwapLite contract address
+  swap?: string;               // AMM Swap contract address
   downloads?: string;          // ERC-1155 downloads contract
   treasury_wallet?: string;    // Treasury wallet address
   paused?: boolean;           // Emergency pause state
