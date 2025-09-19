@@ -61,12 +61,13 @@ export function useArtistEarnings({
   const [error, setError] = useState<string | null>(null);
   const [lastFetchTime, setLastFetchTime] = useState<Date | null>(null);
   
-  // Detect if connected user is the artist - SIMPLIFIED FOR TESTING
+  // Detect if connected user is the artist (matches treasury_wallet)
   const treasuryWallet = allArtistsConfig?.[artistId]?.treasury_wallet;
   const isArtist = Boolean(
     artistId && 
     userAddress && 
-    (artistId === 'gosheesh' || artistId === 'jaitea') // Show for gosheesh/jaitea when connected
+    treasuryWallet &&
+    treasuryWallet.toLowerCase() === userAddress.toLowerCase()
   );
   
   // Debug logging

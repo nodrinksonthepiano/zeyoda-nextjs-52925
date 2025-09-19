@@ -90,25 +90,19 @@ const Wallet: React.FC<WalletProps> = ({
     allArtistsConfig
   );
 
-  // Determine which artist this wallet owns (if any)
-  const ownedArtistId = useMemo(() => {
-    if (!userAddress || !allArtistsConfig) return null;
+  // Determine which artist this wallet owns (check all artists)
+  const { ownedArtistId, isArtistWallet } = useMemo(() => {
+    if (!userAddress || !allArtistsConfig) return { ownedArtistId: null, isArtistWallet: false };
     
-    // Check if this wallet matches any artist's treasury_wallet
+    // Check if this wallet matches any artist's treasury_wallet (case-insensitive)
     for (const [artistId, config] of Object.entries(allArtistsConfig)) {
       if (config.treasury_wallet && config.treasury_wallet.toLowerCase() === userAddress.toLowerCase()) {
-        return artistId;
+        console.debug('[Wallet] Artist ownership detected:', { artistId, wallet: userAddress.slice(0,8) + '...' });
+        return { ownedArtistId: artistId, isArtistWallet: true };
       }
     }
     
-    // For testing: if connected with your wallet, check if gosheesh or jaitea has earnings
-    if (userAddress.toLowerCase() === '0xb8933d90d0da09096c75e43c310316dc61b2773be') {
-      // Check which artist has earnings for this wallet
-      // This is temporary - in production this should be based on proper ownership
-      return 'gosheesh'; // Default to gosheesh for now
-    }
-    
-    return null;
+    return { ownedArtistId: null, isArtistWallet: false };
   }, [userAddress, allArtistsConfig]);
 
   // Use artist earnings hook for the specific artist this wallet owns
@@ -424,26 +418,28 @@ const Wallet: React.FC<WalletProps> = ({
           </div>
         )}
 
-        {/* Artist Earnings Display - Only shows THIS artist's earnings */}
-        {isArtist && artistEarnings && (artistEarnings.totals.totalEarnings > 0 || earningsLoading) && (
+        {/* Artist Earnings Display - Shows when wallet owns an artist */}
+        {isArtistWallet && (artistEarnings || earningsLoading) && (
           <div className="mt-4 bg-purple-900 bg-opacity-50 rounded-lg p-3 border border-purple-400 border-opacity-50">
             <div className="flex justify-between items-start">
               <div className="flex flex-col flex-grow">
-                <div className="text-purple-300 text-xs mb-1">🎨 {artistEarnings.artist.displayName} Earnings</div>
+                <div className="text-purple-300 text-xs mb-1">🎨 {artistEarnings?.artist?.displayName || ownedArtistId?.toUpperCase() || 'Artist'} Earnings</div>
                 <div className="text-white font-bold text-lg">
                   {earningsLoading ? (
                     <span className="text-gray-300">Loading...</span>
                   ) : !showUsdBalance ? (
                     <span className="text-gray-400">••••••</span>
+                  ) : !artistEarnings ? (
+                    '$0.00'
                   ) : artistEarnings.totals.totalEarnings < 0.01 && artistEarnings.totals.totalEarnings > 0 ? (
                     '< $0.01'
                   ) : (
                     `$${artistEarnings.totals.totalEarnings.toFixed(2)}`
                   )}
                 </div>
-                {!earningsLoading && artistEarnings && showUsdBalance && (
+                {!earningsLoading && showUsdBalance && (
                   <div className="text-purple-200 text-xs mt-1">
-                    {artistEarnings.totals.totalSales} sales • {artistEarnings.totals.mintedCount} minted
+                    {artistEarnings ? `${artistEarnings.totals.totalSales} sales • ${artistEarnings.totals.mintedCount || artistEarnings.totals.totalSales} minted` : 'No sales yet'}
                   </div>
                 )}
               </div>

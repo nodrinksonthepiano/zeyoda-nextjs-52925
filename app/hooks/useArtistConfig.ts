@@ -30,7 +30,7 @@ const useArtistConfig = (): UseArtistConfigReturn => {
   // Fetch real-time prices for all artists (with proper AMM pricing)
   const fetchRealTimePrices = async (artistsData: {[key: string]: ArtistConfig}) => {
     try {
-      console.log('🔄 Loading artist configs with AMM pricing...');
+      console.log('🔄 Loading artist configs with AMM pricing...', Object.keys(artistsData));
       
       const updatedArtists = { ...artistsData };
 
@@ -39,8 +39,8 @@ const useArtistConfig = (): UseArtistConfigReturn => {
         let hasLiquidityPool = false;
         
         try {
-          // Try to get live AMM price for all artists (including CANCAKES)
-          if (config.swap && config.token) {
+          // Use registry data for AMM pricing (no hardcoded addresses)
+          if (config.swap && config.contract) {
             console.log(`💰 Fetching live AMM price for ${artistId}...`);
             
             // Create SwapService instance with a provider
@@ -48,26 +48,49 @@ const useArtistConfig = (): UseArtistConfigReturn => {
             const swapService = new SwapService(provider);
             
             // Get live price from AMM reserves
-            const livePrice = await swapService.getTokenPriceInUSD(config.token);
+            const livePrice = await swapService.getTokenPriceInUSD(config.contract);
             
             if (livePrice > 0) {
               realTimePrice = livePrice;
               hasLiquidityPool = true;
-              console.log(`✅ Live AMM price for ${artistId}: $${realTimePrice.toFixed(8)}`);
+              console.log(`[AMM] price`, {
+                artistId,
+                mode: 'live',
+                tokenReserve: 'loaded',
+                ethReserve: 'loaded',
+                priceUsd: realTimePrice.toFixed(8),
+                chainId: 'base-sepolia'
+              });
             } else {
-              // Fallback to configured price if no liquidity
               realTimePrice = config.tokenPrice || 0.000001;
               hasLiquidityPool = false;
-              console.log(`⚠️ No liquidity for ${artistId}, using fallback price: $${realTimePrice.toFixed(8)}`);
+              console.log(`[AMM] price`, {
+                artistId,
+                mode: 'fallback',
+                reason: 'empty-pool',
+                priceUsd: realTimePrice.toFixed(8)
+              });
             }
           } else {
-            // No swap contract configured, use fallback price
             realTimePrice = config.tokenPrice || 0.000001;
             hasLiquidityPool = false;
-            console.log(`ℹ️ No swap contract for ${artistId}, using configured price: $${realTimePrice.toFixed(8)}`);
+            console.log(`[AMM] price`, {
+              artistId,
+              mode: 'fallback',
+              reason: 'missing-swap-or-token',
+              swap: !!config.swap,
+              contract: !!config.contract,
+              priceUsd: realTimePrice.toFixed(8)
+            });
           }
         } catch (error) {
-          console.warn(`⚠️ Price fetch failed for ${artistId}:`, error);
+          console.error(`[AMM] price`, {
+            artistId,
+            mode: 'fallback',
+            reason: 'rpc-error',
+            error: error instanceof Error ? error.message : String(error),
+            priceUsd: (config.tokenPrice || 0.000001).toFixed(8)
+          });
           realTimePrice = config.tokenPrice || 0.000001;
           hasLiquidityPool = false;
         }
@@ -130,6 +153,9 @@ const useArtistConfig = (): UseArtistConfigReturn => {
         for (const artistData of artistsData as ArtistDatabaseEntry[]) {
           const contracts = currentRegistry[artistData.id] || getFallbackArtistContracts(artistData.id);
           
+          // Debug registry data
+          console.debug('[ArtistConfig] registry for', artistData.id, ':', contracts);
+          
           if (contracts) {
             // Extract theme data with better fallbacks
             const themeData = artistData.theme as any || {};
@@ -143,8 +169,8 @@ const useArtistConfig = (): UseArtistConfigReturn => {
               tokenPrice: artistData.tokenprice,
               videoSrc: artistData.videosrc,
               contract: contracts.token,
-              swap: contracts.swap,
-              downloads: contracts.downloads || undefined,
+              swap: contracts.swap || artistData.swap_address || undefined,
+              downloads: contracts.downloads || artistData.download_address || undefined,
               treasury_wallet: artistData.treasury_wallet || contracts.treasury_wallet || undefined,
               theme: {
                 primaryColor: themeData.primaryColor || artistData.primary_color || '#000000',
@@ -156,6 +182,12 @@ const useArtistConfig = (): UseArtistConfigReturn => {
               },
               orbitalTokens: artistData.orbital_tokens,
             };
+            
+            // Debug logging for treasury_wallet loading
+            console.debug('[ArtistConfig] loaded', { 
+              id: artistData.id, 
+              treasury_wallet: artistData.treasury_wallet || contracts.treasury_wallet || 'undefined'
+            });
             
             // Debug log the theme extraction
             console.log(`🎨 Theme extracted for ${artistData.id}:`, {
