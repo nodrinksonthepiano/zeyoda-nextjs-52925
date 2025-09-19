@@ -431,15 +431,22 @@ const Wallet: React.FC<WalletProps> = ({
                     <span className="text-gray-400">••••••</span>
                   ) : !artistEarnings ? (
                     '$0.00'
-                  ) : artistEarnings.totals.totalEarnings < 0.01 && artistEarnings.totals.totalEarnings > 0 ? (
+                  ) : artistEarnings.totals.availableBalance < 0.01 && artistEarnings.totals.availableBalance > 0 ? (
                     '< $0.01'
                   ) : (
-                    `$${artistEarnings.totals.totalEarnings.toFixed(2)}`
+                    `$${artistEarnings.totals.availableBalance.toFixed(2)}`
                   )}
                 </div>
                 {!earningsLoading && showUsdBalance && (
                   <div className="text-purple-200 text-xs mt-1">
-                    {artistEarnings ? `${artistEarnings.totals.totalSales} sales • ${artistEarnings.totals.mintedCount || artistEarnings.totals.totalSales} minted` : 'No sales yet'}
+                    {artistEarnings ? (
+                      <div>
+                        <div>Downloads: ${artistEarnings.totals.totalEarnings.toFixed(2)} • {artistEarnings.totals.totalSales} sales</div>
+                        {artistEarnings.totals.lpWithdrawable > 0 && (
+                          <div>LP Withdrawable: ${artistEarnings.totals.lpWithdrawable.toFixed(2)} (embedded in pool)</div>
+                        )}
+                      </div>
+                    ) : 'No sales yet'}
                   </div>
                 )}
               </div>
@@ -479,7 +486,7 @@ const Wallet: React.FC<WalletProps> = ({
         )}
 
         {/* Treasury Earnings Display */}
-        {isTreasury && (treasuryEarnings?.totalProtocolFees > 0 || treasuryLoading) && (
+        {isTreasury && (treasuryEarnings || treasuryLoading) && (
           <div className="mt-4 bg-yellow-900 bg-opacity-50 rounded-lg p-3 border border-yellow-400 border-opacity-50">
             <div className="flex justify-between items-start">
               <div className="flex flex-col flex-grow">
@@ -497,7 +504,8 @@ const Wallet: React.FC<WalletProps> = ({
                 </div>
                 {!treasuryLoading && treasuryEarnings && showUsdBalance && (
                   <div className="text-yellow-200 text-xs mt-1">
-                    {treasuryEarnings.totalSales} transactions • 0.3% protocol fee
+                    <div>Downloads: ${treasuryEarnings.downloadFeesUsd.toFixed(4)} • Swaps: ${treasuryEarnings.swapFeesUsd.toFixed(4)}</div>
+                    <div>{treasuryEarnings.totalTransactions} transactions • 0.3% protocol fee</div>
                   </div>
                 )}
               </div>
@@ -518,10 +526,10 @@ const Wallet: React.FC<WalletProps> = ({
                   {treasuryEarnings.recentFees.slice(0, 5).map((fee) => (
                     <div key={fee.id} className="flex justify-between items-center text-xs">
                       <div className="text-gray-300">
-                        {fee.artistName} • {new Date(fee.createdAt).toLocaleDateString()}
+                        {fee.artistName} • {fee.feeType} • {new Date(fee.createdAt).toLocaleDateString()}
                       </div>
                       <div className="text-white font-medium">
-                        +${fee.protocolFee.toFixed(4)}
+                        +${fee.feeAmount.toFixed(4)}
                       </div>
                     </div>
                   ))}

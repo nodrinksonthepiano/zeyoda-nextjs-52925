@@ -4,12 +4,15 @@ import { useState, useEffect, useCallback } from 'react';
 
 interface TreasuryEarningsData {
   totalProtocolFees: number;
-  totalSales: number;
+  downloadFeesUsd: number;
+  swapFeesUsd: number;
+  totalTransactions: number;
   recentFees: {
     id: number;
     artistId: string;
     artistName: string;
-    protocolFee: number;
+    feeAmount: number;
+    feeType: string;
     createdAt: string;
   }[];
 }
@@ -40,11 +43,15 @@ export function useTreasuryEarnings({
   const [error, setError] = useState<string | null>(null);
   const [lastFetchTime, setLastFetchTime] = useState<Date | null>(null);
   
-  // Detect if connected user is the treasury wallet
+  // Detect if connected user should see treasury data (admin privileges)
   const isTreasury = Boolean(
     userAddress && 
-    TREASURY_WALLET &&
-    userAddress.toLowerCase() === TREASURY_WALLET.toLowerCase()
+    (
+      // Direct treasury wallet match
+      (TREASURY_WALLET && userAddress.toLowerCase() === TREASURY_WALLET.toLowerCase()) ||
+      // GOSHEESH wallet gets admin treasury view
+      userAddress.toLowerCase() === '0xeE699E81717F03B745bf21EC08c2978B8e6aa0e8'.toLowerCase()
+    )
   );
   
   const fetchTreasuryEarnings = useCallback(async () => {
@@ -74,7 +81,9 @@ export function useTreasuryEarnings({
       
       console.log('[useTreasuryEarnings] Treasury earnings fetched successfully:', {
         totalProtocolFees: treasuryData.totalProtocolFees,
-        totalSales: treasuryData.totalSales,
+        downloadFees: treasuryData.downloadFeesUsd,
+        swapFees: treasuryData.swapFeesUsd,
+        totalTransactions: treasuryData.totalTransactions,
         recentCount: treasuryData.recentFees?.length || 0
       });
       

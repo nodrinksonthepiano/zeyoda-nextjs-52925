@@ -124,6 +124,56 @@ export class SwapService {
   }
 
   /**
+   * Record LP fee for a completed swap transaction
+   */
+  private async recordLPFee(
+    tokenAddress: string, 
+    tx: ethers.TransactionResponse, 
+    amountIn: string, 
+    baseQuote: 'ETH' | 'USDC',
+    tokenDecimals: number = 18,
+    logIndex: number = 0
+  ): Promise<void> {
+    try {
+      // Wait for transaction receipt to get logs
+      const receipt = await tx.wait(1);
+      if (!receipt) return;
+
+      console.log('💰 Recording LP fee for token:', tokenAddress.slice(0, 8) + '...', 'tx:', receipt.hash.slice(0, 10) + '...');
+
+      // Record the LP fee (server derives artistId from tokenAddress)
+      const response = await fetch('/api/lp-fees/record', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          poolAddress: SWAP_CONTRACT_ADDRESS,
+          txHash: receipt.hash,
+          logIndex, // Proper log index for multi-leg swaps
+          tokenIn: tokenAddress,
+          amountInRaw: ethers.parseUnits(amountIn, tokenDecimals).toString(),
+          tokenInDecimals,
+          baseQuote,
+          blockNumber: receipt.blockNumber
+        })
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        console.warn('⚠️ LP fee recording failed:', error);
+      } else {
+        const result = await response.json();
+        if (!result.duplicate) {
+          console.log('✅ LP fee recorded: $' + result.feeUsd + ' for ' + artistId);
+        }
+      }
+
+    } catch (error) {
+      console.warn('⚠️ LP fee recording error:', error);
+      // Don't throw - fee recording shouldn't break swaps
+    }
+  }
+
+  /**
    * Get pool information for debugging
    */
   async getPoolInfo(tokenAddress: string): Promise<any> {
@@ -214,6 +264,11 @@ export class SwapService {
         { value: ethAmountWei }
       );
       
+      // Record LP fee after successful transaction (non-blocking)
+      this.recordLPFee(tokenAddress, tx, ethAmount, 'ETH', 18, 0).catch(error => {
+        console.warn('⚠️ Failed to record LP fee for ETH→Token swap:', error);
+      });
+      
       return tx;
     } catch (error) {
       console.error('Error swapping ETH for tokens:', error);
@@ -238,6 +293,11 @@ export class SwapService {
         tokenAmountWei,
         minimumEthWei
       );
+      
+      // Record LP fee after successful transaction (non-blocking)
+      this.recordLPFee(tokenAddress, tx, tokenAmount, 'ETH', 18, 0).catch(error => {
+        console.warn('⚠️ Failed to record LP fee for Token→ETH swap:', error);
+      });
       
       return tx;
     } catch (error) {
@@ -290,6 +350,16 @@ export class SwapService {
           gasPrice: undefined // Let the network set gas price
         }
       );
+      
+      // Record LP fees for both sides of the two-hop swap (non-blocking)
+      // TokenA→ETH generates fee for TokenA's pool (logIndex: 0)
+      // ETH→TokenB generates fee for TokenB's pool (logIndex: 1)
+      Promise.all([
+        this.recordLPFee(tokenInAddress, tx, tokenInAmount, 'ETH', 18, 0),  // Input side fee
+        this.recordLPFee(tokenOutAddress, tx, tokenInAmount, 'ETH', 18, 1)  // Output side fee (same input amount)
+      ]).catch(error => {
+        console.warn('⚠️ Failed to record LP fees for token→token swap:', error);
+      });
       
       return tx;
     } catch (error: any) {

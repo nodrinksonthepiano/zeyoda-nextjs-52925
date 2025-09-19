@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { ethers } from 'ethers';
 
 // Use service role key to bypass RLS
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
@@ -11,6 +12,62 @@ const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey, {
     persistSession: false
   }
 });
+
+// Swap contract for LP position calculation
+const SWAP_CONTRACT_ADDRESS = "0xdBBfFD696484bBFCa3dA059FB1d8e2Cf40c450dE";
+const SWAP_ABI = [
+  "function getPool(address token) view returns (tuple(address token, uint256 tokenReserve, uint256 ethReserve, bool active))"
+];
+
+// Calculate LP withdrawable amount (99.7% of pool USD value)
+async function calculateLPWithdrawable(artistId: string, tokenAddress: string): Promise<number> {
+  try {
+    if (!tokenAddress) return 0;
+    
+    console.log(`💎 Calculating LP withdrawable for ${artistId}...`);
+    
+    // Setup provider and contract
+    const provider = new ethers.JsonRpcProvider(process.env.BASE_SEPOLIA_RPC_URL);
+    const swapContract = new ethers.Contract(SWAP_CONTRACT_ADDRESS, SWAP_ABI, provider);
+    
+    // Get pool reserves
+    const pool = await swapContract.getPool(tokenAddress);
+    
+    if (!pool.active || pool.ethReserve === 0n || pool.tokenReserve === 0n) {
+      console.log(`  ⚠️ No active pool for ${artistId}`);
+      return 0;
+    }
+    
+    // Calculate USD value of pool
+    const ethReserve = Number(ethers.formatEther(pool.ethReserve));
+    const tokenReserve = Number(ethers.formatUnits(pool.tokenReserve, 18));
+    
+    // Get current token price (already calculated in your system)
+    const ethUsdRate = 2500; // Fallback ETH price
+    const tokenPriceUsd = (ethReserve / tokenReserve) * ethUsdRate;
+    
+    const ethUsdValue = ethReserve * ethUsdRate;
+    const tokenUsdValue = tokenReserve * tokenPriceUsd;
+    const totalPoolUsd = ethUsdValue + tokenUsdValue;
+    
+    // Artist gets 99.7% of LP position (protocol keeps 0.3%)
+    const lpWithdrawable = totalPoolUsd * 0.997;
+    
+    console.log(`  📊 Pool analysis for ${artistId}:`, {
+      ethReserve: ethReserve.toFixed(6),
+      tokenReserve: tokenReserve.toFixed(0),
+      tokenPriceUsd: tokenPriceUsd.toFixed(8),
+      totalPoolUsd: totalPoolUsd.toFixed(2),
+      lpWithdrawable: lpWithdrawable.toFixed(2)
+    });
+    
+    return lpWithdrawable;
+    
+  } catch (error) {
+    console.error(`❌ LP calculation error for ${artistId}:`, error);
+    return 0;
+  }
+}
 
 export async function POST() {
   return NextResponse.json({ error: 'Method not allowed' }, { status: 405 });
@@ -96,10 +153,20 @@ export async function GET(request: NextRequest) {
       createdAt: earning.created_at
     }));
     
+    // Get token address for LP calculation
+    const { data: registry, error: registryError } = await supabaseAdmin
+      .from('artist_registry')
+      .select('token')
+      .eq('id', artistId)
+      .single();
+    
+    // Calculate LP withdrawable amount (99.7% of pool value)
+    const lpWithdrawable = registry?.token ? await calculateLPWithdrawable(artistId, registry.token) : 0;
+    
     // Calculate additional metrics
     const totalEarnings = artist.total_earnings_usd || 0;
     const totalSales = artist.total_sales_count || 0;
-    const availableBalance = totalEarnings; // For now, same as total earnings
+    const availableBalance = totalEarnings + lpWithdrawable; // Downloads + LP withdrawable
     
     // Calculate some basic stats from recent earnings
     const recentEarnings = formattedEarnings.slice(0, 10); // Last 10 for recent display
@@ -119,6 +186,7 @@ export async function GET(request: NextRequest) {
         totalEarnings: Number(totalEarnings),
         totalSales: Number(totalSales),
         availableBalance: Number(availableBalance),
+        lpWithdrawable: Number(lpWithdrawable),
         mintedCount,
         pendingCount
       },
