@@ -331,9 +331,9 @@ const Wallet: React.FC<WalletProps> = ({
   const isAnythingLoading = balancesLoading || downloadsLoading || usdLoading;
 
   return (
-    <div className="fixed top-16 left-4 w-80 max-h-96 bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900 rounded-2xl shadow-2xl border border-purple-500 z-[9999] overflow-hidden flex flex-col">
+    <div className="fixed top-16 left-4 w-80 max-h-96 bg-gradient-to-br from-gray-800 via-gray-700 to-gray-900 rounded-2xl shadow-2xl border border-yellow-400 z-[9999] overflow-hidden flex flex-col">
       {/* Header */}
-      <div className="flex justify-between items-center p-4 bg-gradient-to-r from-purple-600 to-blue-600 text-white flex-shrink-0">
+      <div className="flex justify-between items-center p-4 bg-gradient-to-r from-yellow-600 to-yellow-500 text-black flex-shrink-0">
         <h2 className="text-lg font-bold">💰 Your Assets</h2>
         <div className="flex items-center space-x-2">
           {!balancesError && (
@@ -411,19 +411,26 @@ const Wallet: React.FC<WalletProps> = ({
                         const isDownloading = downloadingAssets.has(assetKey);
                         
                         return (
-                          <div key={assetKey} className="flex items-center justify-between bg-purple-900 bg-opacity-50 rounded p-2">
+                          <div key={assetKey} className="flex items-center justify-between rounded p-2" style={{ 
+                            backgroundColor: `${config.theme.primaryColor}80`, // 50% opacity like ERC-20 tokens
+                            borderColor: config.theme.accentColor 
+                          }}>
                             <div>
                               <div className="text-white font-medium text-sm">
                                 {metadata?.metadata?.title || `${config.artworkTitle} #${download.assetNumber}`}
                               </div>
-                              <div className="text-purple-300 text-xs">
+                              <div className="text-xs" style={{ color: config.theme.accentColor }}>
                                 Balance: {download.balance}
                               </div>
                             </div>
                             <button
                               onClick={() => handleDownload(download.artistId, download.assetNumber)}
                               disabled={isDownloading}
-                              className="text-purple-300 hover:text-purple-200 text-xs font-medium px-2 py-1 bg-purple-800 bg-opacity-50 rounded disabled:opacity-50"
+                              className="text-xs font-medium px-2 py-1 rounded disabled:opacity-50 hover:opacity-80 transition-opacity"
+                              style={{ 
+                                color: config.theme.accentColor,
+                                backgroundColor: `${config.theme.primaryColor}CC` // 80% opacity for contrast
+                              }}
                             >
                               {isDownloading ? '...' : 'Download'}
                             </button>
@@ -440,10 +447,10 @@ const Wallet: React.FC<WalletProps> = ({
 
         {/* ETH Balance Display (as USD) */}
         {combinedBalances['ETH'] && combinedBalances['ETH'] > BigInt(0) && (
-          <div className="mt-4 bg-blue-900 bg-opacity-50 rounded-lg p-3 border border-blue-400 border-opacity-50">
+          <div className="mt-4 bg-gray-800 bg-opacity-50 rounded-lg p-3 border border-gray-400 border-opacity-50">
             <div className="flex justify-between items-start">
               <div className="flex flex-col flex-grow">
-                <div className="text-blue-300 text-xs mb-1">⚡ Wallet Balance</div>
+                <div className="text-gray-300 text-xs mb-1">⚡ Wallet Balance</div>
                 <div className="text-white font-bold text-lg">
                   {!showUsdBalance ? (
                     <span className="text-gray-400">••••••</span>
@@ -452,14 +459,14 @@ const Wallet: React.FC<WalletProps> = ({
                   )}
                 </div>
                 {showUsdBalance && (
-                  <div className="text-blue-200 text-xs mt-1">
+                  <div className="text-gray-300 text-xs mt-1">
                     {`${parseFloat(ethers.formatEther(combinedBalances['ETH'])).toFixed(4)} ETH • Base Sepolia`}
                   </div>
                 )}
               </div>
               <button
                 onClick={() => setShowUsdBalance(!showUsdBalance)}
-                className="ml-2 p-1 text-blue-300 hover:text-white transition-colors duration-200 text-lg"
+                className="ml-2 p-1 text-gray-300 hover:text-white transition-colors duration-200 text-lg"
                 title={showUsdBalance ? "Hide balance" : "Show balance"}
               >
                 {showUsdBalance ? '🔓' : '🔒'}
@@ -504,10 +511,10 @@ const Wallet: React.FC<WalletProps> = ({
 
         {/* Artist Earnings Display - Shows when wallet owns an artist */}
         {isArtistWallet && (artistEarnings || earningsLoading) && (
-          <div className="mt-4 bg-purple-900 bg-opacity-50 rounded-lg p-3 border border-purple-400 border-opacity-50">
+          <div className="mt-4 bg-yellow-900 bg-opacity-50 rounded-lg p-3 border border-yellow-400 border-opacity-50">
             <div className="flex justify-between items-start">
               <div className="flex flex-col flex-grow">
-                <div className="text-purple-300 text-xs mb-1">🎨 {artistEarnings?.artist?.displayName || ownedArtistId?.toUpperCase() || 'Artist'} Earnings</div>
+                <div className="text-yellow-300 text-xs mb-1">🎨 {artistEarnings?.artist?.displayName || ownedArtistId?.toUpperCase() || 'Artist'} Earnings</div>
                 <div className="text-white font-bold text-lg">
                   {earningsLoading ? (
                     <span className="text-gray-300">Loading...</span>
@@ -521,83 +528,97 @@ const Wallet: React.FC<WalletProps> = ({
                     `$${artistEarnings.totals.availableBalance.toFixed(2)}`
                   )}
                 </div>
-                {!earningsLoading && showUsdBalance && (
-                  <div className="text-purple-200 text-xs mt-1">
-                    {artistEarnings ? (
-                      <div>
-                        <div>Downloads: ${artistEarnings.totals.totalEarnings.toFixed(2)} • {artistEarnings.totals.totalSales} sales</div>
-                        {artistEarnings.totals.lpWithdrawable > 0 && (
-                          <div className="space-y-2">
-                            <div>LP Withdrawable: ${artistEarnings.totals.lpWithdrawable.toFixed(2)} (embedded in pool)</div>
-                            <button
-                              onClick={() => { setShowLpPanel(true); setLpPct(0); quoteLPWithdraw(0); }}
-                              disabled={!isArtistWallet || artistEarnings.totals.lpWithdrawable <= 0}
-                              className="w-full py-1 px-3 bg-purple-600 hover:bg-purple-500 disabled:bg-gray-600 disabled:cursor-not-allowed text-white text-xs rounded transition-colors"
-                            >
-                              Withdraw LP
-                            </button>
+                {!earningsLoading && showUsdBalance && artistEarnings && (
+                  /* Downloads Earnings Section */
+                  <div className="space-y-3">
+                    <div className="flex justify-between items-center">
+                      <div className="text-yellow-200 text-xs">💰 Downloads</div>
+                      <div className="text-yellow-200 text-xs">${artistEarnings.totals.totalEarnings.toFixed(2)} • {artistEarnings.totals.totalSales} sales</div>
+                    </div>
+                    {artistEarnings.totals.totalEarnings > 0 && (
+                      <button
+                        onClick={() => console.log('TODO: Downloads withdrawal')}
+                        disabled={!isArtistWallet || artistEarnings.totals.totalEarnings <= 0}
+                        className="w-full py-1 px-3 bg-gray-600 hover:bg-gray-500 disabled:bg-gray-700 disabled:cursor-not-allowed text-white text-xs rounded transition-colors"
+                      >
+                        Withdraw Downloads
+                      </button>
+                    )}
+                    
+                    {/* LP Section - Separate */}
+                    {artistEarnings.totals.lpWithdrawable > 0 && (
+                      <div className="border-t border-yellow-400 border-opacity-30 pt-3 space-y-2">
+                        <div className="flex justify-between items-center">
+                          <div className="text-yellow-200 text-xs">🏦 LP Position</div>
+                          <div className="text-yellow-200 text-xs">${artistEarnings.totals.lpWithdrawable.toFixed(2)} (in pool)</div>
+                        </div>
+                        <button
+                          onClick={() => { setShowLpPanel(true); setLpPct(0); quoteLPWithdraw(0); }}
+                          disabled={!isArtistWallet || artistEarnings.totals.lpWithdrawable <= 0}
+                          className="w-full py-1 px-3 bg-yellow-600 hover:bg-yellow-500 disabled:bg-gray-600 disabled:cursor-not-allowed text-white text-xs rounded transition-colors"
+                        >
+                          Withdraw LP
+                        </button>
+                        
+                        {/* LP Withdrawal Panel */}
+                        {showLpPanel && (
+                          <div className="mt-3 p-3 bg-yellow-800 bg-opacity-50 rounded border border-yellow-400 border-opacity-50">
+                            <div className="mb-3">
+                              <div className="text-yellow-300 text-xs mb-1">Withdraw LP</div>
+                              <div className="text-yellow-200 text-xs">LP Withdrawable: ${artistEarnings.totals.lpWithdrawable.toFixed(2)}</div>
+                            </div>
                             
-                            {/* LP Withdrawal Panel - Simplified */}
-                            {showLpPanel && (
-                              <div className="mt-3 p-3 bg-purple-800 bg-opacity-50 rounded border border-purple-400 border-opacity-50">
-                                <div className="mb-3">
-                                  <div className="text-purple-300 text-xs mb-1">Withdraw LP</div>
-                                  <div className="text-purple-200 text-xs">LP Withdrawable: ${artistEarnings.totals.lpWithdrawable.toFixed(2)}</div>
-                                </div>
-                                
-                                <div className="flex items-center space-x-3 mb-3">
-                                  <input
-                                    type="range"
-                                    min="0"
-                                    max="100"
-                                    step="1"
-                                    value={lpPct}
-                                    onChange={(e) => {
-                                      const newPct = Number(e.target.value);
-                                      setLpPct(newPct);
-                                      quoteLPWithdraw(newPct);
-                                    }}
-                                    className="flex-1"
-                                  />
-                                  <div className="text-right min-w-[80px]">
-                                    <div className="text-purple-300 text-xs">Estimated</div>
-                                    <div className="text-white font-bold text-sm">
-                                      ${isQuoting ? '...' : quoteUsd}
-                                    </div>
-                                  </div>
-                                </div>
-                                
-                                <div className="text-purple-300 text-xs mb-3">
-                                  Withdrawing {lpPct}% of LP position
-                                </div>
-                                
-                                <div className="flex space-x-2">
-                                  <button
-                                    onClick={() => setShowLpPanel(false)}
-                                    className="flex-1 py-1 px-3 bg-gray-600 hover:bg-gray-500 text-white text-xs rounded transition-colors"
-                                  >
-                                    Cancel
-                                  </button>
-                                  <button
-                                    onClick={handleLPWithdraw}
-                                    disabled={lpPct <= 0 || isWithdrawing}
-                                    className="flex-1 py-1 px-3 bg-yellow-600 hover:bg-yellow-500 disabled:bg-gray-600 disabled:cursor-not-allowed text-white text-xs rounded transition-colors"
-                                  >
-                                    {isWithdrawing ? 'Withdrawing...' : `Confirm Withdraw ${lpPct}%`}
-                                  </button>
+                            <div className="flex items-center space-x-3 mb-3">
+                              <input
+                                type="range"
+                                min="0"
+                                max="100"
+                                step="1"
+                                value={lpPct}
+                                onChange={(e) => {
+                                  const newPct = Number(e.target.value);
+                                  setLpPct(newPct);
+                                  quoteLPWithdraw(newPct);
+                                }}
+                                className="flex-1"
+                              />
+                              <div className="text-right min-w-[80px]">
+                                <div className="text-yellow-300 text-xs">Estimated</div>
+                                <div className="text-white font-bold text-sm">
+                                  ${isQuoting ? '...' : quoteUsd}
                                 </div>
                               </div>
-                            )}
+                            </div>
+                            
+                            <div className="text-yellow-300 text-xs mb-3">
+                              Withdrawing {lpPct}% of LP position
+                            </div>
+                            
+                            <div className="flex space-x-2">
+                              <button
+                                onClick={() => setShowLpPanel(false)}
+                                className="flex-1 py-1 px-3 bg-gray-600 hover:bg-gray-500 text-white text-xs rounded transition-colors"
+                              >
+                                Cancel
+                              </button>
+                              <button
+                                onClick={handleLPWithdraw}
+                                disabled={lpPct <= 0 || isWithdrawing}
+                                className="flex-1 py-1 px-3 bg-yellow-600 hover:bg-yellow-500 disabled:bg-gray-600 disabled:cursor-not-allowed text-white text-xs rounded transition-colors"
+                              >
+                                {isWithdrawing ? 'Withdrawing...' : `Confirm Withdraw ${lpPct}%`}
+                              </button>
+                            </div>
                           </div>
                         )}
                       </div>
-                    ) : 'No sales yet'}
+                    )}
                   </div>
                 )}
               </div>
               <button
                 onClick={() => setShowUsdBalance(!showUsdBalance)}
-                className="ml-2 p-1 text-purple-300 hover:text-white transition-colors duration-200 text-lg"
+                className="ml-2 p-1 text-yellow-300 hover:text-white transition-colors duration-200 text-lg"
                 title={showUsdBalance ? "Hide balance" : "Show balance"}
               >
                 {showUsdBalance ? '🔓' : '🔒'}
@@ -691,7 +712,7 @@ const Wallet: React.FC<WalletProps> = ({
       </div>
       
       {/* Bubble pointer */}
-      <div className="absolute -top-2 left-8 w-4 h-4 bg-gradient-to-br from-purple-600 to-blue-600 transform rotate-45 border-l border-t border-purple-500"></div>
+      <div className="absolute -top-2 left-8 w-4 h-4 bg-gradient-to-br from-yellow-600 to-yellow-500 transform rotate-45 border-l border-t border-yellow-400"></div>
     </div>
   );
 };
