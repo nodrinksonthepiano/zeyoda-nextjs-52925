@@ -25,9 +25,9 @@ export const useCommandSystem = (
   artistConfig: ArtistConfig | null,
   showToast: (message: string, type?: "error" | "success" | "info" | undefined) => void,
   setShowAssetsPanel: (show: boolean) => void,
-  setAppMode?: (mode: 'normal' | 'onboarding' | 'upload-asset') => void,
+  setAppMode?: (mode: 'normal' | 'onboarding' | 'upload-asset' | 'profile-edit') => void,
   setOnboardingArtistName?: (name: string) => void,
-  currentAppMode?: 'normal' | 'onboarding' | 'upload-asset'
+  currentAppMode?: 'normal' | 'onboarding' | 'upload-asset' | 'profile-edit'
 ): CommandSystemHookReturn => {
   const router = useRouter();
   

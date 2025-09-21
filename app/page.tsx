@@ -17,6 +17,7 @@ import ArtistVideo from "./components/ArtistVideo";
 import ThemeOrbitRenderer from "./components/ThemeOrbitRenderer";
 import PurchaseFlow from "./components/PurchaseFlow";
 import OnboardingPanel from "./components/OnboardingPanel";
+import ProfileEditPanel from "./components/ProfileEditPanel";
 import {
   ArtistConfig,
   RenderableToken,
@@ -56,7 +57,7 @@ export default function HomePage() {
   const [treasureMessage, setTreasureMessage] = useState('');
 
   // Onboarding mode state
-  const [appMode, setAppMode] = useState<'normal' | 'onboarding' | 'upload-asset'>('normal');
+  const [appMode, setAppMode] = useState<'normal' | 'onboarding' | 'upload-asset' | 'profile-edit'>('normal');
   const [onboardingArtistName, setOnboardingArtistName] = useState('WELCOME, ARTIST!');
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
   const [onboardingData, setOnboardingData] = useState<any>({});
@@ -68,6 +69,7 @@ export default function HomePage() {
     price: 5,
     description: ''
   });
+
 
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -1752,6 +1754,23 @@ export default function HomePage() {
             />
           )}
 
+          {/* Profile Edit Panel - appears above input like onboarding */}
+          {appMode === 'profile-edit' && artistConfig && user && (
+            <ProfileEditPanel
+              artistConfig={artistConfig}
+              userAddress={user}
+              onClose={() => setAppMode('normal')}
+              onSave={(updates) => {
+                console.log('✅ Profile updates applied:', updates);
+                showToast('Profile saved successfully!', 'success');
+                // Trigger config refresh to update theme
+                window.dispatchEvent(new CustomEvent('themeUpdate'));
+                // Return to normal mode (swap slider)
+                setAppMode('normal');
+              }}
+            />
+          )}
+
 
           <div 
             className={`unified-input-container mock-ui-section p-4 border-t-2 border-gray-700 mt-8 ${!user && shakeActive ? 'shake' : ''}`}
@@ -1771,22 +1790,36 @@ export default function HomePage() {
               <div className="flex items-center w-full">
                 {/* Upload button - only show for logged in users on existing artist pages */}
                 {user && artistConfig && artistConfig.contract && (
-                  <button
-                    onClick={() => {
-                      if (appMode === 'upload-asset') {
-                        setAppMode('normal');
-                        setUploadedFile(null);
-                        setUploadAssetData({ title: '', price: 5, description: '' });
-                      } else {
-                        setAppMode('upload-asset');
-                        setOnboardingArtistName(`ADD NEW ASSET TO ${artistConfig.name}`);
-                      }
-                    }}
-                    className="p-3 bg-purple-600 text-white rounded-l-lg hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-purple-500 mr-0"
-                    title="Upload new asset"
-                  >
-                    {appMode === 'upload-asset' ? '✕' : '📤'}
-                  </button>
+                  <div className="flex">
+                    <button
+                      onClick={() => {
+                        if (appMode === 'upload-asset') {
+                          setAppMode('normal');
+                          setUploadedFile(null);
+                          setUploadAssetData({ title: '', price: 5, description: '' });
+                        } else {
+                          setAppMode('upload-asset');
+                          setOnboardingArtistName(`ADD NEW ASSET TO ${artistConfig.name}`);
+                        }
+                      }}
+                      className="p-3 bg-purple-600 text-white hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                      title="Upload new asset"
+                    >
+                      {appMode === 'upload-asset' ? '✕' : '📤'}
+                    </button>
+                    
+                    {/* Edit Profile button - only show for artist's own wallet */}
+                    {user && artistConfig && artistConfig.treasury_wallet && 
+                     user.toLowerCase() === artistConfig.treasury_wallet.toLowerCase() && (
+                      <button
+                        onClick={() => setAppMode('profile-edit')}
+                        className="p-3 bg-blue-600 text-white rounded-r-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 ml-0"
+                        title="Edit profile"
+                      >
+                        ✏️
+                      </button>
+                    )}
+                  </div>
                 )}
                 
                 <input
@@ -1866,6 +1899,7 @@ export default function HomePage() {
             💰 {showAssetsPanel ? 'Close' : 'Wallet'}
           </button>
         )}
+
       </div>
     </UsdBalanceProvider>
   );

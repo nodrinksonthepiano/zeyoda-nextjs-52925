@@ -97,14 +97,20 @@ const OnboardingPanel: React.FC<OnboardingPanelProps> = ({
     });
   }, [onArtistNameChange]);
 
-  const applyColorPreset = useCallback((presetKey: string) => {
+  const applyPrimaryPreset = useCallback((presetKey: string) => {
     const preset = COLOR_PRESETS[presetKey as keyof typeof COLOR_PRESETS];
     if (preset) {
       handleFieldChange('theme.primaryColor', preset.primary);
-      handleFieldChange('theme.accentColor', preset.accent);
       handleFieldChange('theme.gradientStart', preset.primary);
       handleFieldChange('theme.gradientMiddle', preset.primary);
       handleFieldChange('theme.gradientEnd', preset.primary);
+    }
+  }, [handleFieldChange]);
+
+  const applyAccentPreset = useCallback((presetKey: string) => {
+    const preset = COLOR_PRESETS[presetKey as keyof typeof COLOR_PRESETS];
+    if (preset) {
+      handleFieldChange('theme.accentColor', preset.accent);
     }
   }, [handleFieldChange]);
 
@@ -205,22 +211,22 @@ const OnboardingPanel: React.FC<OnboardingPanelProps> = ({
       </div>
       )}
 
-      {/* Color Theme Section - Only show for new artists */}
+      {/* Primary Color Section - Only show for new artists */}
       {mode === 'onboarding' && (
       <div className="mb-6">
-        <h3 className="text-lg font-semibold text-white mb-3">Color Theme</h3>
+        <h3 className="text-lg font-semibold text-white mb-3">Primary Color (Background)</h3>
         <div className="grid grid-cols-4 gap-3 mb-4">
           {Object.entries(COLOR_PRESETS).map(([key, preset]) => (
             <button
-              key={key}
-              onClick={() => applyColorPreset(key)}
+              key={`primary-${key}`}
+              onClick={() => applyPrimaryPreset(key)}
               className={`relative w-12 h-12 rounded-lg border-2 transition-all hover:scale-110 ${
                 formData.theme.primaryColor === preset.primary
                   ? 'border-white'
                   : 'border-gray-600 hover:border-gray-400'
               }`}
               style={{ backgroundColor: preset.primary }}
-              title={preset.name}
+              title={`${preset.name} Primary`}
             >
               {formData.theme.primaryColor === preset.primary && (
                 <div className="absolute inset-0 flex items-center justify-center">
@@ -231,42 +237,64 @@ const OnboardingPanel: React.FC<OnboardingPanelProps> = ({
           ))}
         </div>
         
-        {/* Custom Colors */}
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label className="block text-xs text-gray-400 mb-1">Primary (Background)</label>
-            <div className="flex gap-2">
-              <input
-                type="color"
-                value={formData.theme.primaryColor}
-                onChange={(e) => handleFieldChange('theme.primaryColor', e.target.value)}
-                className="w-10 h-10 rounded border border-gray-600"
-              />
-              <input
-                type="text"
-                value={formData.theme.primaryColor}
-                onChange={(e) => handleFieldChange('theme.primaryColor', e.target.value)}
-                className="flex-1 p-2 bg-gray-700 text-white rounded border border-gray-600 text-sm"
-              />
-            </div>
-          </div>
-          <div>
-            <label className="block text-xs text-gray-400 mb-1">Accent (Text)</label>
-            <div className="flex gap-2">
-              <input
-                type="color"
-                value={formData.theme.accentColor}
-                onChange={(e) => handleFieldChange('theme.accentColor', e.target.value)}
-                className="w-10 h-10 rounded border border-gray-600"
-              />
-              <input
-                type="text"
-                value={formData.theme.accentColor}
-                onChange={(e) => handleFieldChange('theme.accentColor', e.target.value)}
-                className="flex-1 p-2 bg-gray-700 text-white rounded border border-gray-600 text-sm"
-              />
-            </div>
-          </div>
+        <div className="flex gap-2">
+          <input
+            type="color"
+            value={formData.theme.primaryColor}
+            onChange={(e) => handleFieldChange('theme.primaryColor', e.target.value)}
+            className="w-10 h-10 rounded border border-gray-600"
+          />
+          <input
+            type="text"
+            value={formData.theme.primaryColor}
+            onChange={(e) => handleFieldChange('theme.primaryColor', e.target.value)}
+            className="flex-1 p-2 bg-gray-700 text-white rounded border border-gray-600 text-sm"
+            placeholder="#RRGGBB"
+          />
+        </div>
+      </div>
+      )}
+
+      {/* Accent Color Section - Only show for new artists */}
+      {mode === 'onboarding' && (
+      <div className="mb-6">
+        <h3 className="text-lg font-semibold text-white mb-3">Accent Color (Text/Highlights)</h3>
+        <div className="grid grid-cols-4 gap-3 mb-4">
+          {Object.entries(COLOR_PRESETS).map(([key, preset]) => (
+            <button
+              key={`accent-${key}`}
+              onClick={() => applyAccentPreset(key)}
+              className={`relative w-12 h-12 rounded-lg border-2 transition-all hover:scale-110 ${
+                formData.theme.accentColor === preset.accent
+                  ? 'border-white'
+                  : 'border-gray-600 hover:border-gray-400'
+              }`}
+              style={{ backgroundColor: preset.accent }}
+              title={`${preset.name} Accent`}
+            >
+              {formData.theme.accentColor === preset.accent && (
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <span className="text-white text-lg font-bold">✓</span>
+                </div>
+              )}
+            </button>
+          ))}
+        </div>
+        
+        <div className="flex gap-2">
+          <input
+            type="color"
+            value={formData.theme.accentColor}
+            onChange={(e) => handleFieldChange('theme.accentColor', e.target.value)}
+            className="w-10 h-10 rounded border border-gray-600"
+          />
+          <input
+            type="text"
+            value={formData.theme.accentColor}
+            onChange={(e) => handleFieldChange('theme.accentColor', e.target.value)}
+            className="flex-1 p-2 bg-gray-700 text-white rounded border border-gray-600 text-sm"
+            placeholder="#RRGGBB"
+          />
         </div>
       </div>
       )}
