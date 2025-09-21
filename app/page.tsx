@@ -1480,10 +1480,13 @@ export default function HomePage() {
           <div className="text-center">
               <>
                 <h1 
-                  className="text-2xl md:text-3xl font-bold tracking-wider mb-4 cursor-pointer hover:opacity-80 transition-opacity" 
+                  className="text-4xl md:text-5xl font-bold tracking-wider mb-4 cursor-pointer hover:opacity-80 transition-opacity" 
                   style={{ 
                     fontFamily: appMode === 'onboarding' ? 'Bungee, cursive' : artistConfig.theme.fontFamily, 
-                    color: appMode === 'onboarding' ? '#B8860B' : artistConfig.theme.accentColor 
+                    color: appMode === 'onboarding' ? '#B8860B' : artistConfig.theme.accentColor,
+                    maxWidth: '85%',
+                    margin: '0 auto 1rem auto',
+                    lineHeight: '1.1'
                   }}
                   onDoubleClick={() => {
                     if (appMode === 'onboarding') {
