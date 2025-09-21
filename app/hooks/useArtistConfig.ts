@@ -219,17 +219,16 @@ const useArtistConfig = (): UseArtistConfigReturn => {
     fetchConfig();
   }, [artistId, isRegistryLoading, registry]); // Rerun when artist changes or registry loads
 
-  // Auto-refresh prices every 60 seconds (suspended during onboarding)
-  useEffect(() => {
-    if (!allArtistsConfig || (window as any).onboardingMode) return;
-
-    const interval = setInterval(() => {
-      console.log('⏰ Auto-refreshing prices...');
-      refreshPrices();
-    }, 60000); // 60 seconds
-
-    return () => clearInterval(interval);
-  }, [allArtistsConfig, artistId]);
+  // DISABLED: Auto-refresh to prevent page remounts  
+  // Price refresh moved to SWR-based system for stability
+  // useEffect(() => {
+  //   if (!allArtistsConfig || (window as any).onboardingMode) return;
+  //   const interval = setInterval(() => {
+  //     console.log('⏰ Auto-refreshing prices...');
+  //     refreshPrices();
+  //   }, 60000);
+  //   return () => clearInterval(interval);
+  // }, [allArtistsConfig, artistId]);
 
   return { artistConfig, allArtistsConfig, isLoading: isLoading || isRegistryLoading, error, refreshPrices };
 };

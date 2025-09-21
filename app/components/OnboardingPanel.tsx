@@ -26,7 +26,33 @@ const COLOR_PRESETS = {
 const FONT_OPTIONS = [
   { name: "Bungee", value: "Bungee, cursive" },
   { name: "Geist", value: "Geist, sans-serif" },
-  { name: "Inter", value: "Inter, sans-serif" }
+  { name: "Inter", value: "Inter, sans-serif" },
+  { name: "DM Sans", value: "DM Sans, sans-serif" },
+  { name: "Space Grotesk", value: "Space Grotesk, sans-serif" },
+  { name: "Instrument Sans", value: "Instrument Sans, sans-serif" }
+];
+
+const COMMON_FONTS = [
+  "Arial, sans-serif",
+  "Helvetica, sans-serif", 
+  "Times New Roman, serif",
+  "Georgia, serif",
+  "Verdana, sans-serif",
+  "Trebuchet MS, sans-serif",
+  "Roboto, sans-serif",
+  "Open Sans, sans-serif",
+  "Lato, sans-serif",
+  "Montserrat, sans-serif",
+  "Poppins, sans-serif",
+  "Nunito, sans-serif",
+  "Raleway, sans-serif",
+  "Source Sans Pro, sans-serif",
+  "Ubuntu, sans-serif",
+  "Merriweather, serif",
+  "Playfair Display, serif",
+  "Oswald, sans-serif",
+  "Pacifico, cursive",
+  "Dancing Script, cursive"
 ];
 
 const OnboardingPanel: React.FC<OnboardingPanelProps> = ({

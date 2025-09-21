@@ -27,6 +27,41 @@ const FONT_OPTIONS = [
   { name: "Instrument Sans", value: "Instrument Sans, sans-serif" }
 ];
 
+const COMMON_FONTS = [
+  "Arial, sans-serif",
+  "Helvetica, sans-serif", 
+  "Times New Roman, serif",
+  "Georgia, serif",
+  "Verdana, sans-serif",
+  "Trebuchet MS, sans-serif",
+  "Palatino, serif",
+  "Garamond, serif",
+  "Bookman, serif",
+  "Comic Sans MS, cursive",
+  "Impact, sans-serif",
+  "Lucida Console, monospace",
+  "Monaco, monospace",
+  "Courier New, monospace",
+  "Roboto, sans-serif",
+  "Open Sans, sans-serif",
+  "Lato, sans-serif",
+  "Montserrat, sans-serif",
+  "Poppins, sans-serif",
+  "Nunito, sans-serif",
+  "Raleway, sans-serif",
+  "Source Sans Pro, sans-serif",
+  "Ubuntu, sans-serif",
+  "Merriweather, serif",
+  "Playfair Display, serif",
+  "Lora, serif",
+  "Crimson Text, serif",
+  "Oswald, sans-serif",
+  "Bebas Neue, cursive",
+  "Pacifico, cursive",
+  "Dancing Script, cursive",
+  "Lobster, cursive"
+];
+
 const ProfileEditPanel: React.FC<ProfileEditPanelProps> = ({
   artistConfig,
   userAddress,
@@ -43,6 +78,8 @@ const ProfileEditPanel: React.FC<ProfileEditPanelProps> = ({
 
   const [originalTheme, setOriginalTheme] = useState(formData);
   const [isSaving, setIsSaving] = useState(false);
+  const [showFontDropdown, setShowFontDropdown] = useState(false);
+  const [fontSearch, setFontSearch] = useState('');
 
   // Store original theme on mount
   useEffect(() => {
@@ -246,7 +283,9 @@ const ProfileEditPanel: React.FC<ProfileEditPanelProps> = ({
       {/* Typography Section */}
       <div className="mb-6">
         <h3 className="text-lg font-semibold text-white mb-3">Typography</h3>
-        <div className="grid grid-cols-3 gap-3">
+        
+        {/* Standard Font Buttons */}
+        <div className="grid grid-cols-3 gap-3 mb-4">
           {FONT_OPTIONS.map((font) => (
             <button
               key={font.value}
@@ -261,6 +300,50 @@ const ProfileEditPanel: React.FC<ProfileEditPanelProps> = ({
               <div className="text-white font-bold text-sm">{font.name}</div>
             </button>
           ))}
+        </div>
+
+        {/* Font Dropdown */}
+        <div className="relative">
+          <label className="block text-sm text-gray-300 mb-2">Or choose from common fonts:</label>
+          <div className="relative">
+            <input
+              type="text"
+              value={fontSearch}
+              onChange={(e) => setFontSearch(e.target.value)}
+              onFocus={() => setShowFontDropdown(true)}
+              placeholder="Search fonts... (e.g. Arial, Roboto, Times)"
+              className="w-full p-2 bg-gray-700 text-white rounded border border-gray-600 text-sm focus:border-yellow-500"
+            />
+            
+            {showFontDropdown && (
+              <div className="absolute top-full left-0 right-0 mt-1 bg-gray-800 border border-gray-600 rounded max-h-40 overflow-y-auto z-50">
+                {COMMON_FONTS
+                  .filter(font => font.toLowerCase().includes(fontSearch.toLowerCase()))
+                  .map((font) => (
+                    <button
+                      key={font}
+                      onClick={() => {
+                        handleFieldChange('font_family', font);
+                        setFontSearch(font);
+                        setShowFontDropdown(false);
+                      }}
+                      className="w-full text-left p-2 hover:bg-gray-700 text-white text-sm transition-colors"
+                      style={{ fontFamily: font }}
+                    >
+                      {font}
+                    </button>
+                  ))}
+              </div>
+            )}
+          </div>
+          
+          {/* Close dropdown when clicking outside */}
+          {showFontDropdown && (
+            <div 
+              className="fixed inset-0 z-40" 
+              onClick={() => setShowFontDropdown(false)}
+            />
+          )}
         </div>
       </div>
 

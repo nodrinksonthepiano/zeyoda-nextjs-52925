@@ -138,17 +138,16 @@ export const useWalletBalances = ({
     }
   }, [fetchRealBalances, userAddress, magic, allArtistsConfig, autoRefreshOnMount]);
 
-  // Set up 30-second polling (suspended during onboarding)
-  useEffect(() => {
-    if (!userAddress || !magic || !allArtistsConfig || suspendAutoRefresh) return;
-
-    const interval = setInterval(() => {
-      console.log('⏰ Auto-refreshing wallet balances...');
-      fetchRealBalances();
-    }, 30000); // 30 seconds
-
-    return () => clearInterval(interval);
-  }, [fetchRealBalances, userAddress, magic, allArtistsConfig, suspendAutoRefresh]);
+  // DISABLED: 30-second polling to prevent page remounts
+  // Auto-refresh moved to SWR-based system for stability
+  // useEffect(() => {
+  //   if (!userAddress || !magic || !allArtistsConfig || suspendAutoRefresh) return;
+  //   const interval = setInterval(() => {
+  //     console.log('⏰ Auto-refreshing wallet balances...');
+  //     fetchRealBalances();
+  //   }, 30000);
+  //   return () => clearInterval(interval);
+  // }, [fetchRealBalances, userAddress, magic, allArtistsConfig, suspendAutoRefresh]);
 
   // Listen for transaction success events
   useEffect(() => {

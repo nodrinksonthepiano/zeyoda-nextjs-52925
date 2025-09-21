@@ -104,17 +104,16 @@ export function useTreasuryEarnings({
     fetchTreasuryEarnings();
   }, [fetchTreasuryEarnings]);
 
-  // Auto-refresh every 30 seconds if enabled and user is treasury
-  useEffect(() => {
-    if (!autoRefresh || !isTreasury) return;
-
-    const interval = setInterval(() => {
-      console.log('[useTreasuryEarnings] Auto-refreshing treasury earnings...');
-      fetchTreasuryEarnings();
-    }, 30000); // 30 seconds
-
-    return () => clearInterval(interval);
-  }, [autoRefresh, isTreasury, fetchTreasuryEarnings]);
+  // DISABLED: Auto-refresh to prevent page remounts
+  // Treasury refresh moved to SWR-based system for stability  
+  // useEffect(() => {
+  //   if (!autoRefresh || !isTreasury) return;
+  //   const interval = setInterval(() => {
+  //     console.log('[useTreasuryEarnings] Auto-refreshing treasury earnings...');
+  //     fetchTreasuryEarnings();
+  //   }, 30000);
+  //   return () => clearInterval(interval);
+  // }, [autoRefresh, isTreasury, fetchTreasuryEarnings]);
 
   return {
     isTreasury,
