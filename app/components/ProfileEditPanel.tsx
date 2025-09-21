@@ -99,7 +99,7 @@ const ProfileEditPanel: React.FC<ProfileEditPanelProps> = ({
           'x-wallet-address': userAddress.toLowerCase()
         },
         body: JSON.stringify({
-          artistId: artistConfig.name,
+          artistId: artistConfig.id || artistConfig.name.toLowerCase(),
           ...formData
         })
       });

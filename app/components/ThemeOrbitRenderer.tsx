@@ -150,6 +150,12 @@ const ThemeOrbitRenderer: React.FC<ThemeOrbitRendererProps> = ({
         }))] as RenderableToken[])
           .filter((token, index, self) => token.name && self.findIndex(t => t.name === token.name) === index)
           .map((token: RenderableToken, index: number) => {
+            // 4-LINE PER-ARTIST COLOR FIX
+            const tokenTheme = allArtistsConfig?.[token.artistId?.toLowerCase()]?.theme;
+            const bg = tokenTheme?.primaryColor || '#0a1230';
+            const fg = tokenTheme?.accentColor || '#1e5cff';
+            const ff = tokenTheme?.fontFamily || 'Bungee, cursive';
+            
             return (
               <Link 
                 key={`orbit-${token.name}-${token.artistId || 'standalone'}-${index}`}
@@ -162,6 +168,10 @@ const ThemeOrbitRenderer: React.FC<ThemeOrbitRendererProps> = ({
                 style={{
                   willChange: 'transform, opacity',
                   opacity: 0,
+                  background: bg,
+                  color: fg,
+                  border: `2px solid ${fg}`,
+                  fontFamily: ff,
                 }}
                 onMouseEnter={(e) => e.currentTarget.setAttribute('data-hovered', 'true')}
                 onMouseLeave={(e) => e.currentTarget.setAttribute('data-hovered', 'false')}

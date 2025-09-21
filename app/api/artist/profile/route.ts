@@ -13,7 +13,7 @@ const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey, {
 });
 
 // Allowed font families
-const ALLOWED_FONTS = ["Inter", "DM Sans", "Space Grotesk", "Instrument Sans", "Bungee", "Geist"];
+const ALLOWED_FONTS = ["Inter", "DM Sans", "Space Grotesk", "Instrument Sans", "Bungee", "Geist", "Bungee, cursive", "Inter, sans-serif", "Arial, sans-serif"];
 
 interface ProfileUpdateRequest {
   artistId: string;
@@ -32,6 +32,7 @@ export async function PATCH(request: NextRequest) {
   try {
     const updateData: ProfileUpdateRequest = await request.json();
     console.log('✏️ Profile update request:', { artistId: updateData.artistId, fields: Object.keys(updateData).filter(k => k !== 'artistId') });
+    console.log('✏️ Full request data:', updateData);
 
     // Validate required fields
     if (!updateData.artistId) {
@@ -72,16 +73,17 @@ export async function PATCH(request: NextRequest) {
       }, { status: 403 });
     }
 
-    // Validate and sanitize inputs
-    const updates: any = {};
+    // Validate and sanitize inputs - build theme JSONB object
     const validationErrors: string[] = [];
+    const currentTheme = artist.theme || {};
+    const newTheme = { ...currentTheme };
 
     // Validate colors (hex format)
     const hexRegex = /^#([0-9a-fA-F]{6})$/;
     
     if (updateData.primary_color !== undefined) {
       if (hexRegex.test(updateData.primary_color)) {
-        updates.primary_color = updateData.primary_color;
+        newTheme.primaryColor = updateData.primary_color;
       } else {
         validationErrors.push('primary_color must be valid hex format (#RRGGBB)');
       }
@@ -89,7 +91,7 @@ export async function PATCH(request: NextRequest) {
 
     if (updateData.accent_color !== undefined) {
       if (hexRegex.test(updateData.accent_color)) {
-        updates.accent_color = updateData.accent_color;
+        newTheme.accentColor = updateData.accent_color;
       } else {
         validationErrors.push('accent_color must be valid hex format (#RRGGBB)');
       }
@@ -97,7 +99,7 @@ export async function PATCH(request: NextRequest) {
 
     if (updateData.gradient_start !== undefined) {
       if (hexRegex.test(updateData.gradient_start)) {
-        updates.gradient_start = updateData.gradient_start;
+        newTheme.gradientStart = updateData.gradient_start;
       } else {
         validationErrors.push('gradient_start must be valid hex format (#RRGGBB)');
       }
@@ -105,7 +107,7 @@ export async function PATCH(request: NextRequest) {
 
     if (updateData.gradient_end !== undefined) {
       if (hexRegex.test(updateData.gradient_end)) {
-        updates.gradient_end = updateData.gradient_end;
+        newTheme.gradientEnd = updateData.gradient_end;
       } else {
         validationErrors.push('gradient_end must be valid hex format (#RRGGBB)');
       }
@@ -114,7 +116,7 @@ export async function PATCH(request: NextRequest) {
     // Validate font family
     if (updateData.font_family !== undefined) {
       if (ALLOWED_FONTS.includes(updateData.font_family)) {
-        updates.font_family = updateData.font_family;
+        newTheme.fontFamily = updateData.font_family;
       } else {
         validationErrors.push(`font_family must be one of: ${ALLOWED_FONTS.join(', ')}`);
       }
@@ -122,23 +124,25 @@ export async function PATCH(request: NextRequest) {
 
     // Return validation errors
     if (validationErrors.length > 0) {
+      console.log('❌ Validation errors:', validationErrors);
       return NextResponse.json({ 
         error: 'Validation failed',
         details: validationErrors
       }, { status: 400 });
     }
 
-    // Check if any updates to make
-    if (Object.keys(updates).length === 0) {
+    // Check if theme has changes
+    const hasThemeChanges = JSON.stringify(newTheme) !== JSON.stringify(currentTheme);
+    if (!hasThemeChanges) {
       return NextResponse.json({ 
         error: 'No valid fields to update' 
       }, { status: 400 });
     }
 
-    // Add timestamp
-    updates.updated_at = new Date().toISOString();
+    // Prepare updates for JSONB theme column
+    const updates = { theme: newTheme };
 
-    console.log('💾 Updating artist profile:', { artistId: updateData.artistId, updates: Object.keys(updates) });
+    console.log('💾 Updating artist profile:', { artistId: updateData.artistId, themeChanges: Object.keys(newTheme) });
 
     // Update artist profile
     const { data: updateResult, error: updateError } = await supabaseAdmin
