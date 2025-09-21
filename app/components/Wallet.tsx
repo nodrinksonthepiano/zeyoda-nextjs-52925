@@ -46,6 +46,11 @@ const Wallet: React.FC<WalletProps> = ({
   const [downloadingAssets, setDownloadingAssets] = useState<Set<string>>(new Set());
   const [assetMetadata, setAssetMetadata] = useState<{ [key: string]: AssetMetadata }>({});
   const [showUsdBalance, setShowUsdBalance] = useState<boolean>(true);
+  const [showLpPanel, setShowLpPanel] = useState<boolean>(false);
+  const [lpPct, setLpPct] = useState<number>(0);
+  const [quoteUsd, setQuoteUsd] = useState<string>('0.00');
+  const [isQuoting, setIsQuoting] = useState<boolean>(false);
+  const [isWithdrawing, setIsWithdrawing] = useState<boolean>(false);
   const { showToast } = useToast();
   const { usdBalance, isLoading: usdLoading } = useUsdBalance();
 
@@ -206,6 +211,85 @@ const Wallet: React.FC<WalletProps> = ({
   const handleManualRefresh = async () => {
     localStorage.removeItem('zeyodaUserTokenBalances');
     await refreshBalances();
+  };
+
+  const quoteLPWithdraw = async (percent: number) => {
+    if (!ownedArtistId || percent <= 0) {
+      setQuoteUsd('0.00');
+      return;
+    }
+
+    setIsQuoting(true);
+    try {
+      const response = await fetch(`/api/lp/quote?artistId=${ownedArtistId}&percent=${percent}`);
+      const result = await response.json();
+      
+      if (response.ok) {
+        setQuoteUsd(result.quoteUsd?.toFixed(2) || '0.00');
+      } else {
+        setQuoteUsd('Error');
+      }
+    } catch (error) {
+      setQuoteUsd('Error');
+    } finally {
+      setIsQuoting(false);
+    }
+  };
+
+  const handleLPWithdraw = async () => {
+    if (!ownedArtistId || !userAddress || !isArtistWallet || lpPct <= 0 || isWithdrawing) {
+      showToast('Invalid withdrawal parameters', 'error');
+      return;
+    }
+
+    setIsWithdrawing(true);
+    try {
+      console.log('💎 Starting LP withdrawal:', { artistId: ownedArtistId, percent: lpPct });
+      showToast(`Withdrawing ${lpPct}% of LP position...`, 'info');
+
+      const response = await fetch('/api/lp/withdraw', {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          'x-wallet-address': userAddress.toLowerCase()
+        },
+        body: JSON.stringify({
+          artistId: ownedArtistId,
+          percent: lpPct
+        })
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        if (result.floorBreached) {
+          showToast('Withdrawal cancelled: price moved too much', 'warning');
+        } else if (result.duplicate) {
+          showToast('Withdrawal already processed', 'info');
+        } else {
+          showToast(result.error || 'Withdrawal failed', 'error');
+        }
+        return;
+      }
+
+      console.log('✅ LP withdrawal successful:', result);
+      showToast(`✅ Withdrew ${result.breakdown.percent}% of LP ($${result.usdProceeds.toFixed(2)})`, 'success');
+
+      // Reset panel state and trigger refresh
+      setTimeout(() => {
+        setShowLpPanel(false);
+        setLpPct(0);
+        setQuoteUsd('0.00');
+      }, 800); // Brief delay to show success state
+      
+      window.dispatchEvent(new CustomEvent('balanceUpdate'));
+
+    } catch (error: any) {
+      console.error('❌ LP withdrawal error:', error);
+      showToast('LP withdrawal failed', 'error');
+    } finally {
+      setIsWithdrawing(false);
+    }
   };
 
   // Combine balances
@@ -443,7 +527,68 @@ const Wallet: React.FC<WalletProps> = ({
                       <div>
                         <div>Downloads: ${artistEarnings.totals.totalEarnings.toFixed(2)} • {artistEarnings.totals.totalSales} sales</div>
                         {artistEarnings.totals.lpWithdrawable > 0 && (
-                          <div>LP Withdrawable: ${artistEarnings.totals.lpWithdrawable.toFixed(2)} (embedded in pool)</div>
+                          <div className="space-y-2">
+                            <div>LP Withdrawable: ${artistEarnings.totals.lpWithdrawable.toFixed(2)} (embedded in pool)</div>
+                            <button
+                              onClick={() => { setShowLpPanel(true); setLpPct(0); quoteLPWithdraw(0); }}
+                              disabled={!isArtistWallet || artistEarnings.totals.lpWithdrawable <= 0}
+                              className="w-full py-1 px-3 bg-purple-600 hover:bg-purple-500 disabled:bg-gray-600 disabled:cursor-not-allowed text-white text-xs rounded transition-colors"
+                            >
+                              Withdraw LP
+                            </button>
+                            
+                            {/* LP Withdrawal Panel - Simplified */}
+                            {showLpPanel && (
+                              <div className="mt-3 p-3 bg-purple-800 bg-opacity-50 rounded border border-purple-400 border-opacity-50">
+                                <div className="mb-3">
+                                  <div className="text-purple-300 text-xs mb-1">Withdraw LP</div>
+                                  <div className="text-purple-200 text-xs">LP Withdrawable: ${artistEarnings.totals.lpWithdrawable.toFixed(2)}</div>
+                                </div>
+                                
+                                <div className="flex items-center space-x-3 mb-3">
+                                  <input
+                                    type="range"
+                                    min="0"
+                                    max="100"
+                                    step="1"
+                                    value={lpPct}
+                                    onChange={(e) => {
+                                      const newPct = Number(e.target.value);
+                                      setLpPct(newPct);
+                                      quoteLPWithdraw(newPct);
+                                    }}
+                                    className="flex-1"
+                                  />
+                                  <div className="text-right min-w-[80px]">
+                                    <div className="text-purple-300 text-xs">Estimated</div>
+                                    <div className="text-white font-bold text-sm">
+                                      ${isQuoting ? '...' : quoteUsd}
+                                    </div>
+                                  </div>
+                                </div>
+                                
+                                <div className="text-purple-300 text-xs mb-3">
+                                  Withdrawing {lpPct}% of LP position
+                                </div>
+                                
+                                <div className="flex space-x-2">
+                                  <button
+                                    onClick={() => setShowLpPanel(false)}
+                                    className="flex-1 py-1 px-3 bg-gray-600 hover:bg-gray-500 text-white text-xs rounded transition-colors"
+                                  >
+                                    Cancel
+                                  </button>
+                                  <button
+                                    onClick={handleLPWithdraw}
+                                    disabled={lpPct <= 0 || isWithdrawing}
+                                    className="flex-1 py-1 px-3 bg-yellow-600 hover:bg-yellow-500 disabled:bg-gray-600 disabled:cursor-not-allowed text-white text-xs rounded transition-colors"
+                                  >
+                                    {isWithdrawing ? 'Withdrawing...' : `Confirm Withdraw ${lpPct}%`}
+                                  </button>
+                                </div>
+                              </div>
+                            )}
+                          </div>
                         )}
                       </div>
                     ) : 'No sales yet'}
