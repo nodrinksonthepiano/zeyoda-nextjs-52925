@@ -113,12 +113,12 @@ export async function PATCH(request: NextRequest) {
       }
     }
 
-    // Validate font family
+    // Validate font family (allow any reasonable font string)
     if (updateData.font_family !== undefined) {
-      if (ALLOWED_FONTS.includes(updateData.font_family)) {
+      if (updateData.font_family.length > 0 && updateData.font_family.length < 100) {
         newTheme.fontFamily = updateData.font_family;
       } else {
-        validationErrors.push(`font_family must be one of: ${ALLOWED_FONTS.join(', ')}`);
+        validationErrors.push('font_family must be a valid font string');
       }
     }
 
