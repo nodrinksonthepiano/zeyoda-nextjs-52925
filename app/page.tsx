@@ -1498,6 +1498,7 @@ export default function HomePage() {
                 >
                   {(appMode === 'onboarding' || appMode === 'upload-asset') ? onboardingArtistName : artistConfig.displayName}
                 </h1>
+
   
                 <div className="relative w-full max-w-4xl mx-auto">
                   {(appMode === 'onboarding' || appMode === 'upload-asset') ? (
@@ -1791,9 +1792,9 @@ export default function HomePage() {
               
               {/* Main input */}
               <div className="flex items-center w-full">
-                {/* Upload button - only show for logged in users on existing artist pages */}
+                {/* Action buttons - match top button styling */}
                 {user && artistConfig && artistConfig.contract && (
-                  <div className="flex">
+                  <div className="flex gap-2 mr-3">
                     <button
                       onClick={() => {
                         if (appMode === 'upload-asset') {
@@ -1805,19 +1806,19 @@ export default function HomePage() {
                           setOnboardingArtistName(`ADD NEW ASSET TO ${artistConfig.name}`);
                         }
                       }}
-                      className="p-3 bg-purple-600 text-white hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-purple-500"
-                      title="Upload new asset"
+                      className="bg-gray-600 hover:bg-gray-500 px-3 py-2 rounded text-white text-sm font-medium transition-colors w-10 h-8 flex items-center justify-center"
+                      title="Create new 1155 asset"
                     >
-                      {appMode === 'upload-asset' ? '✕' : '📤'}
+                      {appMode === 'upload-asset' ? '✕' : '+'}
                     </button>
                     
-                    {/* Edit Profile button - only show for artist's own wallet */}
+                    {/* Edit Artist Page button - only show for artist's own wallet */}
                     {user && artistConfig && artistConfig.treasury_wallet && 
                      user.toLowerCase() === artistConfig.treasury_wallet.toLowerCase() && (
                       <button
                         onClick={() => setAppMode('profile-edit')}
-                        className="p-3 bg-blue-600 text-white rounded-r-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 ml-0"
-                        title="Edit profile"
+                        className="bg-yellow-600 hover:bg-yellow-500 px-3 py-2 rounded text-white text-sm font-medium transition-colors w-10 h-8 flex items-center justify-center"
+                        title="Edit artist page"
                       >
                         ✏️
                       </button>
@@ -1890,17 +1891,37 @@ export default function HomePage() {
 
         {/* Top-left wallet button - MOVED TO END TO ENSURE TOP Z-INDEX */}
         {user && (
-          <button
-            onClick={(e) => {
-              e.preventDefault();
-              e.stopPropagation();
-              setShowAssetsPanel(!showAssetsPanel);
-            }}
-            className="fixed top-4 left-4 z-[9999] bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded-md text-white font-medium transition-colors shadow-lg cursor-pointer"
-            type="button"
-          >
-            💰 {showAssetsPanel ? 'Close' : 'Wallet'}
-          </button>
+          <div className="fixed top-4 left-4 z-[9999] flex gap-2">
+            <button
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                setShowAssetsPanel(!showAssetsPanel);
+              }}
+              className="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded-md text-white font-medium transition-colors shadow-lg cursor-pointer"
+              type="button"
+            >
+              💰 {showAssetsPanel ? 'Close' : 'Wallet'}
+            </button>
+
+            {/* Action Buttons */}
+            <button
+              onClick={() => setAppMode('upload-asset')}
+              className="bg-gray-600 hover:bg-gray-500 px-4 py-2 rounded-md text-white font-medium transition-colors shadow-lg"
+            >
+              + Create New
+            </button>
+            
+            {artistConfig && artistConfig.treasury_wallet && 
+             user.toLowerCase() === artistConfig.treasury_wallet.toLowerCase() && (
+              <button
+                onClick={() => setAppMode('profile-edit')}
+                className="bg-yellow-600 hover:bg-yellow-500 px-4 py-2 rounded-md text-white font-medium transition-colors shadow-lg"
+              >
+                ✏️ Edit Artist Page
+              </button>
+            )}
+          </div>
         )}
 
       </div>

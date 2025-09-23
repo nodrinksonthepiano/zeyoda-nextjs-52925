@@ -292,6 +292,50 @@ const Wallet: React.FC<WalletProps> = ({
     }
   };
 
+  const handleDownloadsWithdraw = async () => {
+    if (!ownedArtistId || !userAddress || !isArtistWallet || !artistEarnings) {
+      showToast('Permission denied: only artist can withdraw downloads', 'error');
+      return;
+    }
+
+    try {
+      const amountUsd = artistEarnings.totals.totalEarnings;
+      console.log('💰 Starting downloads withdrawal:', { artistId: ownedArtistId, amount: amountUsd });
+      showToast(`Withdrawing $${amountUsd.toFixed(2)} in download earnings...`, 'info');
+
+      const response = await fetch('/api/artist/withdraw', {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          'x-wallet-address': userAddress.toLowerCase()
+        },
+        body: JSON.stringify({
+          artistId: ownedArtistId,
+          type: 'downloads',
+          amountUsd: Number(amountUsd),
+          method: 'paypal'
+        })
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        showToast(result.error || 'Downloads withdrawal failed', 'error');
+        return;
+      }
+
+      console.log('✅ Downloads withdrawal successful:', result);
+      showToast(`✅ Withdrew $${amountUsd.toFixed(2)} in download earnings!`, 'success');
+
+      // Trigger balance refresh
+      window.dispatchEvent(new CustomEvent('balanceUpdate'));
+
+    } catch (error: any) {
+      console.error('❌ Downloads withdrawal error:', error);
+      showToast('Downloads withdrawal failed', 'error');
+    }
+  };
+
   // Combine balances
   const combinedBalances = useMemo(() => {
     const combined: { [tokenSymbol: string]: bigint } = {};
@@ -537,7 +581,7 @@ const Wallet: React.FC<WalletProps> = ({
                     </div>
                     {artistEarnings.totals.totalEarnings > 0 && (
                       <button
-                        onClick={() => console.log('TODO: Downloads withdrawal')}
+                        onClick={handleDownloadsWithdraw}
                         disabled={!isArtistWallet || artistEarnings.totals.totalEarnings <= 0}
                         className="w-full py-1 px-3 bg-gray-600 hover:bg-gray-500 disabled:bg-gray-700 disabled:cursor-not-allowed text-white text-xs rounded transition-colors"
                       >
