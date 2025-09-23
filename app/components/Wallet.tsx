@@ -494,7 +494,7 @@ const Wallet: React.FC<WalletProps> = ({
           <div className="mt-4 bg-gray-800 bg-opacity-50 rounded-lg p-3 border border-gray-400 border-opacity-50">
             <div className="flex justify-between items-start">
               <div className="flex flex-col flex-grow">
-                <div className="text-gray-300 text-xs mb-1">⚡ Wallet Balance</div>
+                <div className="text-gray-300 text-xs mb-1">💰 Cash (USD)</div>
                 <div className="text-white font-bold text-lg">
                   {!showUsdBalance ? (
                     <span className="text-gray-400">••••••</span>
@@ -505,6 +505,24 @@ const Wallet: React.FC<WalletProps> = ({
                 {showUsdBalance && (
                   <div className="text-gray-300 text-xs mt-1">
                     {`${parseFloat(ethers.formatEther(combinedBalances['ETH'])).toFixed(4)} ETH • Base Sepolia`}
+                  </div>
+                )}
+                
+                {/* Cash Action Buttons */}
+                {showUsdBalance && (
+                  <div className="flex gap-2 mt-3">
+                    <button
+                      onClick={() => console.log('TODO: Deposit functionality')}
+                      className="flex-1 py-1 px-3 bg-green-600 hover:bg-green-500 text-white text-xs rounded transition-colors"
+                    >
+                      Deposit
+                    </button>
+                    <button
+                      onClick={() => console.log('TODO: Withdraw cash functionality')}
+                      className="flex-1 py-1 px-3 bg-gray-600 hover:bg-gray-500 text-white text-xs rounded transition-colors"
+                    >
+                      Withdraw Cash
+                    </button>
                   </div>
                 )}
               </div>
@@ -574,20 +592,14 @@ const Wallet: React.FC<WalletProps> = ({
                 </div>
                 {!earningsLoading && showUsdBalance && artistEarnings && (
                   /* Downloads Earnings Section */
-                  <div className="space-y-3">
-                    <div className="flex justify-between items-center">
-                      <div className="text-yellow-200 text-xs">💰 Downloads</div>
-                      <div className="text-yellow-200 text-xs">${artistEarnings.totals.totalEarnings.toFixed(2)} • {artistEarnings.totals.totalSales} sales</div>
+                  <div className="space-y-2">
+                    <div className="text-yellow-200 text-xs">📊 Sales History</div>
+                    <div className="text-yellow-200 text-xs">
+                      {artistEarnings.totals.totalSales} sales • Gross ${artistEarnings.totals.totalEarnings.toFixed(2)} • Net ~${(artistEarnings.totals.totalEarnings * 0.997).toFixed(2)}
                     </div>
-                    {artistEarnings.totals.totalEarnings > 0 && (
-                      <button
-                        onClick={handleDownloadsWithdraw}
-                        disabled={!isArtistWallet || artistEarnings.totals.totalEarnings <= 0}
-                        className="w-full py-1 px-3 bg-gray-600 hover:bg-gray-500 disabled:bg-gray-700 disabled:cursor-not-allowed text-white text-xs rounded transition-colors"
-                      >
-                        Withdraw Downloads
-                      </button>
-                    )}
+                    <div className="text-yellow-300 text-xs opacity-75">
+                      All net earnings credited to Cash
+                    </div>
                     
                     {/* LP Section - Separate */}
                     {artistEarnings.totals.lpWithdrawable > 0 && (

@@ -36,12 +36,11 @@ export async function GET(request: NextRequest) {
       }, { status: 404 });
     }
 
-    // Calculate downloads USD available (from artist_earnings)
+    // Calculate downloads history and cash balance
     const { data: earnings, error: earningsError } = await supabaseAdmin
       .from('artist_earnings')
-      .select('net_earnings_usd, status, collectible_minted')
-      .eq('artist_id', artistId)
-      .neq('error_reason', 'LP_FEE'); // Exclude LP fees
+      .select('gross_amount_usd, net_earnings_usd, status, collectible_minted, error_reason, buyer_address, asset_id, created_at')
+      .eq('artist_id', artistId);
 
     if (earningsError) {
       console.error('❌ Earnings fetch error:', earningsError);
@@ -50,10 +49,24 @@ export async function GET(request: NextRequest) {
       }, { status: 500 });
     }
 
-    // Calculate available download earnings (minted/completed sales)
-    const downloadsUsdAvailable = (earnings || [])
-      .filter(e => e.status === 'minted' && e.collectible_minted)
-      .reduce((sum, e) => sum + parseFloat(e.net_earnings_usd || '0'), 0);
+    // Filter downloads (exclude LP fees and AMM rows)
+    const downloadSales = (earnings || []).filter(e => 
+      e.status === 'minted' && 
+      e.error_reason !== 'LP_FEE' && 
+      e.asset_id !== null && 
+      e.buyer_address !== 'amm-pool'
+    );
+
+    // Calculate downloads stats
+    const downloadsCount = downloadSales.length;
+    const downloadsGrossUsd = downloadSales.reduce((sum, e) => sum + parseFloat(e.gross_amount_usd || '0'), 0);
+    const downloadsNetUsd = downloadSales.reduce((sum, e) => sum + parseFloat(e.net_earnings_usd || '0'), 0);
+
+    // Calculate cash balance (deposits + net downloads - withdrawals)
+    // For MVP: use ETH balance as proxy for deposits + net downloads credited
+    const depositsUsd = 200.00; // Simplified for testnet
+    const cashWithdrawnUsd = 0; // Track via withdrawal records later
+    const cashAvailableUsd = depositsUsd + downloadsNetUsd - cashWithdrawnUsd;
 
     // Calculate LP withdrawable (reuse existing logic from artist-earnings)
     let lpWithdrawableUsd = 0;
@@ -80,11 +93,26 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       artistId,
       artistName: artist.name,
-      downloadsUsdAvailable: Number(downloadsUsdAvailable.toFixed(2)),
-      lpWithdrawableUsd: Number(lpWithdrawableUsd.toFixed(2)),
-      breakdown: {
-        totalEarningsRecords: earnings?.length || 0,
-        mintedSales: earnings?.filter(e => e.status === 'minted').length || 0
+      cash: {
+        availableUsd: Number(cashAvailableUsd.toFixed(2)),
+        lifetimeNetUsd: Number(downloadsNetUsd.toFixed(2)),
+        depositsUsd: Number(depositsUsd.toFixed(2)),
+        withdrawnUsd: Number(cashWithdrawnUsd.toFixed(2)),
+        lastUpdated: new Date().toISOString()
+      },
+      downloads: {
+        count: downloadsCount,
+        grossUsd: Number(downloadsGrossUsd.toFixed(2)),
+        netUsd: Number(downloadsNetUsd.toFixed(2)),
+        recent: downloadSales.slice(0, 10).map(sale => ({
+          timestamp: sale.created_at,
+          gross: parseFloat(sale.gross_amount_usd || '0'),
+          fee: parseFloat(sale.gross_amount_usd || '0') - parseFloat(sale.net_earnings_usd || '0'),
+          net: parseFloat(sale.net_earnings_usd || '0')
+        }))
+      },
+      lp: {
+        withdrawableUsd: Number(lpWithdrawableUsd.toFixed(2))
       }
     });
 
