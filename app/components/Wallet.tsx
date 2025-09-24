@@ -51,6 +51,9 @@ const Wallet: React.FC<WalletProps> = ({
   const [quoteUsd, setQuoteUsd] = useState<string>('0.00');
   const [isQuoting, setIsQuoting] = useState<boolean>(false);
   const [isWithdrawing, setIsWithdrawing] = useState<boolean>(false);
+  const [showCashPanel, setShowCashPanel] = useState<boolean>(false);
+  const [cashPct, setCashPct] = useState<number>(0);
+  const [cashAmount, setCashAmount] = useState<string>('0.00');
   const { showToast } = useToast();
   const { usdBalance, isLoading: usdLoading } = useUsdBalance();
 
@@ -292,6 +295,31 @@ const Wallet: React.FC<WalletProps> = ({
     }
   };
 
+  const handleDeposit = async () => {
+    if (!userAddress) {
+      showToast('No wallet address available', 'error');
+      return;
+    }
+
+    try {
+      // Copy wallet address to clipboard
+      await navigator.clipboard.writeText(userAddress);
+      showToast('Wallet address copied to clipboard!', 'success');
+      
+      // Open Base Sepolia faucet in new tab
+      window.open('https://www.alchemy.com/faucets/base-sepolia', '_blank');
+      
+      // Additional helper message
+      setTimeout(() => {
+        showToast('Paste your wallet address on the faucet to fund your cash balance', 'info');
+      }, 2000);
+      
+    } catch (error) {
+      console.error('❌ Deposit helper error:', error);
+      showToast('Could not copy address. Please copy manually from wallet.', 'error');
+    }
+  };
+
   const handleDownloadsWithdraw = async () => {
     if (!ownedArtistId || !userAddress || !isArtistWallet || !artistEarnings) {
       showToast('Permission denied: only artist can withdraw downloads', 'error');
@@ -333,6 +361,47 @@ const Wallet: React.FC<WalletProps> = ({
     } catch (error: any) {
       console.error('❌ Downloads withdrawal error:', error);
       showToast('Downloads withdrawal failed', 'error');
+    }
+  };
+
+  const handleCashWithdraw = async () => {
+    if (!userAddress || parseFloat(cashAmount) <= 0) {
+      showToast('Invalid withdrawal amount', 'error');
+      return;
+    }
+
+    try {
+      const amount = parseFloat(cashAmount);
+      showToast(`Withdrawing $${amount.toFixed(2)} from cash balance...`, 'info');
+
+      const response = await fetch('/api/artist/withdraw', {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          'x-wallet-address': userAddress.toLowerCase()
+        },
+        body: JSON.stringify({
+          artistId: ownedArtistId || 'unknown',
+          type: 'cash',
+          amountUsd: amount,
+          method: 'eth_balance'
+        })
+      });
+
+      const result = await response.json();
+
+      if (response.ok) {
+        showToast(`✅ Withdrew $${amount.toFixed(2)} to your wallet!`, 'success');
+        setShowCashPanel(false);
+        setCashPct(0);
+        setCashAmount('0.00');
+        window.dispatchEvent(new CustomEvent('balanceUpdate'));
+      } else {
+        showToast(result.error || 'Cash withdrawal failed', 'error');
+      }
+    } catch (error: any) {
+      console.error('❌ Cash withdrawal error:', error);
+      showToast('Cash withdrawal failed', 'error');
     }
   };
 
@@ -512,17 +581,79 @@ const Wallet: React.FC<WalletProps> = ({
                 {showUsdBalance && (
                   <div className="flex gap-2 mt-3">
                     <button
-                      onClick={() => console.log('TODO: Deposit functionality')}
+                      onClick={handleDeposit}
                       className="flex-1 py-1 px-3 bg-green-600 hover:bg-green-500 text-white text-xs rounded transition-colors"
                     >
                       Deposit
                     </button>
                     <button
-                      onClick={() => console.log('TODO: Withdraw cash functionality')}
+                      onClick={() => { setShowCashPanel(true); setCashPct(0); setCashAmount('0.00'); }}
                       className="flex-1 py-1 px-3 bg-gray-600 hover:bg-gray-500 text-white text-xs rounded transition-colors"
                     >
                       Withdraw Cash
                     </button>
+                  </div>
+                )}
+                
+                {/* Cash Withdrawal Panel */}
+                {showCashPanel && showUsdBalance && (
+                  <div className="mt-3 p-3 bg-gray-700 bg-opacity-50 rounded border border-gray-400 border-opacity-50">
+                    <div className="mb-3">
+                      <div className="text-gray-300 text-xs mb-1">Withdraw Cash</div>
+                      <div className="text-gray-200 text-xs">Available: ${(parseFloat(ethers.formatEther(combinedBalances['ETH'])) * 2500).toFixed(2)}</div>
+                    </div>
+                    
+                    <div className="flex items-center space-x-3 mb-3">
+                      <input
+                        type="range"
+                        min="0"
+                        max="100"
+                        step="1"
+                        value={cashPct}
+                        onChange={(e) => {
+                          const newPct = Number(e.target.value);
+                          setCashPct(newPct);
+                          const maxAmount = parseFloat(ethers.formatEther(combinedBalances['ETH'])) * 2500;
+                          setCashAmount((maxAmount * newPct / 100).toFixed(2));
+                        }}
+                        className="flex-1"
+                      />
+                      <div className="text-right min-w-[80px]">
+                        <div className="text-gray-300 text-xs">Amount</div>
+                        <input
+                          type="number"
+                          value={cashAmount}
+                          onChange={(e) => {
+                            const amount = parseFloat(e.target.value) || 0;
+                            setCashAmount(e.target.value);
+                            const maxAmount = parseFloat(ethers.formatEther(combinedBalances['ETH'])) * 2500;
+                            setCashPct(maxAmount > 0 ? (amount / maxAmount) * 100 : 0);
+                          }}
+                          className="w-16 px-1 py-1 bg-gray-800 text-white text-xs rounded border border-gray-600"
+                          placeholder="0.00"
+                        />
+                      </div>
+                    </div>
+                    
+                    <div className="text-gray-300 text-xs mb-3">
+                      Withdrawing ${cashAmount} ({cashPct.toFixed(1)}% of cash balance)
+                    </div>
+                    
+                    <div className="flex space-x-2">
+                      <button
+                        onClick={() => setShowCashPanel(false)}
+                        className="flex-1 py-1 px-3 bg-gray-600 hover:bg-gray-500 text-white text-xs rounded transition-colors"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        onClick={handleCashWithdraw}
+                        disabled={parseFloat(cashAmount) <= 0}
+                        className="flex-1 py-1 px-3 bg-green-600 hover:bg-green-500 disabled:bg-gray-600 disabled:cursor-not-allowed text-white text-xs rounded transition-colors"
+                      >
+                        Confirm Withdraw
+                      </button>
+                    </div>
                   </div>
                 )}
               </div>

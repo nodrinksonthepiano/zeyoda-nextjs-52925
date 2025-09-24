@@ -12,17 +12,19 @@ const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey, {
   }
 });
 
-interface DownloadsWithdrawRequest {
+interface WithdrawRequest {
   artistId: string;
+  type: 'downloads' | 'cash';
   amountUsd: number;
   method: 'paypal' | 'eth_balance';
 }
 
 export async function POST(request: NextRequest) {
   try {
-    const withdrawData: DownloadsWithdrawRequest = await request.json();
-    console.log('💰 Downloads withdrawal request:', { 
-      artistId: withdrawData.artistId, 
+    const withdrawData: WithdrawRequest = await request.json();
+    console.log('💰 Withdrawal request:', { 
+      artistId: withdrawData.artistId,
+      type: withdrawData.type || 'downloads',
       amount: withdrawData.amountUsd,
       method: withdrawData.method 
     });
@@ -98,10 +100,10 @@ export async function POST(request: NextRequest) {
       protocol_fee_usd: 0, // No fee on withdrawals
       net_earnings_usd: withdrawData.amountUsd,
       payment_method: withdrawData.method,
-      source: 'downloads_withdrawal',
-      external_id: `downloads_withdraw_${Date.now()}`,
+      source: withdrawData.type === 'cash' ? 'cash_withdrawal' : 'downloads_withdrawal',
+      external_id: `${withdrawData.type || 'downloads'}_withdraw_${Date.now()}`,
       status: 'minted',
-      error_reason: 'DOWNLOADS_WITHDRAWAL',
+      error_reason: withdrawData.type === 'cash' ? 'CASH_WITHDRAWAL' : 'DOWNLOADS_WITHDRAWAL',
       collectible_minted: true
     };
 
