@@ -37,7 +37,7 @@ export default function RootLayout({
     <html lang="en">
       <body
         suppressHydrationWarning={true}
-        className={`${geistSans.variable} ${geistMono.variable} ${bungee.variable} antialiased`}
+        className={`${geistSans.variable} ${geistMono.variable} ${bungee.variable} antialiased overflow-x-hidden overscroll-none`}
       >
         <ToastProvider>
           <MagicProvider>

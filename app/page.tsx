@@ -15,6 +15,9 @@ import { useFeaturedAsset } from "./hooks/useFeaturedAsset";
 import OwnerControls from "./components/OwnerControls";
 import ArtistVideo from "./components/ArtistVideo";
 import ThemeOrbitRenderer from "./components/ThemeOrbitRenderer";
+import FeaturedContentCarousel from "./components/FeaturedContentCarousel";
+import { useCarouselAssets } from "./hooks/useCarouselAssets";
+import { useCarouselGestures } from "./hooks/useCarouselGestures";
 import PurchaseFlow from "./components/PurchaseFlow";
 import OnboardingPanel from "./components/OnboardingPanel";
 import ProfileEditPanel from "./components/ProfileEditPanel";
@@ -42,6 +45,176 @@ interface PriceDetails {
   platformShare: number;
   investorShare: number;
 }
+
+// 3D Carousel using existing gesture system
+const SwipeableCarousel: React.FC<{
+  videoSource: string;
+  featuredAsset: any;
+  videoContainerRef: React.RefObject<HTMLDivElement>;
+  isMuted: boolean;
+  isVideoError: boolean;
+  setIsVideoError: (error: boolean) => void;
+  toggleMute: () => void;
+}> = ({ videoSource, featuredAsset, videoContainerRef, isMuted, isVideoError, setIsVideoError, toggleMute }) => {
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragOffset, setDragOffset] = useState(0);
+  const containerRef = useRef<HTMLDivElement>(null);
+  
+  const slides = Array.from({ length: 5 }, (_, i) => `Slide ${i + 1}`);
+
+  const navigateToSlide = useCallback((direction: 'next' | 'prev') => {
+    if (direction === 'next') {
+      setCurrentIndex(prev => (prev + 1) % slides.length);
+    } else {
+      setCurrentIndex(prev => (prev - 1 + slides.length) % slides.length);
+    }
+  }, [slides.length]);
+
+  const handleDrag = useCallback((deltaY: number, progress: number) => {
+    setIsDragging(true);
+    setDragOffset(deltaY);
+  }, []);
+
+  const handleDragEnd = useCallback(() => {
+    setIsDragging(false);
+    setDragOffset(0);
+  }, []);
+
+  // Use the existing gesture system
+  useCarouselGestures({
+    onAdvance: navigateToSlide,
+    onDrag: handleDrag,
+    onDragEnd: handleDragEnd,
+    containerRef
+  });
+
+  // Calculate 3D transforms
+  const getCurrentTransform = () => {
+    const dragY = isDragging ? dragOffset * 0.5 : 0;
+    return `translateY(${dragY}px) translateZ(0)`;
+  };
+
+  const getNextTransform = () => {
+    const dragY = isDragging ? dragOffset * 0.2 : 0;
+    return `translateY(${8 + dragY * 0.1}%) translateZ(-40px) rotateX(6deg)`;
+  };
+
+  const getPrevTransform = () => {
+    const dragY = isDragging ? dragOffset * 0.2 : 0;
+    return `translateY(${-8 + dragY * 0.1}%) translateZ(-60px) rotateX(-4deg)`;
+  };
+
+  return (
+    <div 
+      ref={containerRef}
+      className="carousel-stage relative"
+      style={{ 
+        touchAction: 'pan-y',
+        paddingTop: '1rem',
+        paddingBottom: '1rem'
+      }}
+    >
+      {/* 3D Stage */}
+      <div style={{
+        position: 'relative',
+        perspective: '1200px',
+        transformStyle: 'preserve-3d'
+      }}>
+        
+        {/* Previous slide (barely visible above) */}
+        <div style={{
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          width: '100%',
+          height: '100%',
+          transform: getPrevTransform(),
+          opacity: 0.3,
+          zIndex: 5,
+          filter: 'brightness(0.5)',
+          transition: isDragging ? 'none' : 'transform 300ms cubic-bezier(0.22, 0.61, 0.36, 1)'
+        }}>
+          <ArtistVideo
+            isMuted={true}
+            isVideoError={false}
+            setIsVideoError={() => {}}
+            toggleMute={() => {}}
+            videoContainerRef={{ current: null }}
+            videoSrc={videoSource}
+            fileType={featuredAsset?.file_type}
+          />
+        </div>
+
+        {/* Current slide (main) */}
+        <div style={{
+          position: 'relative',
+          zIndex: 20,
+          transform: getCurrentTransform(),
+          transition: isDragging ? 'none' : 'transform 300ms cubic-bezier(0.22, 0.61, 0.36, 1)'
+        }}>
+          <ArtistVideo
+            isMuted={isMuted}
+            isVideoError={isVideoError}
+            setIsVideoError={setIsVideoError}
+            toggleMute={toggleMute}
+            videoContainerRef={videoContainerRef}
+            videoSrc={videoSource}
+            fileType={featuredAsset?.file_type}
+          />
+        </div>
+
+        {/* Next slide (peeking behind) */}
+        <div style={{
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          width: '100%',
+          height: '100%',
+          transform: getNextTransform(),
+          opacity: 0.7,
+          zIndex: 10,
+          filter: 'brightness(0.8)',
+          transition: isDragging ? 'none' : 'transform 300ms cubic-bezier(0.22, 0.61, 0.36, 1)'
+        }}>
+          <ArtistVideo
+            isMuted={true}
+            isVideoError={false}
+            setIsVideoError={() => {}}
+            toggleMute={() => {}}
+            videoContainerRef={{ current: null }}
+            videoSrc={videoSource}
+            fileType={featuredAsset?.file_type}
+          />
+          {/* Subtle overlay */}
+          <div style={{
+            position: 'absolute',
+            inset: 0,
+            background: 'linear-gradient(135deg, rgba(0,0,0,0.1), rgba(255,255,255,0.05))',
+            pointerEvents: 'none'
+          }} />
+        </div>
+
+        {/* Debug indicator */}
+        <div style={{
+          position: 'absolute',
+          top: '10px',
+          left: '10px',
+          background: 'rgba(0,0,0,0.8)',
+          color: 'white',
+          padding: '6px 10px',
+          borderRadius: '6px',
+          fontSize: '12px',
+          zIndex: 30,
+          fontFamily: 'monospace'
+        }}>
+          {slides[currentIndex]} • {isDragging ? `Drag: ${Math.round(dragOffset)}px` : 'Ready'}
+        </div>
+
+      </div>
+    </div>
+  );
+};
 
 
 
@@ -77,6 +250,7 @@ export default function HomePage() {
   
   const artistIdFromUrl = (searchParams.get('artist') ?? 'gosheesh') as string;
   const { featuredAsset, videoUrl, isLoading: assetLoading, error: assetError } = useFeaturedAsset(artistIdFromUrl);
+  const carouselAssets = useCarouselAssets(artistIdFromUrl);
 
   // Handle upload mode from URL parameter
   useEffect(() => {
@@ -1371,6 +1545,7 @@ export default function HomePage() {
   
   const videoSource = getVideoSource();
 
+
   // Show authentication loading screen first
   if (authLoading || !isReady) {
     return (
@@ -1614,17 +1789,19 @@ export default function HomePage() {
                       </div>
                     </>
                   ) : (
-                    // Normal mode: Video with orbital tokens
+                    // Normal mode: 3D Carousel with orbital tokens
                     <>
-                      <ArtistVideo
+                      {/* 3D Carousel with gesture handling */}
+                      <SwipeableCarousel
+                        videoSource={videoSource}
+                        featuredAsset={featuredAsset}
+                        videoContainerRef={videoContainerRef}
                         isMuted={isMuted}
                         isVideoError={isVideoError}
                         setIsVideoError={setIsVideoError}
                         toggleMute={toggleMute}
-                        videoContainerRef={videoContainerRef}
-                        videoSrc={videoSource}
-                        fileType={featuredAsset?.file_type}
                       />
+                      
                       <ThemeOrbitRenderer
                         artistConfig={artistConfig}
                         orbitTokens={orbitTokens}

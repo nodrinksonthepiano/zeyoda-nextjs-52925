@@ -6,6 +6,8 @@
   --gradient-end: #d4af37;
   --artist-font: var(--font-bungee), cursive;
   --body-font: var(--font-geist-sans), sans-serif;
+  /* iOS-safe viewport width to prevent 1px overflow */
+  --vw: 100svw;
 }
 
 @theme inline {
@@ -20,6 +22,13 @@
     --background: #0a0a0a;
     --foreground: #ededed;
   }
+}
+
+/* Kill horizontal scroll globally (iOS-safe) */
+html, body {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: hidden;
 }
 
 body {
@@ -1484,4 +1493,10 @@ body {
   background: rgba(184, 134, 11, 0.2);
   transform: translateY(-2px);
   box-shadow: 0 4px 12px rgba(184, 134, 11, 0.3);
+}
+
+/* Featured area only accepts vertical gestures */
+.carousel-stage, .featured-stage {
+  touch-action: pan-y;          /* ignore horizontal pans */
+  overscroll-behavior-x: none;  /* stop sideways rubber-band */
 }
