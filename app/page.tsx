@@ -78,6 +78,33 @@ export default function HomePage() {
   const artistIdFromUrl = (searchParams.get('artist') ?? 'gosheesh') as string;
   const { featuredAsset, videoUrl, isLoading: assetLoading, error: assetError } = useFeaturedAsset(artistIdFromUrl);
 
+  // Handle upload mode from URL parameter
+  useEffect(() => {
+    const mode = searchParams.get('mode');
+    if (mode === 'upload' && user && artistConfig) {
+      const isOwner = artistConfig.treasury_wallet?.toLowerCase() === user.toLowerCase();
+      if (isOwner) {
+        setAppMode('upload-asset');
+        // Remove mode parameter from URL
+        const newUrl = new URL(window.location.href);
+        newUrl.searchParams.delete('mode');
+        router.replace(newUrl.pathname + newUrl.search);
+      }
+    }
+  }, [searchParams, user, artistConfig, router]);
+
+  // Close upload form if user navigates to a page they don't own
+  useEffect(() => {
+    if (appMode === 'upload-asset' && user && artistConfig) {
+      const isOwner = artistConfig.treasury_wallet?.toLowerCase() === user.toLowerCase();
+      if (!isOwner) {
+        setAppMode('normal');
+        setUploadedFile(null);
+        setUploadAssetData({ title: '', price: 5, description: '' });
+      }
+    }
+  }, [artistIdFromUrl, user, artistConfig, appMode]);
+
   const [isMuted, setIsMuted] = useState(true);
   const [shakeActive, setShakeActive] = useState(false);
   const [showPurchaseModal, setShowPurchaseModal] = useState(false);
@@ -1496,7 +1523,9 @@ export default function HomePage() {
                   }}
                   title={appMode === 'onboarding' ? 'Double-click to edit' : ''}
                 >
-                  {(appMode === 'onboarding' || appMode === 'upload-asset') ? onboardingArtistName : artistConfig.displayName}
+                  {appMode === 'onboarding' ? onboardingArtistName : 
+                   appMode === 'upload-asset' ? `ADD NEW ASSET TO ${artistConfig.displayName}` : 
+                   artistConfig.displayName}
                 </h1>
 
   
@@ -1802,8 +1831,18 @@ export default function HomePage() {
                           setUploadedFile(null);
                           setUploadAssetData({ title: '', price: 5, description: '' });
                         } else {
-                          setAppMode('upload-asset');
-                          setOnboardingArtistName(`ADD NEW ASSET TO ${artistConfig.name}`);
+                          // Find user's owned artist
+                          const ownedArtist = allArtistsConfig ? Object.values(allArtistsConfig).find(artist => 
+                            artist.treasury_wallet?.toLowerCase() === user?.toLowerCase()
+                          ) : null;
+                          
+                          if (ownedArtist) {
+                            // Navigate to their own artist page with upload mode
+                            router.push(`/?artist=${ownedArtist.name?.toLowerCase()}&mode=upload`);
+                          } else {
+                            setAppMode('upload-asset');
+                            setOnboardingArtistName('ADD NEW ASSET');
+                          }
                         }
                       }}
                       className="bg-gray-600 hover:bg-gray-500 px-3 py-2 rounded text-white text-sm font-medium transition-colors w-10 h-8 flex items-center justify-center"
@@ -1906,7 +1945,20 @@ export default function HomePage() {
 
             {/* Action Buttons */}
             <button
-              onClick={() => setAppMode('upload-asset')}
+              onClick={() => {
+                // Find user's owned artist
+                const ownedArtist = allArtistsConfig ? Object.values(allArtistsConfig).find(artist => 
+                  artist.treasury_wallet?.toLowerCase() === user?.toLowerCase()
+                ) : null;
+                
+                if (ownedArtist) {
+                  // Navigate to their own artist page with upload mode
+                  router.push(`/?artist=${ownedArtist.name?.toLowerCase()}&mode=upload`);
+                } else {
+                  setAppMode('upload-asset');
+                  setOnboardingArtistName('ADD NEW ASSET');
+                }
+              }}
               className="bg-gray-600 hover:bg-gray-500 px-4 py-2 rounded-md text-white font-medium transition-colors shadow-lg"
             >
               + Create New
