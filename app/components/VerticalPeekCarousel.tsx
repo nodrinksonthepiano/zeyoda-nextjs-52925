@@ -137,7 +137,7 @@ export default function VerticalPeekCarousel({
       e.preventDefault();
       if (!stateRef.current.dragging) return;
       const y = e.touches[0].clientY;
-      const dy = stateRef.current.startY - y;
+      const dy = y - stateRef.current.startY; // positive when dragging down
       const progress = clamp(dy / DRAG_THRESHOLD_PX, -1.2, 1.2);
       stateRef.current.progress = progress;
       stateRef.current.lastY = y;
@@ -147,6 +147,7 @@ export default function VerticalPeekCarousel({
       const p = stateRef.current.progress;
       stateRef.current.dragging = false;
       if (Math.abs(p) >= 0.33) {
+        // Natural mapping: drag down (p>0) -> next (+1)
         const dir = p > 0 ? 1 : -1;
         onIndexChange((index + dir + n) % n);
       }
@@ -194,6 +195,7 @@ export default function VerticalPeekCarousel({
         // Accumulate and decide step
         const nextProgress = clamp(stateRef.current.progress + inc, -1.2, 1.2);
         if (Math.abs(nextProgress) >= 0.33) {
+        // Natural mapping: wheel down (nextProgress>0) -> next (+1)
           const dir = nextProgress > 0 ? 1 : -1;
           onIndexChange((index + dir + n) % n);
           stateRef.current.lastWheelStepTs = now;
@@ -247,7 +249,7 @@ export default function VerticalPeekCarousel({
     const onMouseMove = (e: MouseEvent) => {
       if (!stateRef.current.dragging) return;
       e.preventDefault();
-      const dy = stateRef.current.startY - e.clientY;
+      const dy = e.clientY - stateRef.current.startY; // positive when dragging down
       stateRef.current.progress = clamp(dy / DRAG_THRESHOLD_PX, -1.2, 1.2);
       stateRef.current.lastY = e.clientY;
     };
