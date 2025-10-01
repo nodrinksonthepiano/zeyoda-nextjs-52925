@@ -27,12 +27,14 @@ export default function VerticalPeekCarousel({
   containerRef,
   size = { maxWidthPx: 800, minHeightVh: 60, perspectivePx: 800 },
 }: VerticalPeekCarouselProps) {
+  const PEEK_PERCENT = 12; // visible hint bands (top/bottom) at rest
   const rootRef = containerRef; // share the same ref with orbit renderer
   const trioRefs = {
     prev: useRef<HTMLDivElement>(null),
     current: useRef<HTMLDivElement>(null),
     next: useRef<HTMLDivElement>(null),
   };
+  // Peek-only mode: no sphere layers
 
   const stateRef = useRef({
     progress: 0, // -1..1 during drag
@@ -93,22 +95,43 @@ export default function VerticalPeekCarousel({
 
   // compute transforms for a given base angle offset by progress
   function setTrioTransforms(progress: number) {
-    const set = (el: HTMLDivElement | null, baseAngle: number, isPeekTop: boolean) => {
-      if (!el) return;
-      const θ = baseAngle + progress * stepAngle;
+    const ch = rootRef.current?.clientHeight ?? 0;
+    const bandPx = ch * (PEEK_PERCENT / 100);
+
+    // Current (front) follows the wheel; peeks stay pinned as hint bands
+    if (trioRefs.current.current) {
+      const θ = 0 + progress * stepAngle;
       const c = Math.cos(θ);
       const s = Math.sin(θ);
       const liftY = Ry * s;
       const depthZ = Rz * c;
       const scale = mapScale(c);
-      const rotateX = isPeekTop ? 6 : -6;
-      el.style.transform = `translateY(${liftY}px) translateZ(${depthZ}px) scale(${scale}) rotateX(${rotateX}deg)`;
-      el.style.opacity = isPeekTop || !isPeekTop ? (Math.abs(baseAngle) > 0 ? "0.55" : "1") : "1";
-    };
+      trioRefs.current.current.style.transform = `translateY(${liftY}px) translateZ(${depthZ}px) scale(${scale}) rotateX(0deg)`;
+      trioRefs.current.current.style.opacity = "1";
+    }
 
-    set(trioRefs.prev.current, +stepAngle, true); // above/behind
-    set(trioRefs.current.current, 0, false); // front
-    set(trioRefs.next.current, -stepAngle, false); // below/behind
+    const restPinPrevY = -bandPx;
+    const restPinNextY = +bandPx;
+    const revealK = Math.min(1, Math.abs(progress));
+
+    // Prev (top band): pinned; reveal more only when dragging up (progress<0)
+    if (trioRefs.prev.current) {
+      const maskTop = progress < 0 ? Math.max(0, PEEK_PERCENT * (1 - revealK * 1.0)) : PEEK_PERCENT;
+      trioRefs.prev.current.style.transform = `translateY(${restPinPrevY}px) translateZ(-50px) scale(0.96) rotateX(6deg)`;
+      trioRefs.prev.current.style.opacity = "0.55";
+      trioRefs.prev.current.style.webkitMaskImage = `linear-gradient(black 0%, black ${maskTop}%, transparent ${maskTop}%)` as any;
+      (trioRefs.prev.current.style as any).maskImage = `linear-gradient(black 0%, black ${maskTop}%, transparent ${maskTop}%)`;
+    }
+
+    // Next (bottom band): pinned; reveal more only when dragging down (progress>0)
+    if (trioRefs.next.current) {
+      const base = 100 - PEEK_PERCENT;
+      const maskBottom = progress > 0 ? Math.max(0, base * (1 - revealK * 1.0)) : base;
+      trioRefs.next.current.style.transform = `translateY(${restPinNextY}px) translateZ(-50px) scale(0.96) rotateX(-6deg)`;
+      trioRefs.next.current.style.opacity = "0.55";
+      trioRefs.next.current.style.webkitMaskImage = `linear-gradient(transparent ${maskBottom}%, black ${maskBottom}%, black 100%)` as any;
+      (trioRefs.next.current.style as any).maskImage = `linear-gradient(transparent ${maskBottom}%, black ${maskBottom}%, black 100%)`;
+    }
   }
 
   // rAF renderer
@@ -292,23 +315,31 @@ export default function VerticalPeekCarousel({
   return (
     <div
       ref={rootRef}
-      className="relative mx-auto overflow-hidden rounded-xl shadow-2xl shadow-black/50"
+      className="relative mx-auto overflow-hidden"
       style={styleContainer}
       role="region"
       aria-roledescription="carousel"
       aria-label={`Artist assets carousel, ${n} items`}
     >
+      {/* peek-only mode: no backdrop layers */}
       {/* prev */}
       <div
         ref={trioRefs.prev}
         className="absolute inset-0 z-10"
-        style={{ willChange: "transform, opacity", opacity: 0.55, transformOrigin: "center bottom" }}
+        style={{
+          willChange: "transform, opacity",
+          opacity: 0.55,
+          transformOrigin: "center bottom",
+          WebkitMaskImage: `linear-gradient(black 0%, black ${PEEK_PERCENT}%, transparent ${PEEK_PERCENT}%)`,
+          maskImage: `linear-gradient(black 0%, black ${PEEK_PERCENT}%, transparent ${PEEK_PERCENT}%)`,
+          borderRadius: "12px",
+        }}
         aria-hidden="true"
       >
         {prev.type === "video" ? (
-          <video src={prev.url} muted loop playsInline className="w-full h-full object-cover" />
+          <video src={prev.url} muted loop playsInline className="w-full h-full object-cover rounded-xl" />
         ) : (
-          <img src={prev.url} className="w-full h-full object-cover" loading="eager" />
+          <img src={prev.url} className="w-full h-full object-cover rounded-xl" loading="eager" />
         )}
       </div>
 
@@ -316,7 +347,11 @@ export default function VerticalPeekCarousel({
       <div
         ref={trioRefs.current}
         className="absolute inset-0 z-20"
-        style={{ willChange: "transform, opacity" }}
+        style={{
+          willChange: "transform, opacity",
+          top: `${PEEK_PERCENT}%`,
+          bottom: `${PEEK_PERCENT}%`,
+        }}
       >
         {curr.type === "video" ? (
           <video
@@ -325,13 +360,13 @@ export default function VerticalPeekCarousel({
             loop
             muted
             playsInline
-            className="w-full h-full object-cover"
+            className="w-full h-full object-cover rounded-xl"
             onLoadedMetadata={(e) => handleMediaLoad(e.currentTarget)}
           />
         ) : (
           <img
             src={curr.url}
-            className="w-full h-full object-cover"
+            className="w-full h-full object-cover rounded-xl"
             onLoad={(e) => handleMediaLoad(e.currentTarget)}
           />
         )}
@@ -341,15 +376,24 @@ export default function VerticalPeekCarousel({
       <div
         ref={trioRefs.next}
         className="absolute inset-0 z-10"
-        style={{ willChange: "transform, opacity", opacity: 0.55, transformOrigin: "center top" }}
+        style={{
+          willChange: "transform, opacity",
+          opacity: 0.55,
+          transformOrigin: "center top",
+          WebkitMaskImage: `linear-gradient(transparent ${100 - PEEK_PERCENT}%, black ${100 - PEEK_PERCENT}%, black 100%)`,
+          maskImage: `linear-gradient(transparent ${100 - PEEK_PERCENT}%, black ${100 - PEEK_PERCENT}%, black 100%)`,
+          borderRadius: "12px",
+        }}
         aria-hidden="true"
       >
         {next.type === "video" ? (
-          <video src={next.url} muted loop playsInline className="w-full h-full object-cover" />
+          <video src={next.url} muted loop playsInline className="w-full h-full object-cover rounded-xl" />
         ) : (
-          <img src={next.url} className="w-full h-full object-cover" loading="eager" />
+          <img src={next.url} className="w-full h-full object-cover rounded-xl" loading="eager" />
         )}
       </div>
+
+      {/* no floor shadow in peek-only mode */}
 
       {/* live region */}
       <div className="sr-only" aria-live="polite" aria-atomic="true">
