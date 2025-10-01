@@ -42,6 +42,7 @@ export default function VerticalPeekCarousel({
     lastY: 0,
     wheelAccum: 0,
     lastWheelTs: 0,
+    lastWheelStepTs: 0,
   });
 
   const n = items.length;
@@ -81,6 +82,8 @@ export default function VerticalPeekCarousel({
       width: "100%",
       maxWidth: `min(${vw}, ${desktopMax})`,
       aspectRatio: String(ar),
+      touchAction: "none", // prevent page scroll while interacting
+      overscrollBehavior: "contain", // stop scroll chaining to page
     } as React.CSSProperties;
   }, [size, dims]);
 
@@ -125,11 +128,13 @@ export default function VerticalPeekCarousel({
     if (!el) return;
 
     const onStart = (e: TouchEvent) => {
+      e.preventDefault();
       stateRef.current.dragging = true;
       stateRef.current.startY = e.touches[0].clientY;
       stateRef.current.lastY = stateRef.current.startY;
     };
     const onMove = (e: TouchEvent) => {
+      e.preventDefault();
       if (!stateRef.current.dragging) return;
       const y = e.touches[0].clientY;
       const dy = stateRef.current.startY - y;
@@ -157,8 +162,8 @@ export default function VerticalPeekCarousel({
       requestAnimationFrame(animate);
     };
 
-    el.addEventListener("touchstart", onStart, { passive: true });
-    el.addEventListener("touchmove", onMove, { passive: true });
+    el.addEventListener("touchstart", onStart, { passive: false });
+    el.addEventListener("touchmove", onMove, { passive: false });
     el.addEventListener("touchend", onEnd);
     el.addEventListener("touchcancel", onEnd);
     return () => {
@@ -169,31 +174,31 @@ export default function VerticalPeekCarousel({
     };
   }, [index, n, onIndexChange, rootRef]);
 
-  // wheel (hover-scoped)
+  // wheel handling (always attached to the container)
   useEffect(() => {
     const el = rootRef.current;
     if (!el) return;
 
-    let wheelHandler: (e: WheelEvent) => void;
-    const onEnter = () => {
-      wheelHandler = (e: WheelEvent) => {
+    const wheelHandler = (e: WheelEvent) => {
         e.preventDefault();
         const now = performance.now();
-        const dt = Math.min(32, now - stateRef.current.lastWheelTs);
         stateRef.current.lastWheelTs = now;
-        // normalize deltaY to progress increments
-        const inc = clamp(e.deltaY / 200, -0.5, 0.5);
-        stateRef.current.progress = clamp(stateRef.current.progress + inc, -1.2, 1.2);
-        // idle snap after short delay
-        clearTimeout((stateRef.current as any).wheelTimeout);
-        (stateRef.current as any).wheelTimeout = setTimeout(() => {
-          const p = stateRef.current.progress;
-          if (Math.abs(p) >= 0.33) {
-            const dir = p > 0 ? 1 : -1;
-            onIndexChange((index + dir + n) % n);
-          }
-          // snap to 0
-          const start = stateRef.current.progress;
+        const COOLDOWN = 300; // one step per gesture
+        const inc = clamp(e.deltaY / 200, -0.75, 0.75);
+        // If in cooldown, gently ignore frequent events
+        if (now - stateRef.current.lastWheelStepTs < COOLDOWN) {
+          // still allow visual nudge
+          stateRef.current.progress = clamp(stateRef.current.progress + inc * 0.2, -1.2, 1.2);
+          return;
+        }
+        // Accumulate and decide step
+        const nextProgress = clamp(stateRef.current.progress + inc, -1.2, 1.2);
+        if (Math.abs(nextProgress) >= 0.33) {
+          const dir = nextProgress > 0 ? 1 : -1;
+          onIndexChange((index + dir + n) % n);
+          stateRef.current.lastWheelStepTs = now;
+          // snap back visually
+          const start = nextProgress;
           const startTs = performance.now();
           const animate = (t: number) => {
             const k = clamp((t - startTs) / SNAP_MS, 0, 1);
@@ -202,19 +207,76 @@ export default function VerticalPeekCarousel({
             if (k < 1) requestAnimationFrame(animate);
           };
           requestAnimationFrame(animate);
-        }, 300);
-      };
-      el.addEventListener("wheel", wheelHandler, { passive: false });
+        } else {
+          stateRef.current.progress = nextProgress;
+          // schedule soft snap if user stops
+          clearTimeout((stateRef.current as any).wheelTimeout);
+          (stateRef.current as any).wheelTimeout = setTimeout(() => {
+            const start = stateRef.current.progress;
+            const startTs = performance.now();
+            const animate = (t: number) => {
+              const k = clamp((t - startTs) / SNAP_MS, 0, 1);
+              const eased = 1 - Math.pow(1 - k, 3);
+              stateRef.current.progress = start * (1 - eased);
+              if (k < 1) requestAnimationFrame(animate);
+            };
+            requestAnimationFrame(animate);
+          }, 300);
+        }
     };
-    const onLeave = () => {
-      if (wheelHandler) el.removeEventListener("wheel", wheelHandler);
-    };
-    el.addEventListener("mouseenter", onEnter);
-    el.addEventListener("mouseleave", onLeave);
+
+    el.addEventListener("wheel", wheelHandler, { passive: false });
     return () => {
-      el.removeEventListener("mouseenter", onEnter);
-      el.removeEventListener("mouseleave", onLeave);
-      if (wheelHandler) el.removeEventListener("wheel", wheelHandler);
+      el.removeEventListener("wheel", wheelHandler);
+    };
+  }, [index, n, onIndexChange, rootRef]);
+
+  // mouse drag support (desktop)
+  useEffect(() => {
+    const el = rootRef.current;
+    if (!el) return;
+
+    const onMouseDown = (e: MouseEvent) => {
+      e.preventDefault();
+      stateRef.current.dragging = true;
+      stateRef.current.startY = e.clientY;
+      stateRef.current.lastY = e.clientY;
+      window.addEventListener("mousemove", onMouseMove, { passive: false });
+      window.addEventListener("mouseup", onMouseUp, { passive: false });
+    };
+    const onMouseMove = (e: MouseEvent) => {
+      if (!stateRef.current.dragging) return;
+      e.preventDefault();
+      const dy = stateRef.current.startY - e.clientY;
+      stateRef.current.progress = clamp(dy / DRAG_THRESHOLD_PX, -1.2, 1.2);
+      stateRef.current.lastY = e.clientY;
+    };
+    const onMouseUp = (_e: MouseEvent) => {
+      if (!stateRef.current.dragging) return;
+      stateRef.current.dragging = false;
+      const p = stateRef.current.progress;
+      if (Math.abs(p) >= 0.33) {
+        const dir = p > 0 ? 1 : -1;
+        onIndexChange((index + dir + n) % n);
+      }
+      const start = stateRef.current.progress;
+      const startTs = performance.now();
+      const animate = (t: number) => {
+        const k = clamp((t - startTs) / SNAP_MS, 0, 1);
+        const eased = 1 - Math.pow(1 - k, 3);
+        stateRef.current.progress = start * (1 - eased);
+        if (k < 1) requestAnimationFrame(animate);
+      };
+      requestAnimationFrame(animate);
+      window.removeEventListener("mousemove", onMouseMove as any);
+      window.removeEventListener("mouseup", onMouseUp as any);
+    };
+
+    el.addEventListener("mousedown", onMouseDown, { passive: false });
+    return () => {
+      el.removeEventListener("mousedown", onMouseDown as any);
+      window.removeEventListener("mousemove", onMouseMove as any);
+      window.removeEventListener("mouseup", onMouseUp as any);
     };
   }, [index, n, onIndexChange, rootRef]);
 
