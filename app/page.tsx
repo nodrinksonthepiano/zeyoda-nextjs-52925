@@ -14,6 +14,8 @@ import useArtistConfig from "./hooks/useArtistConfig";
 import { useFeaturedAsset } from "./hooks/useFeaturedAsset";
 import OwnerControls from "./components/OwnerControls";
 import ArtistVideo from "./components/ArtistVideo";
+import VerticalPeekCarousel from "./components/VerticalPeekCarousel";
+import { useArtistAssets } from "./hooks/useArtistAssets";
 import ThemeOrbitRenderer from "./components/ThemeOrbitRenderer";
 import PurchaseFlow from "./components/PurchaseFlow";
 import OnboardingPanel from "./components/OnboardingPanel";
@@ -146,8 +148,10 @@ export default function HomePage() {
     appMode
   );
 
-  const videoContainerRef = useRef<HTMLDivElement>(null);
+  const videoContainerRef = useRef<HTMLDivElement | null>(null);
   const isOrbitAnimationPaused = useRef(false);
+  const { assets } = useArtistAssets(artistIdFromUrl);
+  const [carouselIndex, setCarouselIndex] = useState(0);
 
   // File upload handlers
   const [filePreviewUrl, setFilePreviewUrl] = useState<string | null>(null);
@@ -1614,24 +1618,49 @@ export default function HomePage() {
                       </div>
                     </>
                   ) : (
-                    // Normal mode: Video with orbital tokens
+                    // Normal mode: Carousel if 2+ assets, else original featured
                     <>
-                      <ArtistVideo
-                        isMuted={isMuted}
-                        isVideoError={isVideoError}
-                        setIsVideoError={setIsVideoError}
-                        toggleMute={toggleMute}
-                        videoContainerRef={videoContainerRef}
-                        videoSrc={videoSource}
-                        fileType={featuredAsset?.file_type}
-                      />
-                      <ThemeOrbitRenderer
-                        artistConfig={artistConfig}
-                        orbitTokens={orbitTokens}
-                        videoContainerRef={videoContainerRef}
-                        isOrbitAnimationPaused={isOrbitAnimationPaused}
-                        allArtistsConfig={allArtistsConfig}
-                      />
+                      {assets && assets.length >= 2 ? (
+                        <>
+                          <VerticalPeekCarousel
+                            items={assets}
+                            index={carouselIndex}
+                            onIndexChange={setCarouselIndex}
+                            containerRef={videoContainerRef}
+                            size={{ maxWidthPx: 800, minHeightVh: 60, perspectivePx: 800 }}
+                          />
+                          {artistConfig && allArtistsConfig && (
+                            <ThemeOrbitRenderer
+                              artistConfig={artistConfig}
+                              orbitTokens={orbitTokens}
+                              videoContainerRef={videoContainerRef}
+                              isOrbitAnimationPaused={isOrbitAnimationPaused}
+                              allArtistsConfig={allArtistsConfig}
+                            />
+                          )}
+                        </>
+                      ) : (
+                        <>
+                          <ArtistVideo
+                            isMuted={isMuted}
+                            isVideoError={isVideoError}
+                            setIsVideoError={setIsVideoError}
+                            toggleMute={toggleMute}
+                            videoContainerRef={videoContainerRef}
+                            videoSrc={videoSource}
+                            fileType={featuredAsset?.file_type}
+                          />
+                          {artistConfig && allArtistsConfig && (
+                            <ThemeOrbitRenderer
+                              artistConfig={artistConfig}
+                              orbitTokens={orbitTokens}
+                              videoContainerRef={videoContainerRef}
+                              isOrbitAnimationPaused={isOrbitAnimationPaused}
+                              allArtistsConfig={allArtistsConfig}
+                            />
+                          )}
+                        </>
+                      )}
                     </>
                   )}
                 </div>
