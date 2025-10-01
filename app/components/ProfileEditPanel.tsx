@@ -311,8 +311,9 @@ const ProfileEditPanel: React.FC<ProfileEditPanelProps> = ({
               value={fontSearch}
               onChange={(e) => setFontSearch(e.target.value)}
               onFocus={() => setShowFontDropdown(true)}
-              placeholder="Search fonts... (e.g. Arial, Roboto, Times)"
+              placeholder={formData.font_family || "Search fonts... (e.g. Arial, Roboto, Times)"}
               className="w-full p-2 bg-gray-700 text-white rounded border border-gray-600 text-sm focus:border-yellow-500"
+              style={{ fontFamily: formData.font_family }}
             />
             
             {showFontDropdown && (
@@ -324,7 +325,8 @@ const ProfileEditPanel: React.FC<ProfileEditPanelProps> = ({
                       key={font}
                       onClick={() => {
                         handleFieldChange('font_family', font);
-                        setFontSearch(font);
+                        // Clear the search so reopening shows the full list
+                        setFontSearch('');
                         setShowFontDropdown(false);
                       }}
                       className="w-full text-left p-2 hover:bg-gray-700 text-white text-sm transition-colors"

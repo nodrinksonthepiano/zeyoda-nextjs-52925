@@ -55,6 +55,56 @@ const COMMON_FONTS = [
   "Dancing Script, cursive"
 ];
 
+// Local dropdown component reused for onboarding
+const FontDropdownOnboarding: React.FC<{ onSelect: (font: string) => void; current?: string }> = ({ onSelect, current }) => {
+  const [showFontDropdown, setShowFontDropdown] = useState(false);
+  const [fontSearch, setFontSearch] = useState('');
+
+  return (
+    <div className="relative">
+      <input
+        type="text"
+        value={fontSearch}
+        onChange={(e) => setFontSearch(e.target.value)}
+        onFocus={() => setShowFontDropdown(true)}
+        placeholder={current || "Search fonts... (e.g. Arial, Roboto, Times)"}
+        className="w-full p-2 bg-gray-700 text-white rounded border border-gray-600 text-sm focus:border-yellow-500"
+        style={{ fontFamily: current }}
+      />
+
+      {showFontDropdown && (
+        <div className="absolute top-full left-0 right-0 mt-1 bg-gray-800 border border-gray-600 rounded max-h-40 overflow-y-auto z-50">
+          {COMMON_FONTS
+            .filter(font => font.toLowerCase().includes(fontSearch.toLowerCase()))
+            .map((font) => (
+              <button
+                key={font}
+                onClick={() => {
+                  onSelect(font);
+                  // Clear the search so reopening shows the full list
+                  setFontSearch('');
+                  setShowFontDropdown(false);
+                }}
+                className="w-full text-left p-2 hover:bg-gray-700 text-white text-sm transition-colors"
+                style={{ fontFamily: font }}
+              >
+                {font}
+              </button>
+            ))}
+        </div>
+      )}
+
+      {/* Close dropdown when clicking outside */}
+      {showFontDropdown && (
+        <div 
+          className="fixed inset-0 z-40" 
+          onClick={() => setShowFontDropdown(false)}
+        />
+      )}
+    </div>
+  );
+};
+
 const OnboardingPanel: React.FC<OnboardingPanelProps> = ({
   artistName,
   onArtistNameChange,
@@ -116,7 +166,7 @@ const OnboardingPanel: React.FC<OnboardingPanelProps> = ({
           }
         }
       } else {
-        updated[field as keyof typeof updated] = value;
+        (updated as any)[field] = value;
       }
       
       return updated;
@@ -233,6 +283,17 @@ const OnboardingPanel: React.FC<OnboardingPanelProps> = ({
               <div className="text-white font-bold text-sm">{font.name}</div>
             </button>
           ))}
+        </div>
+
+        {/* Font Dropdown (same behavior as ProfileEditPanel) */}
+        <div className="relative mt-4">
+          <label className="block text-sm text-gray-300 mb-2">Or choose from common fonts:</label>
+          <FontDropdownOnboarding
+            current={formData.theme.fontFamily}
+            onSelect={(font) => {
+              handleFieldChange('theme.fontFamily', font);
+            }}
+          />
         </div>
       </div>
       )}
