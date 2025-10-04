@@ -41,6 +41,11 @@ export const OrbitPeekCarousel: React.FC<Props> = ({ items, index, onIndexChange
   const dirtyRef = useRef(true);
   const snapRef = useRef<{active:boolean;start:number;from:number;to:number;dur:number}>({active:false,start:0,from:0,to:0,dur:SNAP_MS});
 
+  // Gesture state & timers (to prevent re-entrancy and wheel double-snap)
+  const stateRef = useRef<'idle' | 'dragging' | 'snapping'>('idle');
+  const gestureIdRef = useRef(0);
+  const wheelIdleTimerRef = useRef<number | null>(null);
+
   const count = items.length || 0;
   const prevIndex = (index - 1 + count) % count;
   const nextIndex = (index + 1) % count;
@@ -126,6 +131,9 @@ export const OrbitPeekCarousel: React.FC<Props> = ({ items, index, onIndexChange
   const onTouchStart = useCallback((e: TouchEvent) => {
     if (snappingRef.current) return;
     draggingRef.current = true;
+    stateRef.current = 'dragging';
+    gestureIdRef.current++;
+    if (wheelIdleTimerRef.current) { window.clearTimeout(wheelIdleTimerRef.current); wheelIdleTimerRef.current = null; }
     startYRef.current = e.touches[0].clientY;
     lastTsRef.current = performance.now();
     lastPRef.current = progressRef.current;
@@ -146,46 +154,84 @@ export const OrbitPeekCarousel: React.FC<Props> = ({ items, index, onIndexChange
     progressRef.current = nextP; dirtyRef.current = true; startLoop();
   }, [startLoop]);
 
-  const endDrag = useCallback((allowFlip: boolean) => {
+  const endDrag = useCallback(async (allowFlip: boolean) => {
+    // finalize current gesture
     draggingRef.current = false;
     const p = progressRef.current, v = velocityRef.current;
     const k = 0.25; // velocity influence
-    const trigger = Math.abs(p) + k*Math.abs(v) >= SNAP_THRESHOLD;
-    if (!(allowFlip && trigger)) {
+    const s = p + k * v;
+    const trigger = Math.abs(s) >= SNAP_THRESHOLD;
+
+    // utility: run a single snap tween
+    const runSnapTo = (to: number) => new Promise<void>((resolve) => {
       snappingRef.current = true;
-      snapRef.current = { active: true, start: performance.now(), from: p, to: 0, dur: SNAP_MS };
+      stateRef.current = 'snapping';
+      if (wheelIdleTimerRef.current) { window.clearTimeout(wheelIdleTimerRef.current); wheelIdleTimerRef.current = null; }
+      snapRef.current = { active: true, start: performance.now(), from: progressRef.current, to, dur: SNAP_MS };
       dirtyRef.current = true; startLoop();
-      const unlock = () => { if (!snapRef.current.active) snappingRef.current = false; else requestAnimationFrame(unlock); };
-      requestAnimationFrame(unlock);
+      const wait = () => {
+        if (!snapRef.current.active) resolve(); else requestAnimationFrame(wait);
+      };
+      requestAnimationFrame(wait);
+    });
+
+    // helper: execute one index step
+    const doOneStep = async (dir: number) => {
+      await runSnapTo(dir > 0 ? +1 : -1);
+      const next = (index + dir + count) % count;
+      onIndexChange(next);
+      progressRef.current = 0;
+      dirtyRef.current = true; startLoop();
+      snappingRef.current = false;
+      stateRef.current = 'idle';
+    };
+
+    if (!(allowFlip && trigger)) {
+      await runSnapTo(0);
+      snappingRef.current = false;
+      stateRef.current = 'idle';
       return;
     }
-    // Swipe up should send current card up/back and make NEXT become hero → +1
-    const deltaIndex = (p + k*v) > 0 ? +1 : -1;
-    snappingRef.current = true;
-    snapRef.current = { active: true, start: performance.now(), from: p, to: (p + k*v) > 0 ? +1 : -1, dur: SNAP_MS };
-    dirtyRef.current = true; startLoop();
-    const finish = () => {
-      if (!snapRef.current.active) {
-        const next = (index + deltaIndex + count) % count;
-        onIndexChange(next);
-        progressRef.current = 0; dirtyRef.current = true; startLoop(); snappingRef.current = false;
-      } else { requestAnimationFrame(finish); }
-    };
-    requestAnimationFrame(finish);
+
+    // decide steps (default one step)
+    let steps = s > 0 ? +1 : -1;
+    const strong = Math.abs(v) >= 1.4 || Math.abs(p) >= 0.95;
+    if (strong) {
+      const k2 = 0.35;
+      const cand = Math.max(-2, Math.min(2, Math.round((p + k2 * v) * 1.6)));
+      if (cand !== 0 && Math.sign(cand) === Math.sign(steps)) steps = cand;
+    }
+    // clamp to max 2 steps
+    const dir = steps > 0 ? +1 : -1;
+    const total = Math.min(2, Math.abs(steps));
+    for (let i = 0; i < total; i++) {
+      await doOneStep(dir);
+    }
   }, [count, index, onIndexChange, startLoop]);
 
   const onWheel = useCallback((e: WheelEvent) => {
     if (snappingRef.current) { e.preventDefault(); return; }
     e.preventDefault();
+    stateRef.current = 'dragging';
+    gestureIdRef.current++;
+    const currentGesture = gestureIdRef.current;
     const dy = e.deltaY;
     if (Math.abs(dy) < 2) return;
-    // Natural mapping: scrolling up (negative dy) should move current up/back → increase progress
-    progressRef.current = clamp(progressRef.current - dy/THRESHOLD_PX, -MAX_PROGRESS, MAX_PROGRESS);
+    const now = performance.now();
+    const last = lastTsRef.current || now;
+    const dt = Math.max(1, now - last) / 1000;
+    const deltaP = -dy / THRESHOLD_PX; // up (negative dy) -> forward (+progress)
+    const nextP = clamp(progressRef.current + deltaP, -MAX_PROGRESS, MAX_PROGRESS);
+    velocityRef.current = 0.6 * ((nextP - progressRef.current) / dt) + 0.4 * velocityRef.current;
+    progressRef.current = nextP;
+    lastTsRef.current = now;
     dirtyRef.current = true; startLoop();
-    // auto end after idle
-    const t0 = performance.now();
-    const idle = () => { if (performance.now() - t0 >= 280) endDrag(true); else requestAnimationFrame(idle); };
-    requestAnimationFrame(idle);
+    // accumulate within a burst window; snap once after idle
+    if (wheelIdleTimerRef.current) window.clearTimeout(wheelIdleTimerRef.current);
+    wheelIdleTimerRef.current = window.setTimeout(() => {
+      if (gestureIdRef.current !== currentGesture) return; // stale
+      endDrag(true);
+    }, 200) as unknown as number;
   }, [endDrag, startLoop]);
 
   useEffect(() => {
