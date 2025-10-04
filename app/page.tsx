@@ -1,5 +1,6 @@
 'use client'
 
+import React from 'react';
 import Image from "next/image";
 import { useEffect, useState, useRef, useCallback } from "react";
 import { useSearchParams, useRouter } from 'next/navigation';
@@ -14,6 +15,8 @@ import useArtistConfig from "./hooks/useArtistConfig";
 import { useFeaturedAsset } from "./hooks/useFeaturedAsset";
 import OwnerControls from "./components/OwnerControls";
 import ArtistVideo from "./components/ArtistVideo";
+import { useArtistAssets } from './hooks/useArtistAssets';
+import OrbitPeekCarousel from './components/OrbitPeekCarousel';
 import ThemeOrbitRenderer from "./components/ThemeOrbitRenderer";
 import PurchaseFlow from "./components/PurchaseFlow";
 import OnboardingPanel from "./components/OnboardingPanel";
@@ -77,6 +80,26 @@ export default function HomePage() {
   
   const artistIdFromUrl = (searchParams.get('artist') ?? 'gosheesh') as string;
   const { featuredAsset, videoUrl, isLoading: assetLoading, error: assetError } = useFeaturedAsset(artistIdFromUrl);
+  const { assets: artistAssets } = useArtistAssets(artistIdFromUrl);
+  const [carouselIndex, setCarouselIndex] = useState(0);
+
+  const selectedAsset = React.useMemo(() => {
+    if (!artistAssets || artistAssets.length === 0) return null;
+    const idx = ((carouselIndex % artistAssets.length) + artistAssets.length) % artistAssets.length;
+    return artistAssets[idx];
+  }, [artistAssets, carouselIndex]);
+
+  const featuredForPurchaseFlow = React.useMemo(() => {
+    if (selectedAsset) {
+      return {
+        price_usd: selectedAsset.priceUSD ?? 1,
+        file_url: selectedAsset.url,
+        file_type: selectedAsset.type === 'video' ? 'video/mp4' : 'image/jpeg',
+        asset_number: selectedAsset.assetNumber
+      } as any;
+    }
+    return featuredAsset as any;
+  }, [selectedAsset, featuredAsset]);
 
   // Handle upload mode from URL parameter
   useEffect(() => {
@@ -1529,7 +1552,7 @@ export default function HomePage() {
                 </h1>
 
   
-                <div className="relative w-full max-w-4xl mx-auto">
+                <div className="relative w-full max-w-4xl mx-auto mt-4 md:mt-6 mb-12 md:mb-16">
                   {(appMode === 'onboarding' || appMode === 'upload-asset') ? (
                     // Onboarding: Drag & drop upload zone
                     <>
@@ -1614,24 +1637,45 @@ export default function HomePage() {
                       </div>
                     </>
                   ) : (
-                    // Normal mode: Video with orbital tokens
+                    // Normal mode: OrbitPeekCarousel with orbital tokens layered on top
                     <>
-                      <ArtistVideo
-                        isMuted={isMuted}
-                        isVideoError={isVideoError}
-                        setIsVideoError={setIsVideoError}
-                        toggleMute={toggleMute}
-                        videoContainerRef={videoContainerRef}
-                        videoSrc={videoSource}
-                        fileType={featuredAsset?.file_type}
-                      />
-                      <ThemeOrbitRenderer
-                        artistConfig={artistConfig}
-                        orbitTokens={orbitTokens}
-                        videoContainerRef={videoContainerRef}
-                        isOrbitAnimationPaused={isOrbitAnimationPaused}
-                        allArtistsConfig={allArtistsConfig}
-                      />
+                      {(artistAssets && artistAssets.length >= 1) ? (
+                        <>
+                          <OrbitPeekCarousel
+                            items={artistAssets}
+                            index={carouselIndex}
+                            onIndexChange={setCarouselIndex}
+                            containerRef={videoContainerRef}
+                            peekPercent={10}
+                          />
+                          <ThemeOrbitRenderer
+                            artistConfig={artistConfig}
+                            orbitTokens={orbitTokens}
+                            videoContainerRef={videoContainerRef}
+                            isOrbitAnimationPaused={isOrbitAnimationPaused}
+                            allArtistsConfig={allArtistsConfig}
+                          />
+                        </>
+                      ) : (
+                        <>
+                          <ArtistVideo
+                            isMuted={isMuted}
+                            isVideoError={isVideoError}
+                            setIsVideoError={setIsVideoError}
+                            toggleMute={toggleMute}
+                            videoContainerRef={videoContainerRef}
+                            videoSrc={videoSource}
+                            fileType={featuredAsset?.file_type}
+                          />
+                          <ThemeOrbitRenderer
+                            artistConfig={artistConfig}
+                            orbitTokens={orbitTokens}
+                            videoContainerRef={videoContainerRef}
+                            isOrbitAnimationPaused={isOrbitAnimationPaused}
+                            allArtistsConfig={allArtistsConfig}
+                          />
+                        </>
+                      )}
                     </>
                   )}
                 </div>
@@ -1652,7 +1696,7 @@ export default function HomePage() {
               user={user}
               artistConfig={artistConfig}
               allArtistsConfig={allArtistsConfig}
-              featuredAsset={featuredAsset}
+              featuredAsset={featuredForPurchaseFlow}
               isActionLoading={isActionLoading}
               hasPurchasedDownload={hasPurchasedDownload}
               globalSafewordVerified={globalSafewordVerified}

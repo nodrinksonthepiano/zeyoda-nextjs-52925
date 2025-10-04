@@ -9,7 +9,7 @@
     height: 100%;
     transform: translate(-50%, -50%);
     pointer-events: none;
-    z-index: 10;
+    z-index: 40; /* ensure tokens render above hero layers */
     transform-style: preserve-3d;
     perspective: 1200px;
 }
