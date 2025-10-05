@@ -88,22 +88,22 @@ export const OrbitPeekCarousel: React.FC<Props> = ({ items, index, onIndexChange
     const dpr = typeof window !== 'undefined' ? (window.devicePixelRatio || 1) : 1;
     const roundPx = (v: number) => Math.round(v * dpr) / dpr;
 
-    const apply = (el: HTMLDivElement | null, tyPct: number, z: number, scale: number, opacity: number, tiltSign: number) => {
+    const apply = (el: HTMLDivElement | null, tyPct: number, z: number, scale: number, opacity: number, tiltDeg: number) => {
       if (!el) return;
       el.style.willChange = 'transform, opacity';
-      el.style.transform = `translate3d(0, ${Math.round(tyPct*1000)/10}%, ${roundPx(z)}px) rotateX(${TILT_DEG*tiltSign}deg) scale(${scale})`;
+      el.style.transform = `translate3d(0, ${Math.round(tyPct*1000)/10}%, ${roundPx(z)}px) rotateX(${tiltDeg}deg) scale(${scale})`;
       el.style.opacity = String(opacity);
     };
 
     if (p >= 0) {
       // Dragging down toward previous
       const t = clamp(p, 0, 1);
-      // current moves down/back
-      apply(currEl, +peek*t, -DEPTH_Z*t, 1 - (1-0.88)*t, 1 - 0.05*t, +1);
+      // current moves down/back (tilt scales with t so hero is perfectly flat at rest)
+      apply(currEl, +peek*t, -DEPTH_Z*t, 1 - (1-0.88)*t, 1 - 0.05*t, TILT_DEG * 0.6 * t);
       // prev comes up/forward
-      apply(prevEl, -peek*(1-t), -DEPTH_Z*(1-t), scaleFar + (scaleNear-scaleFar)*t, 0.45 + (0.95-0.45)*t, -1);
+      apply(prevEl, -peek*(1-t), -DEPTH_Z*(1-t), scaleFar + (scaleNear-scaleFar)*t, 0.45 + (0.95-0.45)*t, -TILT_DEG);
       // next stays far
-      apply(nextEl, +peek, -DEPTH_Z, scaleFar, 0.45, +1);
+      apply(nextEl, +peek, -DEPTH_Z, scaleFar, 0.45, +TILT_DEG);
       // z-order switch for stability near end
       if (t >= 0.7) {
         if (prevEl) prevEl.style.zIndex = '25';
@@ -115,9 +115,9 @@ export const OrbitPeekCarousel: React.FC<Props> = ({ items, index, onIndexChange
     } else {
       // Dragging up toward next
       const t = clamp(-p, 0, 1);
-      apply(currEl, -peek*t, -DEPTH_Z*t, 1 - (1-0.88)*t, 1 - 0.05*t, -1);
-      apply(nextEl, +peek*(1-t), -DEPTH_Z*(1-t), scaleFar + (scaleNear-scaleFar)*t, 0.45 + (0.95-0.45)*t, +1);
-      apply(prevEl, -peek, -DEPTH_Z, scaleFar, 0.45, -1);
+      apply(currEl, -peek*t, -DEPTH_Z*t, 1 - (1-0.88)*t, 1 - 0.05*t, -TILT_DEG * 0.6 * t);
+      apply(nextEl, +peek*(1-t), -DEPTH_Z*(1-t), scaleFar + (scaleNear-scaleFar)*t, 0.45 + (0.95-0.45)*t, +TILT_DEG);
+      apply(prevEl, -peek, -DEPTH_Z, scaleFar, 0.45, -TILT_DEG);
       if (t >= 0.7) {
         if (nextEl) nextEl.style.zIndex = '25';
         if (currEl) currEl.style.zIndex = '15';
