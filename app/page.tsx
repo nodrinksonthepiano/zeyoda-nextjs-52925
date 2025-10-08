@@ -17,6 +17,7 @@ import OwnerControls from "./components/OwnerControls";
 import ArtistVideo from "./components/ArtistVideo";
 import { useArtistAssets } from './hooks/useArtistAssets';
 import OrbitPeekCarousel from './components/OrbitPeekCarousel';
+import OvalGlowBackdrop from './components/OvalGlowBackdrop';
 import ThemeOrbitRenderer from "./components/ThemeOrbitRenderer";
 import PurchaseFlow from "./components/PurchaseFlow";
 import OnboardingPanel from "./components/OnboardingPanel";
@@ -88,6 +89,12 @@ export default function HomePage() {
     const idx = ((carouselIndex % artistAssets.length) + artistAssets.length) % artistAssets.length;
     return artistAssets[idx];
   }, [artistAssets, carouselIndex]);
+
+  // Provide a stable remount key for the carousel per artist + dataset
+  const carouselKey = React.useMemo(() => {
+    const ids = (artistAssets || []).map((a: any) => a?.id ?? a?.url ?? '').join('_');
+    return `${artistIdFromUrl}:${(artistAssets?.length || 0)}:${ids}`;
+  }, [artistIdFromUrl, artistAssets]);
 
   const featuredForPurchaseFlow = React.useMemo(() => {
     if (selectedAsset) {
@@ -1530,12 +1537,15 @@ export default function HomePage() {
           <div className="text-center">
               <>
                 <h1 
-                  className="text-4xl md:text-5xl font-bold tracking-wider mb-4 cursor-pointer hover:opacity-80 transition-opacity" 
+                  className="text-4xl md:text-5xl font-bold tracking-wider mt-3 md:mt-4 mb-3 md:mb-3 cursor-pointer hover:opacity-80 transition-opacity" 
                   style={{ 
                     fontFamily: appMode === 'onboarding' ? 'Bungee, cursive' : artistConfig.theme.fontFamily, 
                     color: appMode === 'onboarding' ? '#B8860B' : artistConfig.theme.accentColor,
+                    position: 'relative',
+                    zIndex: 100,
+                    pointerEvents: 'none',
                     maxWidth: '85%',
-                    margin: '0 auto 1rem auto',
+                    margin: '0 auto',
                     lineHeight: '1.1'
                   }}
                   onDoubleClick={() => {
@@ -1552,7 +1562,7 @@ export default function HomePage() {
                 </h1>
 
   
-                <div className="relative w-full max-w-4xl mx-auto mt-4 md:mt-6 mb-12 md:mb-16">
+                <div className="relative w-full max-w-5xl mx-auto mt-6 md:mt-14 mb-12 md:mb-16">
                   {(appMode === 'onboarding' || appMode === 'upload-asset') ? (
                     // Onboarding: Drag & drop upload zone
                     <>
@@ -1641,12 +1651,20 @@ export default function HomePage() {
                     <>
                       {(artistAssets && artistAssets.length >= 1) ? (
                         <>
+                          <OvalGlowBackdrop
+                            containerRef={videoContainerRef}
+                            primaryColor={artistConfig?.theme?.primaryColor || '#0a1a3b'}
+                            intensity={0.95}
+                            zIndex={1}
+                          />
                           <OrbitPeekCarousel
+                            key={carouselKey}
                             items={artistAssets}
                             index={carouselIndex}
                             onIndexChange={setCarouselIndex}
                             containerRef={videoContainerRef}
                             peekPercent={10}
+                            theme={{ fontFamily: artistConfig?.theme?.fontFamily, primaryColor: artistConfig?.theme?.primaryColor, accentColor: artistConfig?.theme?.accentColor }}
                           />
                           <ThemeOrbitRenderer
                             artistConfig={artistConfig}
