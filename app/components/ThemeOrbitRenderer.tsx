@@ -48,33 +48,6 @@ const ThemeOrbitRenderer: React.FC<ThemeOrbitRendererProps> = ({
   const hoverPauseTimerRef = useRef<number | null>(null);
 
   useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const storedOffset = parseFloat(localStorage.getItem('zeyodaOrbitAngleOffset') || '0');
-      if (storedOffset) {
-        setOrbitAngleOffset(storedOffset);
-        naturalOffsetRef.current = storedOffset;
-      }
-    }
-  }, []);
-
-  // Resize handler: re-position once without pausing the orbit
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    let raf: number | null = null;
-    const handleResize = () => {
-      if (raf) cancelAnimationFrame(raf);
-      raf = requestAnimationFrame(() => {
-        try { window.dispatchEvent(new CustomEvent('carousel:stable')); } catch {}
-      });
-    };
-    window.addEventListener('resize', handleResize);
-    return () => {
-      if (raf) cancelAnimationFrame(raf);
-      window.removeEventListener('resize', handleResize);
-    };
-  }, []);
-  
-  useEffect(() => {
     const videoElement = videoContainerRef.current;
     if (!artistConfig || !videoElement) {
         if (animationFrameIdRef.current) {
@@ -100,16 +73,29 @@ const ThemeOrbitRenderer: React.FC<ThemeOrbitRendererProps> = ({
 
     // one-off position write to avoid starting at center before RAF begins
     const positionOnce = () => {
-      const contentWidth = videoElement.offsetWidth;
-      const contentHeight = videoElement.offsetHeight;
+      let contentWidth, contentHeight, rect;
+      
+      if (videoElement) {
+          contentWidth = videoElement.offsetWidth;
+          contentHeight = videoElement.offsetHeight;
+          rect = videoElement.getBoundingClientRect();
+      }
+
+      const isContentReady = videoElement && contentWidth > 50 && contentHeight > 50 && rect && rect.width > 50;
+
+      if (!isContentReady) {
+        // Fallback to viewport-based dimensions
+        contentWidth = Math.min(window.innerWidth * 0.7, 700);
+        contentHeight = contentWidth * (9 / 16);
+        centerRef.current = { cx: window.innerWidth / 2, cy: window.innerHeight / 2 };
+      } else {
+        centerRef.current = { cx: rect.left + rect.width / 2, cy: rect.top + rect.height / 2 };
+      }
+
       const radiusX = (contentWidth / 2) + 60;
       const radiusY = (contentHeight / 2) + 40;
       const currentGlobalAngleOffset = naturalOffsetRef.current + userOffsetRef.current;
-      // update orbit center in page coords for precise drag math
-      try {
-        const rect = videoElement.getBoundingClientRect();
-        if (rect) { centerRef.current = { cx: rect.left + rect.width/2, cy: rect.top + rect.height/2 }; }
-      } catch {}
+      
       allTokens.forEach((tokenData, index) => {
         const tokenElement = tokenElementRefs.current[index];
         if (!tokenElement) return;
@@ -366,7 +352,8 @@ const ThemeOrbitRenderer: React.FC<ThemeOrbitRendererProps> = ({
                 }}
                 style={{
                   willChange: 'transform, opacity',
-                  opacity: 0,
+                  opacity: 1, // Always visible, positionOnce handles initial placement
+                  transform: 'var(--orbit-pos, translate(-50%, -50%))',
                   background: bg,
                   color: fg,
                   border: `2px solid ${fg}`,
@@ -378,7 +365,7 @@ const ThemeOrbitRenderer: React.FC<ThemeOrbitRendererProps> = ({
                 onDragStart={(e) => { e.preventDefault(); }}
                 draggable={false}
                 onPointerDown={(e)=>{ try { (e.currentTarget as any).setPointerCapture?.(e.pointerId); } catch {}; activePointerIdRef.current = e.pointerId; isInteractingRef.current = true; draggingTokenRef.current = false; downXYRef.current = { x: e.clientX, y: e.clientY }; downTsRef.current = (typeof performance!=='undefined'?performance.now():Date.now()); const { cx, cy } = centerRef.current; lastAngleRef.current = Math.atan2(e.clientY - cy, e.clientX - cx); suppressClickRef.current = false; (e.currentTarget.style as any).cursor = 'grabbing'; }}
-                onPointerMove={(e)=>{ if (activePointerIdRef.current !== e.pointerId || lastAngleRef.current===null) return; const dx = e.clientX - (downXYRef.current?.x||e.clientX); const dy = e.clientY - (downXYRef.current?.y||e.clientY); if (!draggingTokenRef.current && (dx*dx+dy*dy) > 36) { draggingTokenRef.current = true; suppressClickRef.current = true; } const now = (typeof performance!=='undefined'?performance.now():Date.now()); const dt = Math.max(8, Math.min(80, now - (lastEventTsRef.current||now))) * 0.001; const { cx, cy } = centerRef.current; const ang = Math.atan2(e.clientY - cy, e.clientX - cx); let d = ang - (lastAngleRef.current||ang); if (d > Math.PI) d -= 2*Math.PI; else if (d < -Math.PI) d += 2*Math.PI; userOffsetRef.current -= d; userVelocityRef.current = 0.6*userVelocityRef.current + 0.4 * (-d/dt); lastAngleRef.current = ang; lastEventTsRef.current = now; }}
+                onPointerMove={(e)=>{ if (activePointerIdRef.current !== e.pointerId || lastAngleRef.current===null) return; const dx = e.clientX - (downXYRef.current?.x||e.clientX); const dy = e.clientY - (downXYRef.current?.y||e.clientY); if (!draggingTokenRef.current && (dx*dx+dy*dy) > 36) { draggingTokenRef.current = true; suppressClickRef.current = true; } const now = (typeof performance!=='undefined'?performance.now():Date.now()); const dt = Math.max(8, Math.min(80, now - (lastEventTsRef.current||now))) * 0.001; const { cx, cy } = centerRef.current; const ang = Math.atan2(e.clientY - cy, e.clientX - cx); let d = ang - (lastAngleRef.current||ang); if (d > Math.PI) d -= 2*Math.PI; else if (d < -Math.PI) d += 2*Math.PI; userOffsetRef.current += d; userVelocityRef.current = 0.6*userVelocityRef.current + 0.4 * (d/dt); lastAngleRef.current = ang; lastEventTsRef.current = now; }}
                 onPointerUp={(e)=>{ if (activePointerIdRef.current !== null) { try { (e.currentTarget as any).releasePointerCapture?.(activePointerIdRef.current); } catch {} } activePointerIdRef.current = null; isInteractingRef.current = false; draggingTokenRef.current = false; lastAngleRef.current = null; (e.currentTarget.style as any).cursor = 'grab'; if (hoverPauseTimerRef.current) window.clearTimeout(hoverPauseTimerRef.current); hoverPauseTimerRef.current = window.setTimeout(()=>{ isOrbitAnimationPaused.current = false; }, 120) as unknown as number; setTimeout(()=>{ suppressClickRef.current = false; }, 30); }}
                 onClickCapture={(e)=>{ if (suppressClickRef.current) { e.preventDefault(); e.stopPropagation(); } }}
                 title={token.artistId ? `Explore ${allArtistsConfig?.[token.artistId]?.displayName || token.name}` : token.name}

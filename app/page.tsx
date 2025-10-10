@@ -47,10 +47,23 @@ interface PriceDetails {
   investorShare: number;
 }
 
-
-
-export default function HomePage() {
-  const { magic, user, isReady, isLoading: authLoading, error: authError } = useWallet();
+const ArtistPageContent: React.FC<{
+  artistConfig: ArtistConfig;
+  allArtistsConfig: { [key: string]: ArtistConfig } | null;
+  artistAssets: any[] | null;
+  featuredAsset: any | null;
+  videoUrl: string | null;
+  user: string | null;
+  magic: any | null;
+}> = ({ 
+  artistConfig: initialArtistConfig, 
+  allArtistsConfig, 
+  artistAssets,
+  featuredAsset,
+  videoUrl,
+  user, 
+  magic 
+}) => {
   const { showToast } = useToast();
   const [email, setEmail] = useState('');
   
@@ -77,12 +90,20 @@ export default function HomePage() {
 
   const searchParams = useSearchParams();
   const router = useRouter();
-  const { artistConfig, allArtistsConfig, isLoading: configLoading, error: configError } = useArtistConfig();
   
+  // Use state to manage artistConfig within this component to respond to prop changes
+  const [artistConfig, setArtistConfig] = useState(initialArtistConfig);
+  useEffect(() => {
+    setArtistConfig(initialArtistConfig);
+  }, [initialArtistConfig]);
+
   const artistIdFromUrl = (searchParams.get('artist') ?? 'gosheesh') as string;
-  const { featuredAsset, videoUrl, isLoading: assetLoading, error: assetError } = useFeaturedAsset(artistIdFromUrl);
-  const { assets: artistAssets } = useArtistAssets(artistIdFromUrl);
   const [carouselIndex, setCarouselIndex] = useState(0);
+
+  // When artist changes, reset the carousel to the first item.
+  useEffect(() => {
+    setCarouselIndex(0);
+  }, [artistIdFromUrl]);
 
   const selectedAsset = React.useMemo(() => {
     if (!artistAssets || artistAssets.length === 0) return null;
@@ -645,7 +666,7 @@ export default function HomePage() {
     } catch (error: any) {
       showToast(`Upload failed: ${error.message}`, 'error');
     }
-  }, [artistConfig, uploadedFile, user, showToast, setAppMode, setUploadedFile, setUploadAssetData]);
+  }, [artistConfig, uploadedFile, user, showToast, setAppMode, setUploadedFile, setUploadAssetData, artistIdFromUrl]);
 
   const [swapFromAsset, setSwapFromAsset] = useState<string>("USD");
   const [swapToAsset, setSwapToAsset] = useState<string>("");
@@ -813,7 +834,7 @@ export default function HomePage() {
       document.body.style.background = theme.primaryColor || '#000000';
       console.log('🎨 Applied artist background color:', theme.primaryColor);
     }
-  }, [artistConfig]); // Only when artistConfig changes, but NEVER during onboarding
+  }, [artistConfig, appMode]);
 
   useEffect(() => {
     const dollarValueForTokens = parseFloat(swapFromAmount || '0');
@@ -1400,46 +1421,6 @@ export default function HomePage() {
   };
   
   const videoSource = getVideoSource();
-
-  // Show authentication loading screen first
-  if (authLoading || !isReady) {
-    return (
-      <div className="auth-loading">
-        <div className="auth-loading-spinner"></div>
-        <p className="auth-loading-text">Connecting wallet...</p>
-      </div>
-    );
-  }
-
-  // Show authentication error if present
-  if (authError) {
-    return (
-      <div className="auth-loading">
-        <div className="auth-error-icon">⚠️</div>
-        <p className="auth-error-text">Authentication failed: {authError ?? 'Unknown error'}</p>
-        <button 
-          onClick={() => window.location.reload()} 
-          className="auth-retry-button"
-        >
-          Try Again
-        </button>
-      </div>
-    );
-  }
-
-  // Show artist config loading
-  if (configLoading) {
-    return <div className="flex justify-center items-center h-screen">Loading artist profile...</div>;
-  }
-
-  // Show artist config error
-  if (configError) {
-    return <div className="flex justify-center items-center h-screen">Error: {configError}</div>;
-  }
-
-  if (!artistConfig) {
-    return <div className="flex justify-center items-center h-screen">Artist not found.</div>;
-  }
 
   const { name: artistName, tokenName: artistTokenName, artworkTitle } = artistConfig;
 
@@ -2040,5 +2021,74 @@ export default function HomePage() {
 
       </div>
     </UsdBalanceProvider>
+  );
+}
+
+
+export default function HomePage() {
+  const { magic, user, isReady, isLoading: authLoading, error: authError } = useWallet();
+  const { artistConfig, allArtistsConfig, isLoading: configLoading, error: configError } = useArtistConfig();
+  
+  // Get artistId from URL once and pass it down
+  const searchParams = useSearchParams();
+  const artistIdFromUrl = searchParams.get('artist') ?? 'gosheesh';
+
+  // **ALL DATA FETCHING MOVED HERE**
+  const { featuredAsset, videoUrl, isLoading: assetLoading, error: assetError } = useFeaturedAsset(artistIdFromUrl);
+  const { assets: artistAssets } = useArtistAssets(artistIdFromUrl);
+
+  // Unified loading state
+  const isLoading = authLoading || !isReady || configLoading || assetLoading;
+
+  // Show authentication loading screen first
+  if (authLoading || !isReady) {
+    return (
+      <div className="auth-loading">
+        <div className="auth-loading-spinner"></div>
+        <p className="auth-loading-text">Connecting wallet...</p>
+      </div>
+    );
+  }
+
+  // Show authentication error if present
+  if (authError) {
+    return (
+      <div className="auth-loading">
+        <div className="auth-error-icon">⚠️</div>
+        <p className="auth-error-text">Authentication failed: {authError ?? 'Unknown error'}</p>
+        <button 
+          onClick={() => window.location.reload()} 
+          className="auth-retry-button"
+        >
+          Try Again
+        </button>
+      </div>
+    );
+  }
+
+  // Show a unified loading state until all core data is ready
+  if (isLoading) {
+    return <div className="flex justify-center items-center h-screen">Loading artist profile...</div>;
+  }
+
+  // Show artist config error
+  if (configError || assetError) {
+    return <div className="flex justify-center items-center h-screen">Error: {configError || assetError}</div>;
+  }
+
+  if (!artistConfig) {
+    return <div className="flex justify-center items-center h-screen">Artist not found.</div>;
+  }
+
+  return (
+    <ArtistPageContent
+      artistConfig={artistConfig}
+      allArtistsConfig={allArtistsConfig}
+      artistAssets={artistAssets}
+      featuredAsset={featuredAsset}
+      videoUrl={videoUrl}
+      user={user}
+      magic={magic}
+    />
   );
 }
