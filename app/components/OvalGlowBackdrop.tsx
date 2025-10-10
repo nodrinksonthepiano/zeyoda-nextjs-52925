@@ -35,90 +35,62 @@ function toRGBA(hexOrRgb: string, alpha: number) {
 
 const OvalGlowBackdrop: React.FC<Props> = ({ containerRef, primaryColor = '#0a1a3b', accentColor = '#4073ff', intensity = 0.9, zIndex = 2 }) => {
   const [box, setBox] = useState<{ w: number; h: number }>({ w: 0, h: 0 });
-  const roRef = useRef<ResizeObserver | null>(null);
 
   useEffect(() => {
     const el = containerRef?.current;
     if (!el) return;
-    const update = () => {
-      const r = el.getBoundingClientRect();
-      const vw = Math.max(320, Math.round(window.innerWidth || 0));
-      // Safe margins so the oval never touches the phone edges; simple, one-size fit
-      const sideMargin = Math.round(vw * 0.05); // 5% viewport margin each side
-      const maxSafeW = Math.max(240, vw - 2 * sideMargin);
-      // Base oval width is hero*1.35, but clamped to safe viewport width
-      const baseW = Math.round(r.width * 1.35);
-      const w = Math.min(baseW, maxSafeW);
-      // Aspect ratio for a pleasing oval; about 0.60 of width for height
-      const h = Math.round(w * 0.60);
-      setBox({ w, h });
-    };
-    update();
-    const ro = new ResizeObserver(update);
-    ro.observe(el);
-    roRef.current = ro;
-    const vv = (window as any).visualViewport as VisualViewport | undefined;
-    const onVV = () => update();
-    if (vv) { try { vv.addEventListener('resize', onVV); vv.addEventListener('scroll', onVV); } catch {} }
-    window.addEventListener('orientationchange', update);
-    window.addEventListener('resize', update);
-    return () => {
-      try { ro.disconnect(); } catch {}
-      if (vv) { try { vv.removeEventListener('resize', onVV); vv.removeEventListener('scroll', onVV); } catch {} }
-      window.removeEventListener('orientationchange', update);
-      window.removeEventListener('resize', update);
-    };
-  }, [containerRef]);
 
-  // Subscribe to hero:pinned as the single source of truth for sizing
-  useEffect(() => {
-    const apply = (w: number, h: number) => {
-      const vw = Math.max(320, Math.round(window.innerWidth || 0));
+    let timeoutId: number | null = null;
+    const debounce = (func: () => void, delay: number) => {
+      return () => {
+        if (timeoutId) {
+          window.clearTimeout(timeoutId);
+        }
+        timeoutId = window.setTimeout(() => {
+          func();
+        }, delay);
+      };
+    };
+
+    const calculateAndSetSize = () => {
+      const r = el.getBoundingClientRect();
+      if (r.width < 50) return; // Ignore insignificant sizes during transitions
+
+      const vw = Math.max(320, window.innerWidth || 0);
       const sideMargin = Math.round(vw * 0.05);
       const maxSafeW = Math.max(240, vw - 2 * sideMargin);
-      const baseW = Math.round(w * 1.35);
-      const finalW = Math.min(baseW, maxSafeW);
-      const finalH = Math.round(finalW * 0.60);
-      setBox(prev => {
-        const dw = Math.abs((prev.w || 0) - finalW) / Math.max(1, finalW);
-        const dh = Math.abs((prev.h || 0) - finalH) / Math.max(1, finalH);
-        if (dw < 0.02 && dh < 0.02) return prev;
-        return { w: finalW, h: finalH };
+
+      // The halo should be a tight, consistent border around the content. 1.25x is the sweet spot.
+      const idealWidth = Math.round(r.width * 1.25);
+      const finalWidth = Math.min(idealWidth, maxSafeW);
+      const finalHeight = Math.round(finalWidth * 0.60);
+
+      setBox(prevBox => {
+        if (Math.abs(prevBox.w - finalWidth) < 2 && Math.abs(prevBox.h - finalHeight) < 2) {
+          return prevBox;
+        }
+        return { w: finalWidth, h: finalHeight };
       });
     };
-    const onPinned = (e: any) => {
-      const d = e?.detail;
-      if (!d || !d.w || !d.h) return;
-      apply(d.w, d.h);
-    };
-    window.addEventListener('hero:pinned', onPinned);
-    // If previous pinned payload exists, apply immediately
-    const cached = (window as any).__heroPinnedCache;
-    if (cached?.w && cached?.h) {
-      apply(cached.w, cached.h);
-    }
-    return () => { window.removeEventListener('hero:pinned', onPinned); };
-  }, [containerRef]);
+    
+    // Debounce the calculation to wait for the carousel to "land" and layout to stabilize.
+    const debouncedCalculateSize = debounce(calculateAndSetSize, 100);
 
-  // Fallback: ensure we compute shortly after mount if hero:pinned hasn't fired yet
-  useEffect(() => {
-    let fired = false;
-    const onPinned = () => { fired = true; };
-    window.addEventListener('hero:pinned', onPinned, { once: true } as any);
-    const timer = window.setTimeout(() => {
-      if (fired) return;
-      const el = containerRef?.current;
-      if (!el) return;
-      const r = el.getBoundingClientRect();
-      const vw = Math.max(320, Math.round(window.innerWidth || 0));
-      const sideMargin = Math.round(vw * 0.05);
-      const maxSafeW = Math.max(240, vw - 2 * sideMargin);
-      const baseW = Math.round(r.width * 1.35);
-      const w = Math.min(baseW, maxSafeW);
-      const h = Math.round(w * 0.60);
-      setBox({ w, h });
-    }, 120) as unknown as number;
-    return () => { window.removeEventListener('hero:pinned', onPinned); window.clearTimeout(timer); };
+    const observer = new ResizeObserver(debouncedCalculateSize);
+    observer.observe(el);
+    
+    // Also listen to window resize for responsiveness
+    window.addEventListener('resize', debouncedCalculateSize);
+
+    // Run an initial calculation after a short delay to catch the first render.
+    const initialTimeout = window.setTimeout(calculateAndSetSize, 150);
+
+    return () => {
+      observer.disconnect();
+      window.removeEventListener('resize', debouncedCalculateSize);
+      if (timeoutId) window.clearTimeout(timeoutId);
+      window.clearTimeout(initialTimeout);
+    };
   }, [containerRef]);
 
   const { wrapperStyle, plateStyle, ringStyle } = useMemo(() => {
@@ -137,6 +109,7 @@ const OvalGlowBackdrop: React.FC<Props> = ({ containerRef, primaryColor = '#0a1a
         pointerEvents: 'none',
         zIndex,
         overflow: 'visible',
+        transition: 'width 0.3s ease, height 0.3s ease', // Smooth transition on resize
       } as React.CSSProperties,
       // Plate with white halo, no blend with hero
       plateStyle: {
