@@ -678,75 +678,24 @@ export const OrbitPeekCarousel: React.FC<Props> = ({ items, index, onIndexChange
   useEffect(() => {
     const root = (rootRef as React.RefObject<HTMLDivElement>).current;
     if (!root) return;
-    // Aspect-aware first pin: wait for media readiness or a short timeout, then pin.
-    let raf: number | null = null;
-    let timeoutId: number | null = null;
-    let timeoutFired = false;
-    const tryPin = () => {
-      try {
-        if (pinnedActiveRef.current) return;
-        const aspectReady = !!naturalAspect || heroReadyRef.current;
-        if (aspectReady || timeoutFired) {
-          const { w, h } = computeFitBox();
-          pinnedActiveRef.current = true;
-          pinnedWRef.current = w;
-          pinnedHRef.current = h;
-          (root as HTMLDivElement).style.width = `${w}px`;
-          (root as HTMLDivElement).style.height = `${h}px`;
-        cachedHRef.current = pinnedHRef.current;
-          lastWRef.current = pinnedWRef.current;
-          dirtyRef.current = true; startLoop();
-          // Emit hero pinned payload for dependents
+
+    // This hook is now only for dispatching events and handling listeners.
+    // Sizing is 100% handled by CSS.
+    
+    const ro = new ResizeObserver(() => {
+      requestAnimationFrame(() => {
+        const rect = root.getBoundingClientRect();
+        if (rect.width > 0 && rect.height > 0) {
           try {
-            const detail = { w: pinnedWRef.current, h: pinnedHRef.current, ts: performance.now() };
+            const detail = { w: rect.width, h: rect.height, ts: performance.now() };
             (window as any).__heroPinnedCache = detail;
-            window.dispatchEvent(new CustomEvent('hero:pinned', { detail } as any));
-            requestAnimationFrame(() => {
-              window.dispatchEvent(new CustomEvent('hero:pinned', { detail: { ...detail, ts: performance.now() } } as any));
-              window.dispatchEvent(new CustomEvent('carousel:stable'));
-            });
+            window.dispatchEvent(new CustomEvent('hero:pinned', { detail }));
           } catch {}
-          return;
         }
-      } finally {
-        raf = requestAnimationFrame(tryPin);
-      }
-    };
-    raf = requestAnimationFrame(tryPin);
-    timeoutId = window.setTimeout(() => { timeoutFired = true; }, 300) as unknown as number;
-    const onReflow = () => {
-      // Only react to real layout changes (>10% width delta)
-      if (pinnedActiveRef.current) {
-        const { w, h } = computeFitBox();
-        const dw = Math.abs(w - pinnedWRef.current) / (pinnedWRef.current || 1);
-        const dh = Math.abs(h - pinnedHRef.current) / (pinnedHRef.current || 1);
-        if (dw > 0.03 || dh > 0.03) {
-          // Re-pin width and height to new layout using fit-box
-          pinnedWRef.current = w; pinnedHRef.current = h;
-          try {
-            (root as HTMLDivElement).style.width = `${w}px`;
-            (root as HTMLDivElement).style.height = `${h}px`;
-          } catch {}
-          cachedHRef.current = pinnedHRef.current; lastWRef.current = w;
-          try {
-            const detail = { w: pinnedWRef.current, h: pinnedHRef.current, ts: performance.now() };
-            (window as any).__heroPinnedCache = detail;
-            window.dispatchEvent(new CustomEvent('hero:pinned', { detail } as any));
-            requestAnimationFrame(() => {
-              window.dispatchEvent(new CustomEvent('hero:pinned', { detail: { ...detail, ts: performance.now() } } as any));
-              window.dispatchEvent(new CustomEvent('carousel:stable'));
-            });
-          } catch {}
-        } else {
-          // Ignore minor viewport jitters
-          return;
-        }
-      } else {
-        cachedHRef.current = null; lastWRef.current = null;
-      }
-      dirtyRef.current = true; startLoop();
-    };
-    // Visibility guard: if carousel is mostly off-screen, snap to rest and ignore wheel deltas
+      });
+    });
+    ro.observe(root);
+    
     const io = new IntersectionObserver((entries) => {
       const ent = entries[0];
       const vis = (ent && ent.intersectionRatio >= 0.85);
@@ -757,7 +706,7 @@ export const OrbitPeekCarousel: React.FC<Props> = ({ items, index, onIndexChange
       }
     }, { threshold: [0, 0.25, 0.5, 0.75, 0.85, 1] });
     try { io.observe(root); } catch {}
-    // iOS visual viewport guard: debounced lock to rest during UI chrome show/hide
+    
     const vv = (window as any).visualViewport as VisualViewport | undefined;
     const onVV = () => {
       viewportChangingRef.current = true; flattenStageRef.current = true;
@@ -789,66 +738,54 @@ export const OrbitPeekCarousel: React.FC<Props> = ({ items, index, onIndexChange
       }, 80) as unknown as number;
     };
     window.addEventListener('scroll', onScroll, { passive: true });
+    
     const ts = (ev: Event) => onTouchStart(ev as TouchEvent);
     const tm = (ev: Event) => onTouchMove(ev as TouchEvent);
     const te = () => endDrag(true);
     const tc = () => endDrag(false);
+    
     root.addEventListener('touchstart', ts, { passive: true });
     root.addEventListener('touchmove', tm, { passive: false });
     root.addEventListener('touchend', te, { passive: true });
     root.addEventListener('touchcancel', tc, { passive: true });
-    // Prevent page scroll while the pointer is over the carousel by default
     root.addEventListener('wheel', onWheel as any, { passive: false });
     root.addEventListener('touchmove', (e: any) => {
       try {
-        // Allow native handling for in-control drags (e.g., volume slider)
         if (!controlOwnerRef.current) {
           e.preventDefault();
         }
       } catch {}
     }, { passive: false });
-    window.addEventListener('resize', onReflow);
-    window.addEventListener('orientationchange', onReflow);
+
     return () => {
-      if (raf) cancelAnimationFrame(raf);
-      if (timeoutId) window.clearTimeout(timeoutId);
       root.removeEventListener('touchstart', ts as any);
       root.removeEventListener('touchmove', tm as any);
       root.removeEventListener('touchend', te as any);
       root.removeEventListener('touchcancel', tc as any);
       root.removeEventListener('wheel', onWheel as any);
-      window.removeEventListener('resize', onReflow);
-      window.removeEventListener('orientationchange', onReflow);
       window.removeEventListener('scroll', onScroll as any);
+      try { ro.disconnect(); } catch {}
       try { io.disconnect(); } catch {}
       if (vv) { try { vv.removeEventListener('resize', onVV); vv.removeEventListener('scroll', onVV); } catch {} }
     };
-  }, [onTouchStart, onTouchMove, endDrag, onWheel]);
-
-  // Re-pin when natural aspect is learned and differs materially from first pin
+  }, [onTouchStart, onTouchMove, endDrag, onWheel, startLoop]);
+  
+  // This hook is intentionally left empty. The sizing is now handled 100% by CSS.
+  // We keep it to signify that naturalAspect is a dependency of the layout.
   useEffect(() => {
-    const root = (rootRef as React.RefObject<HTMLDivElement>).current;
-    if (!root) return;
     try {
       if (!naturalAspect) return;
-      const { w, h } = computeFitBox();
-      pinnedActiveRef.current = true;
-      pinnedWRef.current = w; pinnedHRef.current = h;
-      (root as HTMLDivElement).style.width = `${w}px`;
-      (root as HTMLDivElement).style.height = `${h}px`;
-      cachedHRef.current = pinnedHRef.current; lastWRef.current = w;
-      dirtyRef.current = true; startLoop();
-      try {
-        const detail = { w: pinnedWRef.current, h: pinnedHRef.current, ts: performance.now() };
-        (window as any).__heroPinnedCache = detail;
-        window.dispatchEvent(new CustomEvent('hero:pinned', { detail } as any));
-        requestAnimationFrame(() => {
-          window.dispatchEvent(new CustomEvent('hero:pinned', { detail: { ...detail, ts: performance.now() } } as any));
-          window.dispatchEvent(new CustomEvent('carousel:stable'));
-        });
-      } catch {}
     } catch {}
   }, [naturalAspect, startLoop, computeFitBox]);
+
+  // Nudge the animation loop on initial mount to ensure peek content is visible.
+  useEffect(() => {
+    const handle = requestAnimationFrame(() => {
+      dirtyRef.current = true;
+      startLoop();
+    });
+    return () => cancelAnimationFrame(handle);
+  }, [startLoop]);
 
   useEffect(() => { dirtyRef.current = true; startLoop(); }, [effectiveIndex, startLoop]);
 
@@ -980,13 +917,10 @@ export const OrbitPeekCarousel: React.FC<Props> = ({ items, index, onIndexChange
 
   const containerStyle: React.CSSProperties = useMemo(() => ({
     position: 'relative',
-    // Target ~50% of viewport height for the hero so name + buy fit on landing
-    height: 'clamp(280px, 50vh, 720px)',
-    width: 'auto',
+    width: '100%',
     maxWidth: 'min(92vw, 1000px)',
-    aspectRatio: String(naturalAspect || 16/9),
+    aspectRatio: String(naturalAspect || 1),
     margin: '0 auto 16px auto',
-    // perspective moved to stage for stability
     overflow: 'visible',
     touchAction: 'none',
     overscrollBehavior: 'contain',
