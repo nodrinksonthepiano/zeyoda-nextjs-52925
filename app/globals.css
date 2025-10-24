@@ -279,7 +279,7 @@ body {
   align-items: center;
   justify-content: center; /* Vertically center content in main area */
   min-height: 100vh;
-  padding-top: 80px; /* Space for the fixed header */
+  padding-top: 10px; /* Space for the fixed header */
   padding-bottom: 40px; /* Space at the bottom */
 }
 

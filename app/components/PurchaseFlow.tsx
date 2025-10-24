@@ -544,8 +544,20 @@ const PurchaseFlow: React.FC<PurchaseFlowProps> = ({
                     if (!user) {
                         setShakeActive(true);
                         setTimeout(() => setShakeActive(false), 500);
-                        const commandInput = document.querySelector<HTMLInputElement>('input[placeholder="you@example.com"]');
-                        commandInput?.focus();
+                        
+                        // Shake the login prompts container
+                        const loginContainer = document.getElementById('login-prompts-container');
+                        if (loginContainer) {
+                            loginContainer.classList.add('shake');
+                            setTimeout(() => loginContainer.classList.remove('shake'), 500);
+                        }
+                        
+                        // Scroll to and focus bottom chat input
+                        const chatInput = document.querySelector<HTMLInputElement>('input[placeholder*="Enter your email"]');
+                        if (chatInput) {
+                            chatInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                            setTimeout(() => chatInput?.focus(), 600);
+                        }
                     } else {
                         handleDollarPurchase();
                     }

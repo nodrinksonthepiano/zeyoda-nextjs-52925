@@ -1484,7 +1484,7 @@ const ArtistPageContent: React.FC<{
         )}
 
         <header className="app-header">
-          {user ? (
+          {user && (
             <div className="flex items-center gap-4">
               <div 
                 className="text-sm cursor-pointer bg-gray-800 px-3 py-2 rounded-md hover:bg-gray-700"
@@ -1496,19 +1496,6 @@ const ArtistPageContent: React.FC<{
               </div>
               <button onClick={handleLogout} className="logout-button">
                 Data Reset
-              </button>
-            </div>
-          ) : (
-            <div className="flex gap-2">
-              <input
-                type="email"
-                value={email}
-                onChange={e => setEmail(e.target.value)}
-                placeholder="you@example.com"
-                className="border p-2 rounded text-black"
-              />
-              <button onClick={login} className="bg-blue-600 text-white px-4 py-2 rounded">
-                Login
               </button>
             </div>
           )}
