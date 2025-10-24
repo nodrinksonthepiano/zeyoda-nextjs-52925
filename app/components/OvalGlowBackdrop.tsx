@@ -35,6 +35,7 @@ function toRGBA(hexOrRgb: string, alpha: number) {
 
 const OvalGlowBackdrop: React.FC<Props> = ({ containerRef, primaryColor = '#0a1a3b', accentColor = '#4073ff', intensity = 0.9, zIndex = 2 }) => {
   const [box, setBox] = useState<{ w: number; h: number }>({ w: 0, h: 0 });
+  const lastCarouselDimensionsRef = useRef<{ w: number; h: number } | null>(null);
 
   useEffect(() => {
     const el = containerRef?.current;
@@ -52,16 +53,29 @@ const OvalGlowBackdrop: React.FC<Props> = ({ containerRef, primaryColor = '#0a1a
       };
     };
 
-    const calculateAndSetSize = () => {
-      const r = el.getBoundingClientRect();
-      if (r.width < 50) return; // Ignore insignificant sizes during transitions
+    const calculateAndSetSize = (carouselW?: number, carouselH?: number) => {
+      // If carousel dimensions provided (from hero:pinned), use them directly
+      let sourceWidth: number;
+      let sourceHeight: number;
+
+      if (carouselW && carouselH) {
+        sourceWidth = carouselW;
+        sourceHeight = carouselH;
+        lastCarouselDimensionsRef.current = { w: carouselW, h: carouselH };
+      } else {
+        // Fallback: measure the container element
+        const r = el.getBoundingClientRect();
+        if (r.width < 50) return; // Ignore insignificant sizes during transitions
+        sourceWidth = r.width;
+        sourceHeight = r.height;
+      }
 
       const vw = Math.max(320, window.innerWidth || 0);
       const sideMargin = Math.round(vw * 0.05);
       const maxSafeW = Math.max(240, vw - 2 * sideMargin);
 
       // The halo should be a tight, consistent border around the content. 1.25x is the sweet spot.
-      const idealWidth = Math.round(r.width * 1.25);
+      const idealWidth = Math.round(sourceWidth * 1.25);
       const finalWidth = Math.min(idealWidth, maxSafeW);
       const finalHeight = Math.round(finalWidth * 0.60);
 
@@ -72,21 +86,48 @@ const OvalGlowBackdrop: React.FC<Props> = ({ containerRef, primaryColor = '#0a1a
         return { w: finalWidth, h: finalHeight };
       });
     };
-    
-    // Debounce the calculation to wait for the carousel to "land" and layout to stabilize.
-    const debouncedCalculateSize = debounce(calculateAndSetSize, 100);
 
-    const observer = new ResizeObserver(debouncedCalculateSize);
+    // Primary listener: hero:pinned event from carousel (stable, authoritative dimensions)
+    const onHeroPinned = (e: Event) => {
+      const customEvent = e as CustomEvent;
+      const { w, h } = customEvent.detail || {};
+      if (w && h) {
+        // Use carousel's stable dimensions directly - no debounce needed
+        calculateAndSetSize(w, h);
+      }
+    };
+
+    // Secondary listener: window resize (for viewport changes, not carousel animations)
+    const debouncedCalculateSize = debounce(() => {
+      // On window resize, recalculate using last known carousel dimensions if available
+      if (lastCarouselDimensionsRef.current) {
+        calculateAndSetSize(lastCarouselDimensionsRef.current.w, lastCarouselDimensionsRef.current.h);
+      } else {
+        calculateAndSetSize();
+      }
+    }, 100);
+
+    // Fallback observer: only for cases where hero:pinned isn't available
+    const observer = new ResizeObserver((entries) => {
+      // Only respond to ResizeObserver if we haven't received hero:pinned yet
+      if (!lastCarouselDimensionsRef.current) {
+        debouncedCalculateSize();
+      }
+    });
     observer.observe(el);
+
+    // Listen to hero:pinned as primary source of truth
+    window.addEventListener('hero:pinned', onHeroPinned);
     
     // Also listen to window resize for responsiveness
     window.addEventListener('resize', debouncedCalculateSize);
 
     // Run an initial calculation after a short delay to catch the first render.
-    const initialTimeout = window.setTimeout(calculateAndSetSize, 150);
+    const initialTimeout = window.setTimeout(() => calculateAndSetSize(), 150);
 
     return () => {
       observer.disconnect();
+      window.removeEventListener('hero:pinned', onHeroPinned);
       window.removeEventListener('resize', debouncedCalculateSize);
       if (timeoutId) window.clearTimeout(timeoutId);
       window.clearTimeout(initialTimeout);

@@ -46,6 +46,7 @@ const ThemeOrbitRenderer: React.FC<ThemeOrbitRendererProps> = ({
   const draggingTokenRef = useRef<boolean>(false);
   const downTsRef = useRef<number>(0);
   const hoverPauseTimerRef = useRef<number | null>(null);
+  const heroDimensionsRef = useRef<{w: number, h: number} | null>(null);
 
   useEffect(() => {
     const videoElement = videoContainerRef.current;
@@ -75,21 +76,35 @@ const ThemeOrbitRenderer: React.FC<ThemeOrbitRendererProps> = ({
     const positionOnce = () => {
       let contentWidth, contentHeight, rect;
       
-      if (videoElement) {
-          contentWidth = videoElement.offsetWidth;
-          contentHeight = videoElement.offsetHeight;
-          rect = videoElement.getBoundingClientRect();
+      // Priority 1: Use stable hero dimensions from hero:pinned event
+      if (heroDimensionsRef.current && videoElement) {
+        contentWidth = heroDimensionsRef.current.w;
+        contentHeight = heroDimensionsRef.current.h;
+        rect = videoElement.getBoundingClientRect();
+        centerRef.current = { cx: rect.left + rect.width / 2, cy: rect.top + rect.height / 2 };
+      } 
+      // Priority 2: Measure the video element directly
+      else if (videoElement) {
+        contentWidth = videoElement.offsetWidth;
+        contentHeight = videoElement.offsetHeight;
+        rect = videoElement.getBoundingClientRect();
+        
+        const isContentReady = contentWidth > 50 && contentHeight > 50 && rect && rect.width > 50;
+        
+        if (!isContentReady) {
+          // Fallback to viewport-based dimensions only if measurements invalid
+          contentWidth = Math.min(window.innerWidth * 0.7, 700);
+          contentHeight = contentWidth * (9 / 16);
+          centerRef.current = { cx: window.innerWidth / 2, cy: window.innerHeight / 2 };
+        } else {
+          centerRef.current = { cx: rect.left + rect.width / 2, cy: rect.top + rect.height / 2 };
+        }
       }
-
-      const isContentReady = videoElement && contentWidth > 50 && contentHeight > 50 && rect && rect.width > 50;
-
-      if (!isContentReady) {
-        // Fallback to viewport-based dimensions
+      // Priority 3: Viewport fallback when nothing else available
+      else {
         contentWidth = Math.min(window.innerWidth * 0.7, 700);
         contentHeight = contentWidth * (9 / 16);
         centerRef.current = { cx: window.innerWidth / 2, cy: window.innerHeight / 2 };
-      } else {
-        centerRef.current = { cx: rect.left + rect.width / 2, cy: rect.top + rect.height / 2 };
       }
 
       const radiusX = (contentWidth / 2) + 60;
@@ -152,6 +167,18 @@ const ThemeOrbitRenderer: React.FC<ThemeOrbitRendererProps> = ({
     // Seed initial positions immediately, then start RAF
     positionOnce();
     animationFrameIdRef.current = requestAnimationFrame(animate);
+
+    // Listen to hero:pinned for stable carousel dimensions
+    const onHeroPinned = (e: Event) => {
+      const customEvent = e as CustomEvent;
+      const { w, h } = customEvent.detail || {};
+      if (w && h) {
+        heroDimensionsRef.current = { w, h };
+        // Update positions immediately with new stable dimensions
+        positionOnce();
+      }
+    };
+    window.addEventListener('hero:pinned', onHeroPinned);
 
     // Auto-resume when carousel reports stability (pin complete or snap complete)
     const onStable = () => {
@@ -311,6 +338,7 @@ const ThemeOrbitRenderer: React.FC<ThemeOrbitRendererProps> = ({
       if (typeof window !== 'undefined') {
         localStorage.setItem('zeyodaOrbitAngleOffset', String(naturalOffsetRef.current));
       }
+      window.removeEventListener('hero:pinned', onHeroPinned);
       window.removeEventListener('carousel:stable', onStable);
       try { (onStable as any).cleanup?.(); } catch {}
     };
