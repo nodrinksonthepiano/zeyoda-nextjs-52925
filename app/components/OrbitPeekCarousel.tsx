@@ -66,7 +66,7 @@ export const OrbitPeekCarousel: React.FC<Props> = ({ items, index, onIndexChange
   const lastNonZeroVolumeRef = useRef<number | null>(null);
   const isHeroMutedRef = useRef<boolean>(true);
   const volumeSliderRef = useRef<HTMLInputElement | null>(null);
-  const controlOwnerRef = useRef<'volume' | null>(null);
+  const controlOwnerRef = useRef<'volume' | 'description' | null>(null);
   // Track the media wrapper elements to compute letterbox-aware overlay in the wrapper's own coords
   const mediaWrapRefs = useRef<Map<number, HTMLDivElement>>(new Map());
   const setMediaWrapRef = (itemIdx: number) => (el: HTMLDivElement | null) => {
@@ -641,6 +641,7 @@ export const OrbitPeekCarousel: React.FC<Props> = ({ items, index, onIndexChange
   }, [count, onIndexChange, startLoop, waitForItemReady]);
 
   const onWheel = useCallback((e: WheelEvent) => {
+    if (controlOwnerRef.current) return; // ignore while interacting with description or controls
     if (count <= 1) { e.preventDefault(); return; }
     if (snappingRef.current || snapLockRef.current || stabilizingRef.current || !isVisibleRef.current) { e.preventDefault(); e.stopPropagation(); return; }
     e.preventDefault(); e.stopPropagation();
@@ -909,10 +910,12 @@ export const OrbitPeekCarousel: React.FC<Props> = ({ items, index, onIndexChange
                   const hasDescription = desc && desc !== `${asset.title} - uploaded via Zeyoda`;
                   
                   return (
-                    <div style={{ position:'absolute', left:6, bottom:12, maxWidth:'70%' }}>
-                      {/* Title button */}
-                      <button
+                    <>
+                      {/* Title button - stays in same position */}
+                      <div style={{ position:'absolute', left:6, bottom:12, maxWidth:'50%', zIndex:10 }}>
+                        <button
                         onClick={(e) => {
+                          e.preventDefault();
                           e.stopPropagation();
                           if (hasDescription) {
                             setShowTitleDescription(!showTitleDescription);
@@ -920,59 +923,125 @@ export const OrbitPeekCarousel: React.FC<Props> = ({ items, index, onIndexChange
                             if (overlayHideTimerRef.current) window.clearTimeout(overlayHideTimerRef.current);
                           }
                         }}
+                        onTouchEnd={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          if (hasDescription) {
+                            setShowTitleDescription(!showTitleDescription);
+                            setShowHeroOverlay(true);
+                            if (overlayHideTimerRef.current) window.clearTimeout(overlayHideTimerRef.current);
+                          }
+                        }}
+                        onMouseEnter={() => {
+                          if (hasDescription) {
+                            setShowHeroOverlay(true);
+                            if (overlayHideTimerRef.current) window.clearTimeout(overlayHideTimerRef.current);
+                          }
+                        }}
                         style={{ 
                           display:'flex', 
                           alignItems:'center', 
-                          gap:6, 
-                          padding:'6px 10px', 
-                          borderRadius:8, 
+                          gap:4, 
+                          padding:'5px 8px', 
+                          borderRadius:6, 
                           background: overlayBg, 
                           color: overlayFg, 
                           fontFamily: overlayFont, 
-                          fontSize:12, 
+                          fontSize:11, 
                           lineHeight:1.2, 
-                          pointerEvents: hasDescription ? 'auto' : 'none',
-                          opacity:(showHeroOverlay ? 1 : 0), 
+                          pointerEvents: 'auto',
+                          opacity: hasDescription ? 1 : (showHeroOverlay ? 1 : 0), 
                           transition:'opacity .15s ease', 
                           whiteSpace:'nowrap', 
                           overflow:'hidden', 
                           textOverflow:'ellipsis',
                           cursor: hasDescription ? 'pointer' : 'default',
-                          border: 'none'
+                          border: hasDescription ? '1px solid rgba(255,255,255,0.5)' : 'none',
+                          touchAction: 'manipulation',
+                          zIndex: 100
                         }} 
                         className="carousel-media-overlay"
                       >
                         <span style={{ fontWeight:600 }}>{asset.title || 'Untitled'}</span>
-                        {hasDescription && <span style={{ fontSize:10 }}>{showTitleDescription ? '▲' : '▼'}</span>}
-                      </button>
+                        {hasDescription && <span style={{ fontSize:10 }}>{showTitleDescription ? '▼' : '▲'}</span>}
+                        </button>
+                      </div>
                       
-                      {/* Description panel */}
+                      {/* Description panel - responsive sizing, drops DOWN from title */}
                       {showTitleDescription && hasDescription && (
                         <div 
+                          className="description-scroll-panel"
                           style={{ 
-                            marginTop:8, 
+                            position:'absolute',
+                            left:6,
+                            bottom:-68,
                             padding:'8px 12px', 
                             borderRadius:8, 
                             background: overlayBg,
                             color: overlayFg,
                             fontFamily: overlayFont,
-                            fontSize:11,
+                            fontSize:'clamp(10px, 1.5vw, 12px)',
                             lineHeight:1.4,
-                            maxWidth:300,
-                            maxHeight:200,
+                            width:'clamp(180px, 25vw, 320px)',
+                            height:'clamp(60px, 10vh, 120px)',
                             overflowY:'auto',
+                            overflowX:'hidden',
                             whiteSpace:'pre-wrap',
                             wordBreak:'break-word',
                             pointerEvents:'auto',
-                            opacity:(showHeroOverlay ? 1 : 0),
-                            transition:'opacity .15s ease'
+                            opacity: 1,
+                            transition:'all .2s ease',
+                            border: '1px solid rgba(255,255,255,0.5)',
+                            boxShadow: '0 4px 8px rgba(0,0,0,0.4)',
+                            zIndex: 9999,
+                            WebkitOverflowScrolling: 'touch',
+                            touchAction: 'pan-y'
                           }}
                           onClick={(e) => e.stopPropagation()}
+                          onMouseEnter={() => {
+                            controlOwnerRef.current = 'description';
+                          }}
+                          onMouseLeave={() => {
+                            controlOwnerRef.current = null;
+                          }}
+                          onPointerDown={(e) => {
+                            e.stopPropagation();
+                            try { (e.currentTarget as any).setPointerCapture?.(e.pointerId); } catch {}
+                            controlOwnerRef.current = 'description';
+                          }}
+                          onPointerMove={(e) => {
+                            e.stopPropagation();
+                          }}
+                          onPointerUp={(e) => {
+                            e.stopPropagation();
+                            try { (e.currentTarget as any).releasePointerCapture?.(e.pointerId); } catch {}
+                            controlOwnerRef.current = null;
+                          }}
+                          onPointerCancel={(e) => {
+                            e.stopPropagation();
+                            try { (e.currentTarget as any).releasePointerCapture?.(e.pointerId); } catch {}
+                            controlOwnerRef.current = null;
+                          }}
+                          onTouchStart={(e) => {
+                            e.stopPropagation();
+                            controlOwnerRef.current = 'description';
+                          }}
+                          onTouchMove={(e) => {
+                            e.stopPropagation();
+                          }}
+                          onTouchEnd={(e) => {
+                            e.stopPropagation();
+                            controlOwnerRef.current = null;
+                          }}
+                          onWheel={(e) => {
+                            e.stopPropagation();
+                            // Don't preventDefault - allow natural scroll inside panel
+                          }}
                         >
                           {desc}
                         </div>
                       )}
-                    </div>
+                    </>
                   );
                 })()}
                 {/* Mute/Volume bottom-right with vertical slider above */}
