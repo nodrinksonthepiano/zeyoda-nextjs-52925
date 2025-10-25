@@ -122,6 +122,7 @@ const OnboardingPanel: React.FC<OnboardingPanelProps> = ({
     artworktitle: mode === 'upload-asset' ? 'New Content' : 'Featured Content #1',
     artworkyear: '2025',
     downloadPrice: 1.00, // Price for ERC-1155 featured content downloads
+    description: '', // Description for the asset
     theme: {
       fontFamily: 'Bungee, cursive',
       primaryColor: '#FAF0E6',
@@ -446,6 +447,25 @@ const OnboardingPanel: React.FC<OnboardingPanelProps> = ({
               <span>$5K</span>
               <span>$10K+</span>
             </div>
+          </div>
+        </div>
+        
+        {/* Description field */}
+        <div className="mb-4">
+          <label className="block text-sm font-medium text-gray-300 mb-2">
+            Description
+            <span className="text-gray-500 text-xs ml-2">(optional - you can edit later)</span>
+          </label>
+          <textarea
+            value={formData.description}
+            onChange={(e) => handleFieldChange('description', e.target.value)}
+            placeholder="Tell collectors about this piece..."
+            rows={3}
+            maxLength={500}
+            className="w-full p-3 bg-gray-700 text-white rounded-lg border border-gray-600 focus:border-yellow-500 focus:ring-1 focus:ring-yellow-500 resize-none"
+          />
+          <div className="text-xs text-gray-400 mt-1 text-right">
+            {formData.description.length}/500 characters
           </div>
         </div>
         

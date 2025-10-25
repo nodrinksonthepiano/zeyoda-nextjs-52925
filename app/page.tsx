@@ -87,7 +87,6 @@ const ArtistPageContent: React.FC<{
     description: ''
   });
 
-
   const searchParams = useSearchParams();
   const router = useRouter();
   
@@ -645,6 +644,7 @@ const ArtistPageContent: React.FC<{
       formData.append('artistId', artistIdFromUrl);
       formData.append('title', assetData.artworktitle);
       formData.append('price', assetData.downloadPrice.toString());
+      formData.append('description', assetData.description || '');
       formData.append('userAddress', user);
 
       const response = await fetch('/api/uploadAsset', {
@@ -1528,7 +1528,6 @@ const ArtistPageContent: React.FC<{
                    appMode === 'upload-asset' ? `ADD NEW ASSET TO ${artistConfig.displayName}` : 
                    artistConfig.displayName}
                 </h1>
-
   
                 <div className="relative w-full max-w-5xl mx-auto mt-6 md:mt-14 mb-12 md:mb-16">
                   {(appMode === 'onboarding' || appMode === 'upload-asset') ? (

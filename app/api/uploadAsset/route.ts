@@ -16,6 +16,8 @@ export async function POST(request: NextRequest) {
     const artistId = formData.get('artistId') as string;
     const title = formData.get('title') as string;
     const price = parseFloat(formData.get('price') as string);
+    const rawDescription = (formData.get('description') as string) || '';
+    const description = rawDescription.trim().replace(/\r\n/g, '\n'); // Sanitize whitespace
     const userAddress = formData.get('userAddress') as string;
 
     if (!file || !artistId || !title || !userAddress) {
@@ -90,7 +92,8 @@ export async function POST(request: NextRequest) {
         price_usd: price,
         metadata: {
           title: title,
-          desc: `${title} - uploaded via Zeyoda`
+          description: description || `${title} - uploaded via Zeyoda`, // New field
+          desc: description || `${title} - uploaded via Zeyoda` // Keep for backward compat (remove after 1 week)
         }
       })
       .select()

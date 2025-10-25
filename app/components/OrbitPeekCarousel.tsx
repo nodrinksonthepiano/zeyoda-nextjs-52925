@@ -60,9 +60,10 @@ export const OrbitPeekCarousel: React.FC<Props> = ({ items, index, onIndexChange
   const [isHeroPaused, setIsHeroPaused] = useState<boolean>(false);
   const [isHeroMuted, setIsHeroMuted] = useState<boolean>(true);
   const [showVolumeSlider, setShowVolumeSlider] = useState<boolean>(false);
+  const [showTitleDescription, setShowTitleDescription] = useState<boolean>(false);
   const overlayHideTimerRef = useRef<number | null>(null);
   const volumeHideTimerRef = useRef<number | null>(null);
-  const lastNonZeroVolumeRef = useRef<number>(1);
+  const lastNonZeroVolumeRef = useRef<number | null>(null);
   const isHeroMutedRef = useRef<boolean>(true);
   const volumeSliderRef = useRef<HTMLInputElement | null>(null);
   const controlOwnerRef = useRef<'volume' | null>(null);
@@ -150,6 +151,8 @@ export const OrbitPeekCarousel: React.FC<Props> = ({ items, index, onIndexChange
 
   useEffect(() => { effectiveIndexRef.current = effectiveIndex; }, [effectiveIndex]);
   useEffect(() => { isHeroMutedRef.current = isHeroMuted; }, [isHeroMuted]);
+  // Reset description when index changes
+  useEffect(() => { setShowTitleDescription(false); }, [effectiveIndex]);
   // Sync overlay target to current hero video and listen to play/pause changes
   useEffect(() => {
     const v = videoRefs.current.get(effectiveIndex);
@@ -900,10 +903,78 @@ export const OrbitPeekCarousel: React.FC<Props> = ({ items, index, onIndexChange
             const overlayBoxStyle: React.CSSProperties = { position:'absolute', left:'var(--pad-x, 0px)', top:'var(--pad-y, 0px)', width: 'var(--content-w, 100%)', height: 'var(--content-h, 100%)', pointerEvents:'none', transform:'translateZ(1px)' };
             return (
               <div style={overlayBoxStyle}>
-                {/* Title */}
-                <div style={{ position:'absolute', left:6, bottom:12, display:'flex', alignItems:'center', gap:8, padding:'6px 10px', borderRadius:8, background: overlayBg, color: overlayFg, fontFamily: overlayFont, fontSize:12, lineHeight:1.2, pointerEvents:'none', opacity:(showHeroOverlay ? 1 : 0), transition:'opacity .15s ease', maxWidth:'70%', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }} className="carousel-media-overlay">
-                  <span style={{ fontWeight:600 }}>{asset.title || 'Untitled'}</span>
-                </div>
+                {/* Title with clickable description */}
+                {(() => {
+                  const desc = (asset as any).metadata?.description ?? (asset as any).metadata?.desc ?? '';
+                  const hasDescription = desc && desc !== `${asset.title} - uploaded via Zeyoda`;
+                  
+                  return (
+                    <div style={{ position:'absolute', left:6, bottom:12, maxWidth:'70%' }}>
+                      {/* Title button */}
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (hasDescription) {
+                            setShowTitleDescription(!showTitleDescription);
+                            setShowHeroOverlay(true);
+                            if (overlayHideTimerRef.current) window.clearTimeout(overlayHideTimerRef.current);
+                          }
+                        }}
+                        style={{ 
+                          display:'flex', 
+                          alignItems:'center', 
+                          gap:6, 
+                          padding:'6px 10px', 
+                          borderRadius:8, 
+                          background: overlayBg, 
+                          color: overlayFg, 
+                          fontFamily: overlayFont, 
+                          fontSize:12, 
+                          lineHeight:1.2, 
+                          pointerEvents: hasDescription ? 'auto' : 'none',
+                          opacity:(showHeroOverlay ? 1 : 0), 
+                          transition:'opacity .15s ease', 
+                          whiteSpace:'nowrap', 
+                          overflow:'hidden', 
+                          textOverflow:'ellipsis',
+                          cursor: hasDescription ? 'pointer' : 'default',
+                          border: 'none'
+                        }} 
+                        className="carousel-media-overlay"
+                      >
+                        <span style={{ fontWeight:600 }}>{asset.title || 'Untitled'}</span>
+                        {hasDescription && <span style={{ fontSize:10 }}>{showTitleDescription ? '▲' : '▼'}</span>}
+                      </button>
+                      
+                      {/* Description panel */}
+                      {showTitleDescription && hasDescription && (
+                        <div 
+                          style={{ 
+                            marginTop:8, 
+                            padding:'8px 12px', 
+                            borderRadius:8, 
+                            background: overlayBg,
+                            color: overlayFg,
+                            fontFamily: overlayFont,
+                            fontSize:11,
+                            lineHeight:1.4,
+                            maxWidth:300,
+                            maxHeight:200,
+                            overflowY:'auto',
+                            whiteSpace:'pre-wrap',
+                            wordBreak:'break-word',
+                            pointerEvents:'auto',
+                            opacity:(showHeroOverlay ? 1 : 0),
+                            transition:'opacity .15s ease'
+                          }}
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          {desc}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
                 {/* Mute/Volume bottom-right with vertical slider above */}
                 <div style={{ position:'absolute', right:12, bottom:12, display:'block', opacity:(showHeroOverlay ? 1 : 0), transition:'opacity .15s ease', pointerEvents:'auto' }} className="carousel-media-overlay" onMouseEnter={() => { if (overlayHideTimerRef.current) window.clearTimeout(overlayHideTimerRef.current); }} onMouseLeave={() => { overlayHideTimerRef.current = window.setTimeout(()=>setShowHeroOverlay(false), 4000) as unknown as number; }}>
                   <div style={{ position:'relative', display:'inline-block' }}>
