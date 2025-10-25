@@ -111,11 +111,11 @@ export async function POST(request: NextRequest) {
       const { ethers } = require('ethers');
       const ArtistDownloadsArtifact = require('../../../artifacts/contracts/ArtistDownloads.sol/ArtistDownloads.json');
       
-      // Get deployer wallet for minting
-      const deployerPrivateKey = process.env.DEPLOYER_PRIVATE_KEY;
+      // Get minter wallet for minting
+      const minterPrivateKey = process.env.MINTER_PRIVATE_KEY;
       const rpcUrl = process.env.BASE_SEPOLIA_RPC_URL;
       
-      if (!deployerPrivateKey || !rpcUrl) {
+      if (!minterPrivateKey || !rpcUrl) {
         console.warn('⚠️ Missing deployer key or RPC URL - skipping minting');
         return NextResponse.json({
           success: true,
@@ -124,49 +124,72 @@ export async function POST(request: NextRequest) {
         });
       }
       
-      // Get download contract address
+      // Get download contract address and treasury wallet
       const { data: artistData } = await supabase
         .from('artists')
-        .select('download_address')
+        .select('download_address, treasury_wallet')
         .eq('id', artistId)
         .single();
         
       if (!artistData?.download_address) {
-        console.warn('⚠️ No download contract address - skipping minting');
+        console.error('❌ No download contract address');
         return NextResponse.json({
-          success: true,
-          asset: assetData,
-          message: `Asset "${title}" uploaded successfully! Asset #${nextAssetNumber} (minting skipped - no contract)`
-        });
+          success: false,
+          error: `No ERC-1155 contract deployed for artist ${artistId}. Deploy contracts first.`
+        }, { status: 400 });
+      }
+      
+      const artistWallet = artistData.treasury_wallet;
+      if (!artistWallet) {
+        console.error('❌ Artist treasury wallet not found');
+        return NextResponse.json({
+          success: false,
+          error: 'Artist treasury wallet not configured'
+        }, { status: 400 });
       }
       
       // Setup provider and contract
       const provider = new ethers.JsonRpcProvider(rpcUrl);
-      const wallet = new ethers.Wallet(deployerPrivateKey, provider);
+      const wallet = new ethers.Wallet(minterPrivateKey, provider);
       const contract = new ethers.Contract(artistData.download_address, ArtistDownloadsArtifact.abi, wallet);
       
-      // Mint 1 token to user's wallet
-      const tx = await contract.mintDownload(userAddress, nextAssetNumber, 1);
-      await tx.wait();
+      // Check if already minted (idempotency)
+      const existingBalance = await contract.balanceOf(artistWallet, nextAssetNumber);
+      if (existingBalance > 0n) {
+        console.log(`✅ Asset #${nextAssetNumber} already minted (balance: ${existingBalance})`);
+        return NextResponse.json({
+          success: true,
+          asset: assetData,
+          message: `Asset "${title}" already minted. Asset #${nextAssetNumber}`,
+          alreadyMinted: true
+        });
+      }
       
-      console.log(`✅ Minted ERC-1155 token #${nextAssetNumber} to ${userAddress}`);
-      console.log('Transaction hash:', tx.hash);
+      // Mint 1 "featured copy" to artist's treasury wallet
+      console.log(`🎨 Minting featured copy to artist: ${artistWallet}`);
+      const tx = await contract.mintDownload(artistWallet, nextAssetNumber, 1);
+      const receipt = await tx.wait();
+      
+      console.log(`✅ Minted ERC-1155 token #${nextAssetNumber} to ${artistWallet}`);
+      console.log(`   Transaction: ${receipt.hash}`);
       
       return NextResponse.json({
         success: true,
         asset: assetData,
-        mintTx: tx.hash,
-        message: `Asset "${title}" uploaded and minted successfully! Asset #${nextAssetNumber}`
+        mintTx: receipt.hash,
+        explorerUrl: `https://sepolia.basescan.org/tx/${receipt.hash}`,
+        message: `Asset "${title}" uploaded and minted! Asset #${nextAssetNumber} - Featured copy minted to artist.`
       });
       
     } catch (mintError: any) {
       console.error('❌ Minting failed:', mintError);
-      // Return success for upload even if minting fails
+      // Return FAILURE if minting fails
       return NextResponse.json({
-        success: true,
-        asset: assetData,
-        message: `Asset "${title}" uploaded successfully! Asset #${nextAssetNumber} (minting failed: ${mintError.message})`
-      });
+        success: false,
+        error: `Minting failed: ${mintError.message}`,
+        details: mintError.reason || mintError.code,
+        asset: assetData
+      }, { status: 500 });
     }
 
   } catch (error: any) {
