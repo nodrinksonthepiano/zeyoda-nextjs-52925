@@ -14,7 +14,7 @@ interface IArtistTokenUUPS {
 }
 
 interface IArtistDownloadsUUPS {
-    function initialize(string memory artistId, string memory uri, address owner) external;
+    function initialize(string memory artistId, string memory uri, address owner, address sponsor) external;
 }
 
 interface IUupsAMM {
@@ -36,6 +36,7 @@ contract ArtistFactory is Ownable, ReentrancyGuard {
     address public immutable downloadsImplementation;
     address public immutable ammProxy;
     address public immutable protocolVault;
+    address public immutable sponsor; // Server wallet that can gas-sponsor mints
     
     uint256 public artistCount;
     
@@ -57,6 +58,7 @@ contract ArtistFactory is Ownable, ReentrancyGuard {
      * @param _downloadsImpl ArtistDownloadsUUPS implementation address  
      * @param _ammProxy UupsAMM proxy address
      * @param _protocolVault Protocol vault address
+     * @param _sponsor Server wallet address (can gas-sponsor mints)
      * @param _initialOwner Factory owner (protocol)
      */
     constructor(
@@ -64,21 +66,25 @@ contract ArtistFactory is Ownable, ReentrancyGuard {
         address _downloadsImpl,
         address _ammProxy,
         address _protocolVault,
+        address _sponsor,
         address _initialOwner
     ) Ownable(_initialOwner) {
         require(_tokenImpl != address(0), "Invalid token implementation");
         require(_downloadsImpl != address(0), "Invalid downloads implementation");
         require(_ammProxy != address(0), "Invalid AMM proxy");
         require(_protocolVault != address(0), "Invalid protocol vault");
+        require(_sponsor != address(0), "Invalid sponsor");
         
         tokenImplementation = _tokenImpl;
         downloadsImplementation = _downloadsImpl;
         ammProxy = _ammProxy;
         protocolVault = _protocolVault;
+        sponsor = _sponsor;
     }
     
     /**
      * @dev Create complete artist infrastructure in one transaction
+     * Protocol-subsidized (factory pays LP ETH, artist pays gas)
      * @param name Token name
      * @param symbol Token symbol
      * @param artistId Lowercase artist identifier
@@ -91,7 +97,7 @@ contract ArtistFactory is Ownable, ReentrancyGuard {
         string memory symbol,
         string memory artistId,
         address artistWallet
-    ) external onlyOwner nonReentrant returns (
+    ) external nonReentrant returns (
         address tokenProxy,
         address downloadsProxy
     ) {
@@ -104,7 +110,7 @@ contract ArtistFactory is Ownable, ReentrancyGuard {
         // Step 2: Call initialMint (factory becomes temporary owner, receives 100M)
         IArtistTokenUUPS(tokenProxy).initialMint();
         
-        // Step 3: Deploy downloads proxy (artist is owner from start)
+        // Step 3: Deploy downloads proxy (artist is owner, sponsor set during init)
         downloadsProxy = _deployDownloadsProxy(artistId, artistWallet);
         
         // Step 4: Create AMM pool with factory's 100M tokens + 0.005 ETH
@@ -153,17 +159,18 @@ contract ArtistFactory is Ownable, ReentrancyGuard {
     }
     
     /**
-     * @dev Deploy downloads proxy with initialization
+     * @dev Deploy downloads proxy with initialization (includes sponsor)
      */
     function _deployDownloadsProxy(
         string memory artistId,
         address owner
     ) internal returns (address) {
         bytes memory initData = abi.encodeWithSignature(
-            "initialize(string,string,address)",
+            "initialize(string,string,address,address)",
             artistId,
             "https://zeyoda.com/metadata/",
-            owner
+            owner,
+            sponsor
         );
         
         ERC1967Proxy proxy = new ERC1967Proxy(downloadsImplementation, initData);

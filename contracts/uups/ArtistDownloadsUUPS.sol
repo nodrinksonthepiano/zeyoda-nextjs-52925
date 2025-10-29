@@ -30,8 +30,11 @@ contract ArtistDownloadsUUPS is
     // Track total minted for each asset
     mapping(uint256 => uint256) public totalMinted;
     
+    // Sponsor address (server wallet that can gas-sponsor mints)
+    address public sponsor;
+    
     // Storage gap for future upgrades (CRITICAL - never remove or reorder above variables)
-    uint256[48] private __gap;
+    uint256[47] private __gap;
     
     // Events
     event DownloadPurchased(
@@ -48,9 +51,26 @@ contract ArtistDownloadsUUPS is
         string artistId
     );
     
+    event SponsorUpdated(
+        address indexed oldSponsor,
+        address indexed newSponsor
+    );
+    
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
         _disableInitializers();
+    }
+    
+    /**
+     * @dev Modifier to allow owner OR sponsor to call function
+     * Enables server-sponsored gas while keeping artist as owner (for payments)
+     */
+    modifier onlyOwnerOrSponsor() {
+        require(
+            msg.sender == owner() || msg.sender == sponsor,
+            "Not owner or sponsor"
+        );
+        _;
     }
     
     /**
@@ -58,14 +78,17 @@ contract ArtistDownloadsUUPS is
      * @param _artistId Artist identifier
      * @param _uri Base URI for token metadata
      * @param _owner Contract owner (artist treasury or protocol)
+     * @param _sponsor Server wallet that can gas-sponsor mints
      */
     function initialize(
         string memory _artistId,
         string memory _uri,
-        address _owner
+        address _owner,
+        address _sponsor
     ) external initializer {
         require(bytes(_artistId).length > 0, "Artist ID required");
         require(_owner != address(0), "Invalid owner address");
+        require(_sponsor != address(0), "Invalid sponsor address");
         
         __ERC1155_init(_uri);
         __Ownable_init(_owner);
@@ -74,6 +97,7 @@ contract ArtistDownloadsUUPS is
         __UUPSUpgradeable_init();
         
         artistId = _artistId;
+        sponsor = _sponsor;
     }
     
     /**
@@ -87,7 +111,7 @@ contract ArtistDownloadsUUPS is
         address recipient,
         uint256 tokenId,
         uint256 quantity
-    ) external payable onlyOwner nonReentrant whenNotPaused {
+    ) external payable onlyOwnerOrSponsor nonReentrant whenNotPaused {
         require(recipient != address(0), "Invalid recipient");
         require(quantity > 0, "Quantity must be > 0");
         
@@ -119,7 +143,7 @@ contract ArtistDownloadsUUPS is
         address user,
         uint256 tokenId,
         uint256 amount
-    ) external onlyOwner whenNotPaused {
+    ) external onlyOwnerOrSponsor whenNotPaused {
         require(user != address(0), "Invalid user address");
         require(tokenId > 0, "Invalid token ID");
         require(amount > 0, "Invalid amount");
@@ -226,6 +250,15 @@ contract ArtistDownloadsUUPS is
             value /= 10;
         }
         return string(buffer);
+    }
+    
+    /**
+     * @dev Set sponsor address (server wallet that can gas-sponsor mints)
+     * @param _sponsor Address of sponsor (server signer)
+     */
+    function setSponsor(address _sponsor) external onlyOwner {
+        emit SponsorUpdated(sponsor, _sponsor);
+        sponsor = _sponsor;
     }
     
     /**

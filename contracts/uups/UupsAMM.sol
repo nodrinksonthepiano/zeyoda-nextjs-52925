@@ -85,13 +85,14 @@ contract UupsAMM is
 
     /**
      * @dev Create a new liquidity pool for an artist token
+     * Anyone can create a pool (permissionless, like Uniswap)
      * @param token Artist token address
      * @param tokenAmount Amount of tokens to add
      */
     function createPool(
         address token,
         uint256 tokenAmount
-    ) external payable onlyOwner nonReentrant {
+    ) external payable nonReentrant {
         require(token != address(0), "Invalid token address");
         require(pools[token].token == address(0), "Pool already exists");
         require(tokenAmount > MINIMUM_LIQUIDITY, "Insufficient token amount");

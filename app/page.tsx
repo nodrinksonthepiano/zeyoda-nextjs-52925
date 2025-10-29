@@ -28,6 +28,7 @@ import {
   UserTokenBalances
 } from '../types/artist-types';
 import { useCommandSystem } from './hooks/useCommandSystem';
+import { ArtistFactoryABI } from './utils/abis/ArtistFactoryABI';
 import { clearAllSafewordStorage } from './utils/safewordStorage';
 import { useOrbitTokens } from './hooks/useOrbitTokens';
 import { supabase } from './utils/supabaseClient';
@@ -310,60 +311,136 @@ const ArtistPageContent: React.FC<{
   }, [onboardingData]);
 
   const handleSaveArtist = useCallback(async (artistData: any) => {
-    console.log('🚀 Starting complete artist deployment...', artistData);
+    console.log('🚀 Starting UUPS artist deployment via factory...', artistData);
     
     try {
-      showToast('⚡ Deploying contracts and setting up artist...', 'info');
+      if (!magic) throw new Error('Magic not initialized');
       
-      // Check if ERC-20 already exists for this artist
-      const existingTokenAddress = await checkExistingToken(artistData.id);
+      showToast('⚡ Deploying via Factory (single transaction)...', 'info');
       
-      let tokenDeployment;
-      if (existingTokenAddress) {
-        console.log(`📝 Using existing ERC-20 token: ${existingTokenAddress}`);
-        tokenDeployment = { address: existingTokenAddress };
-      } else {
-        // STEP 1: Deploy ArtistToken.sol with 10B distribution
-        console.log('📝 Step 1: Deploying ArtistToken contract...');
-        tokenDeployment = await deployArtistToken(artistData);
+      const provider = new ethers.BrowserProvider(magic.rpcProvider as any);
+      const signer = await provider.getSigner();
+      const artistWallet = await signer.getAddress();
+      
+      // Get factory address from env
+      const factoryAddress = process.env.NEXT_PUBLIC_ARTIST_FACTORY;
+      if (!factoryAddress) {
+        throw new Error('Factory not configured. Add NEXT_PUBLIC_ARTIST_FACTORY to .env.local');
       }
       
-      // STEP 2: Deploy ArtistDownloads.sol for ERC-1155s
-      console.log('📝 Step 2: Deploying ArtistDownloads contract...');
-      const downloadsDeployment = await deployArtistDownloads(artistData, tokenDeployment.address);
+      const factory = new ethers.Contract(
+        factoryAddress,
+        ArtistFactoryABI,
+        signer
+      );
       
-      // STEP 3: Create AMM liquidity pool
-      console.log('📝 Step 3: Creating AMM liquidity pool...');
-      const poolAddress = await createLiquidityPool(tokenDeployment.address, artistData);
+      // Prepare artist identifiers
+      const tokenName = artistData.tokenName || artistData.name;
+      const tokenSymbol = tokenName.toUpperCase().replace(/\s+/g, '');
+      const artistId = tokenSymbol.toLowerCase();
       
-      // STEP 4: Upload featured content to storage
-      console.log('📝 Step 4: Uploading featured content...');
-      const contentUrl = await uploadFeaturedContent(uploadedFile, artistData.id);
+      console.log('📝 Calling factory.createArtist()...');
+      console.log('   Name:', tokenName);
+      console.log('   Symbol:', tokenSymbol);
+      console.log('   ID:', artistId);
+      console.log('   Artist Wallet:', artistWallet);
       
-      // STEP 5: Save everything to Supabase (using service role to bypass RLS)
-      console.log('📝 Step 5: Saving to Supabase...');
+      // Single transaction deploys everything
+      const tx = await factory.createArtist(
+        tokenName,
+        tokenSymbol,
+        artistId,
+        artistWallet
+      );
+      
+      showToast('⏳ Deploying contracts...', 'info');
+      const receipt = await tx.wait();
+      
+      // Parse ArtistCreated event
+      console.log('📡 Parsing ArtistCreated event...');
+      const iface = new ethers.Interface(ArtistFactoryABI);
+      let tokenProxy: string | undefined;
+      let downloadsProxy: string | undefined;
+      let ammProxy: string | undefined;
+      
+      for (const log of receipt.logs) {
+        try {
+          const parsed = iface.parseLog(log);
+          if (parsed?.name === 'ArtistCreated') {
+            tokenProxy = parsed.args.tokenProxy;
+            downloadsProxy = parsed.args.downloadsProxy;
+            ammProxy = parsed.args.ammProxy;
+            console.log('✅ Event parsed successfully');
+            break;
+          }
+        } catch (e) {
+          // Skip non-matching logs
+        }
+      }
+      
+      if (!tokenProxy || !downloadsProxy || !ammProxy) {
+        throw new Error('ArtistCreated event not found in transaction receipt');
+      }
+      
+      console.log('✅ Factory deployment complete!');
+      console.log('   Token:', tokenProxy);
+      console.log('   Downloads:', downloadsProxy);
+      console.log('   AMM:', ammProxy);
+      
+      // Upload featured content
+      console.log('📝 Uploading featured content...');
+      const contentUrl = await uploadFeaturedContent(uploadedFile, artistId);
+      
+      // Save to Supabase
+      console.log('📝 Saving to Supabase...');
       await saveArtistToDatabase({
         ...artistData,
-        tokenAddress: tokenDeployment.address,
-        downloadsAddress: downloadsDeployment.address,
-        poolAddress: poolAddress,
-        contentUrl: contentUrl
+        id: artistId,
+        tokenAddress: tokenProxy,
+        downloadsAddress: downloadsProxy,
+        poolAddress: ammProxy,
+        contentUrl: contentUrl,
+        treasuryWallet: artistWallet
       });
       
-      console.log('🎉 Artist deployment completed successfully!');
-      showToast(`🎉 ${artistData.name} is now live! Redirecting to artist page...`, 'success');
+      // Mint first asset as ERC-1155 (if file was uploaded)
+      if (uploadedFile) {
+        console.log('🪙 Minting Asset #1...');
+        try {
+          const formData = new FormData();
+          formData.append('file', uploadedFile);
+          formData.append('artistId', artistId);
+          formData.append('title', artistData.artworktitle || 'Featured Content');
+          formData.append('price', (artistData.downloadPrice || 1).toString());
+          formData.append('description', artistData.description || 'First featured asset');
+          formData.append('userAddress', artistWallet);
+          
+          const uploadResponse = await fetch('/api/uploadAsset', {
+            method: 'POST',
+            body: formData
+          });
+          
+          if (uploadResponse.ok) {
+            console.log('✅ Asset #1 minted successfully!');
+          } else {
+            console.warn('⚠️ Asset minting failed (non-critical)');
+          }
+        } catch (mintError) {
+          console.warn('⚠️ Asset minting error:', mintError);
+        }
+      }
+      
+      console.log('🎉 Artist created successfully!');
+      showToast(`🎉 ${tokenName} launched successfully!`, 'success');
       
       // Redirect to new artist page
-      setTimeout(() => {
-        window.location.href = `/?artist=${artistData.id}`;
-      }, 2000);
+      window.location.href = `/?artist=${artistId}`;
       
     } catch (error: any) {
-      console.error('❌ Deployment failed:', error);
-      showToast(`Failed to deploy artist: ${error.message}`, 'error');
-      return;
+      console.error('❌ Factory deployment failed:', error);
+      showToast(`❌ Deployment failed: ${error.message}`, 'error');
     }
-  }, [showToast, uploadedFile]);
+  }, [magic, uploadedFile, showToast]);
 
   // DEPLOYMENT HELPER FUNCTIONS
   const checkExistingToken = async (artistId: string) => {
@@ -530,12 +607,12 @@ const ArtistPageContent: React.FC<{
       
       // Generate unique filename
       const fileExt = file.name.split('.').pop();
-      const fileName = `${artistId}_featured.${fileExt}`;
+      const fileName = `${artistId}/featured.${fileExt}`;
       
-      // Upload to Supabase storage
+      // Upload to artist-assets bucket (same as regular assets - this bucket exists!)
       const { data, error } = await supabase.storage
-        .from('artist-content')
-        .upload(`featured/${fileName}`, file, {
+        .from('artist-assets')
+        .upload(fileName, file, {
           cacheControl: '3600',
           upsert: true
         });
@@ -547,8 +624,8 @@ const ArtistPageContent: React.FC<{
       
       // Get public URL
       const { data: urlData } = supabase.storage
-        .from('artist-content')
-        .getPublicUrl(`featured/${fileName}`);
+        .from('artist-assets')
+        .getPublicUrl(fileName);
       
       console.log('✅ File uploaded successfully:', urlData.publicUrl);
       return urlData.publicUrl;

@@ -11,27 +11,30 @@ async function main() {
 
   // Configuration - Use addresses from Sprint 1, 2A, 2B
   const TOKEN_IMPLEMENTATION = "0xe31608a3C5A7924D4C0f8A0b760839Caa2E4e90D";      // From Sprint 2A
-  const DOWNLOADS_IMPLEMENTATION = "0x854178B738DD9Fe99e8c7CFD12f438F9565bcd3c"; // From Sprint 1
-  const AMM_PROXY = "0x927890C7b410c7368502bdDF006F944eE69FE5E1";              // From Sprint 2B
+  const DOWNLOADS_IMPLEMENTATION = "0x9de11C68d6f124BdAef175D51C7Ebb0bDb13d88e"; // V2 with sponsor in initialize
+  const AMM_PROXY = "0x49B9538e0022dD919d9af2358783e89d08bCd82c";              // From Sprint 2B (FIXED)
   const PROTOCOL_VAULT = "0x615258a5263DBEe0DDEED3166ddC1f442D937eB3";         // Known
+  const SPONSOR_ADDRESS = deployer.address;                                    // Server signer (can mint)
 
   console.log("⚙️  Configuration:");
   console.log("   Token Implementation:    ", TOKEN_IMPLEMENTATION);
   console.log("   Downloads Implementation:", DOWNLOADS_IMPLEMENTATION);
   console.log("   AMM Proxy:               ", AMM_PROXY);
   console.log("   Protocol Vault:          ", PROTOCOL_VAULT);
+  console.log("   Sponsor (Server):        ", SPONSOR_ADDRESS);
   console.log("   Owner:                   ", deployer.address);
   console.log("");
 
   // Deploy factory
-  console.log("📦 Deploying ArtistFactory...");
+  console.log("📦 Deploying ArtistFactory with auto-sponsor support...");
   const Factory = await ethers.getContractFactory("ArtistFactory");
   const factory = await Factory.deploy(
     TOKEN_IMPLEMENTATION,
     DOWNLOADS_IMPLEMENTATION,
     AMM_PROXY,
     PROTOCOL_VAULT,
-    deployer.address // Factory owner (protocol)
+    SPONSOR_ADDRESS,      // Sponsor (server can mint)
+    deployer.address      // Factory owner (protocol)
   );
   
   await factory.waitForDeployment();

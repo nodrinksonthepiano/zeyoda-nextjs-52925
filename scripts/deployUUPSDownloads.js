@@ -23,14 +23,16 @@ async function main() {
   const implAddress = await impl.getAddress();
   console.log("✅ Implementation deployed at:", implAddress);
 
-  // Step 2: Encode initializer
+  // Step 2: Encode initializer (V2 with sponsor)
   console.log("\n🔧 Encoding initializer...");
+  const sponsorAddr = process.env.SPONSOR_ADDRESS || ownerAddr;
   const initData = Downloads.interface.encodeFunctionData("initialize", [
     artistId,
     baseURI,
-    ownerAddr
+    ownerAddr,
+    sponsorAddr
   ]);
-  console.log("✅ Initializer encoded");
+  console.log("✅ Initializer encoded (with sponsor:", sponsorAddr + ")");
 
   // Step 3: Deploy ERC1967Proxy
   console.log("\n🔗 Deploying ERC1967Proxy...");

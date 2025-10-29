@@ -17,27 +17,30 @@ export async function POST(request: NextRequest) {
     const artistData = await request.json();
     console.log('🎨 Creating artist via API:', artistData.name);
 
-    // Save to artists table with service role permissions (using actual camelCase columns)
+    // Save to artists table with service role permissions
+    // Using EXACT column names from schema
     const artistRecord = {
       id: artistData.id,
       name: artistData.name,
       displayname: artistData.displayname,
-      tokenName: artistData.tokenName || artistData.name,
+      "tokenName": artistData.tokenName || artistData.name, // Quoted to preserve capital N
       artworktitle: artistData.artworktitle,
       artworkyear: artistData.artworkyear,
-      tokenprice: artistData.downloadPrice,
+      tokenprice: artistData.downloadPrice || 1,
       videosrc: artistData.contentUrl,
       contract: artistData.tokenAddress,
       download_address: artistData.downloadsAddress,
       swap_address: artistData.poolAddress,
-      // Theme colors (using actual column names)
-      primarycolor: artistData.primaryColor,
-      accentcolor: artistData.accentColor,
-      gradientstart: artistData.gradientStart,
-      gradientmiddle: artistData.gradientMiddle,
-      gradientend: artistData.gradientEnd,
-      fontfamily: artistData.fontFamily,
-      orbitaltokens: JSON.stringify(artistData.orbitaltokens || []),
+      treasury_wallet: artistData.treasuryWallet,
+      theme: {
+        primaryColor: artistData.primaryColor,
+        accentColor: artistData.accentColor,
+        gradientStart: artistData.gradientStart,
+        gradientMiddle: artistData.gradientMiddle,
+        gradientEnd: artistData.gradientEnd,
+        fontFamily: artistData.fontFamily
+      },
+      orbitaltokens: artistData.orbitaltokens || [],
       paused: false
     };
 
