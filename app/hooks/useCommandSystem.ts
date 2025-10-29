@@ -75,22 +75,12 @@ export const useCommandSystem = (
     // Auto-trigger when "zeyoda" is typed (treasure discovery!)
     if (newValue.toLowerCase() === 'zeyoda') {
       if (setAppMode) {
-        // Check if current artist already exists (has contract)
-        if (artistConfig && artistConfig.contract) {
-          // Existing artist - upload new asset mode (keep their colors)
-          setAppMode('upload-asset');
-          if (setOnboardingArtistName) {
-            setOnboardingArtistName(`ADD NEW ASSET TO ${artistConfig.name}`);
-          }
-          showToast('🎉 Upload new content to your artist page!', 'success');
-        } else {
-          // New artist - full onboarding mode (tan canvas)
-          setAppMode('onboarding');
-          if (setOnboardingArtistName) {
-            setOnboardingArtistName('WELCOME, ARTIST!');
-          }
-          showToast('🎉 Treasure discovered! Welcome to artist creation!', 'success');
+        // Always show onboarding mode (allows creating new artists from any page)
+        setAppMode('onboarding');
+        if (setOnboardingArtistName) {
+          setOnboardingArtistName('WELCOME, ARTIST!');
         }
+        showToast('🎉 Treasure discovered! Welcome to artist creation!', 'success');
         setSafewordInput(''); // Clear input after trigger
       }
       return;
