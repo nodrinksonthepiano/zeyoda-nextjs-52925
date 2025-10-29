@@ -10,6 +10,11 @@ type Props = {
   containerRef?: React.RefObject<HTMLDivElement | null>;
   peekPercent?: number; // 10 by default
   theme?: { fontFamily?: string; primaryColor?: string; accentColor?: string };
+  // Optional: For asset editing (won't break existing usage)
+  artistId?: string;
+  treasuryWallet?: string | null;
+  currentUser?: string | null;
+  onEditAsset?: (asset: ArtistAsset) => void;
 };
 
 const THRESHOLD_PX = 80;           // drag distance to reach full progress
@@ -43,7 +48,7 @@ function softCapProgress(raw: number): number {
   return sign * eased;
 }
 
-export const OrbitPeekCarousel: React.FC<Props> = ({ items, index, onIndexChange, containerRef, peekPercent = 10, theme }) => {
+export const OrbitPeekCarousel: React.FC<Props> = ({ items, index, onIndexChange, containerRef, peekPercent = 10, theme, artistId, treasuryWallet, currentUser, onEditAsset }) => {
   // Attach the provided containerRef so ThemeOrbitRenderer can measure the same element
   const internalRootRef = useRef<HTMLDivElement | null>(null);
   const rootRef = (containerRef as any) || internalRootRef;
@@ -67,6 +72,10 @@ export const OrbitPeekCarousel: React.FC<Props> = ({ items, index, onIndexChange
   const isHeroMutedRef = useRef<boolean>(true);
   const volumeSliderRef = useRef<HTMLInputElement | null>(null);
   const controlOwnerRef = useRef<'volume' | 'description' | null>(null);
+  
+  // Check if current user is the artist (can edit assets)
+  const isOwner = currentUser && treasuryWallet && currentUser.toLowerCase() === treasuryWallet.toLowerCase();
+  
   // Track the media wrapper elements to compute letterbox-aware overlay in the wrapper's own coords
   const mediaWrapRefs = useRef<Map<number, HTMLDivElement>>(new Map());
   const setMediaWrapRef = (itemIdx: number) => (el: HTMLDivElement | null) => {
@@ -962,6 +971,35 @@ export const OrbitPeekCarousel: React.FC<Props> = ({ items, index, onIndexChange
                         }} 
                         className="carousel-media-overlay"
                       >
+                        {isOwner && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (onEditAsset) onEditAsset(asset);
+                            }}
+                            style={{
+                              marginRight: 6,
+                              padding: '2px 4px',
+                              background: 'rgba(255,255,255,0.2)',
+                              border: '1px solid rgba(255,255,255,0.4)',
+                              borderRadius: 4,
+                              cursor: 'pointer',
+                              fontSize: 10,
+                              lineHeight: 1,
+                              color: 'inherit',
+                              transition: 'background 0.2s ease'
+                            }}
+                            onMouseEnter={(e) => {
+                              e.currentTarget.style.background = 'rgba(255,255,255,0.4)';
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.background = 'rgba(255,255,255,0.2)';
+                            }}
+                            title="Edit asset"
+                          >
+                            ✏️
+                          </button>
+                        )}
                         <span style={{ fontWeight:600 }}>{asset.title || 'Untitled'}</span>
                         {hasDescription && <span style={{ fontSize:10 }}>{showTitleDescription ? '▼' : '▲'}</span>}
                         </button>

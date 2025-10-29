@@ -22,6 +22,7 @@ import ThemeOrbitRenderer from "./components/ThemeOrbitRenderer";
 import PurchaseFlow from "./components/PurchaseFlow";
 import OnboardingPanel from "./components/OnboardingPanel";
 import ProfileEditPanel from "./components/ProfileEditPanel";
+import AssetEditPanel from "./components/AssetEditPanel";
 import {
   ArtistConfig,
   RenderableToken,
@@ -75,10 +76,11 @@ const ArtistPageContent: React.FC<{
   const [treasureMessage, setTreasureMessage] = useState('');
 
   // Onboarding mode state
-  const [appMode, setAppMode] = useState<'normal' | 'onboarding' | 'upload-asset' | 'profile-edit'>('normal');
+  const [appMode, setAppMode] = useState<'normal' | 'onboarding' | 'upload-asset' | 'profile-edit' | 'edit-asset'>('normal');
   const [onboardingArtistName, setOnboardingArtistName] = useState('WELCOME, ARTIST!');
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
   const [onboardingData, setOnboardingData] = useState<any>({});
+  const [editingAsset, setEditingAsset] = useState<any | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   
   // Upload mode state
@@ -441,6 +443,43 @@ const ArtistPageContent: React.FC<{
       showToast(`❌ Deployment failed: ${error.message}`, 'error');
     }
   }, [magic, uploadedFile, showToast]);
+
+  // ASSET EDIT HANDLER
+  const handleSaveAssetEdit = useCallback(async (updates: { title: string; description: string; price: number }) => {
+    if (!editingAsset || !user) return;
+    
+    try {
+      showToast('💾 Saving changes...', 'info');
+      
+      const response = await fetch('/api/updateAsset', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          artistId: artistIdFromUrl,
+          assetNumber: editingAsset.assetNumber,
+          title: updates.title,
+          description: updates.description,
+          price: updates.price,
+          userAddress: user
+        })
+      });
+      
+      if (!response.ok) {
+        throw new Error('Update failed');
+      }
+      
+      showToast('✅ Asset updated!', 'success');
+      setAppMode('normal');
+      setEditingAsset(null);
+      
+      // Refresh page to show updated asset
+      setTimeout(() => window.location.reload(), 500);
+      
+    } catch (error: any) {
+      console.error('❌ Asset update failed:', error);
+      showToast(`❌ Update failed: ${error.message}`, 'error');
+    }
+  }, [editingAsset, user, artistIdFromUrl, showToast]);
 
   // DEPLOYMENT HELPER FUNCTIONS
   const checkExistingToken = async (artistId: string) => {
@@ -1709,6 +1748,13 @@ const ArtistPageContent: React.FC<{
                             containerRef={videoContainerRef}
                             peekPercent={10}
                             theme={{ fontFamily: artistConfig?.theme?.fontFamily, primaryColor: artistConfig?.theme?.primaryColor, accentColor: artistConfig?.theme?.accentColor }}
+                            artistId={artistIdFromUrl}
+                            treasuryWallet={artistConfig?.treasury_wallet}
+                            currentUser={user}
+                            onEditAsset={(asset) => {
+                              setEditingAsset(asset);
+                              setAppMode('edit-asset');
+                            }}
                           />
                           <ThemeOrbitRenderer
                             artistConfig={artistConfig}
@@ -1890,6 +1936,18 @@ const ArtistPageContent: React.FC<{
               onUploadClick={handleUploadClick}
               mode={appMode} // Pass mode to panel
               existingArtist={artistConfig} // Pass artist config
+            />
+          )}
+
+          {/* Asset Edit Panel - appears above input like onboarding */}
+          {appMode === 'edit-asset' && editingAsset && (
+            <AssetEditPanel
+              asset={editingAsset}
+              onSave={handleSaveAssetEdit}
+              onCancel={() => {
+                setAppMode('normal');
+                setEditingAsset(null);
+              }}
             />
           )}
 
