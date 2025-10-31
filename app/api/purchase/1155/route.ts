@@ -1,23 +1,46 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
-import { ethers } from 'ethers';
+import { ethers, keccak256, toUtf8Bytes } from 'ethers';
+import { ArtistDownloadsUUPSABI } from '../../../utils/abis/ArtistDownloadsUUPSABI';
 
 // Supabase admin client (service role for database access)
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-// ABI for buyFor function
-const DOWNLOADS_ABI = [
-  "function buyFor(address recipient, uint256 tokenId, uint256 quantity) external payable",
-  "function balanceOf(address account, uint256 id) external view returns (uint256)",
-  "event DownloadPurchased(address indexed recipient, uint256 indexed tokenId, uint256 quantity, uint256 amount)"
-];
+// Use ABI from separate file
+const DOWNLOADS_ABI = ArtistDownloadsUUPSABI;
 
 // Free mint caps (from env or defaults)
 const FREE_MINT_PER_USER_DAILY = parseInt(process.env.FREE_MINT_PER_USER_DAILY || "5");
 const FREE_MINT_DAILY_CAP = parseInt(process.env.FREE_MINT_DAILY_CAP || "500");
 const FREE_MINT_GLOBAL_CAP = parseInt(process.env.FREE_MINT_GLOBAL_CAP || "5000");
+
+// Simple in-memory rate limiter (production: use Redis)
+const rateLimitMap = new Map<string, { count: number; resetTime: number }>();
+
+function checkRateLimit(ip: string): boolean {
+  const now = Date.now();
+  const limit = rateLimitMap.get(ip);
+  
+  if (!limit || now > limit.resetTime) {
+    rateLimitMap.set(ip, { count: 1, resetTime: now + 60000 }); // 1 min window
+    return true;
+  }
+  
+  if (limit.count >= 10) { // 10 requests per minute
+    return false;
+  }
+  
+  limit.count++;
+  return true;
+}
+
+function getClientIP(request: NextRequest): string {
+  const forwarded = request.headers.get('x-forwarded-for');
+  const realIP = request.headers.get('x-real-ip');
+  return forwarded?.split(',')[0]?.trim() || realIP || 'unknown';
+}
 
 /**
  * Get cached ETH price in USD
@@ -39,6 +62,40 @@ async function getCachedETHPrice(): Promise<number> {
   
   // Fallback price
   return 2500;
+}
+
+/**
+ * Generate idempotency hash for duplicate prevention
+ * Hash: keccak256(artistId + assetNumber + userAddress + priceWei + today)
+ */
+function generateRequestHash(
+  artistId: string,
+  assetNumber: number,
+  userAddress: string,
+  priceWei: bigint,
+  date: string
+): string {
+  const input = `${artistId}:${assetNumber}:${userAddress}:${priceWei.toString()}:${date}`;
+  return keccak256(toUtf8Bytes(input));
+}
+
+/**
+ * Check for duplicate purchase request (idempotency)
+ * Returns existing purchase if found, null if new
+ */
+async function checkDuplicatePurchase(
+  requestHash: string
+): Promise<{ exists: boolean; txHash?: string }> {
+  const { data } = await supabase
+    .from('artist_purchases')
+    .select('tx_hash')
+    .eq('request_hash', requestHash)
+    .maybeSingle();
+  
+  if (data) {
+    return { exists: true, txHash: data.tx_hash };
+  }
+  return { exists: false };
 }
 
 /**
@@ -112,6 +169,42 @@ async function logGasSponsorship(
 }
 
 /**
+ * Log purchase to artist_purchases table (idempotency + history)
+ */
+async function logPurchase(
+  requestHash: string,
+  artistId: string,
+  userAddress: string,
+  assetNumber: number,
+  quantity: number,
+  priceUSD: number | null,
+  priceWei: bigint,
+  txHash: string,
+  blockNumber: number,
+  gasCostWei: bigint
+): Promise<void> {
+  const { error } = await supabase
+    .from('artist_purchases')
+    .insert({
+      request_hash: requestHash,
+      artist_id: artistId,
+      user_address: userAddress.toLowerCase(),
+      asset_number: assetNumber,
+      quantity: quantity,
+      price_usd: priceUSD,
+      price_wei: priceWei.toString(),
+      tx_hash: txHash,
+      block_number: blockNumber,
+      gas_cost_wei: gasCostWei.toString()
+    });
+  
+  if (error) {
+    console.error('❌ Failed to log purchase:', error);
+    // Don't throw - logging failure shouldn't fail purchase
+  }
+}
+
+/**
  * Get user address from session/auth
  * TODO: Implement proper session management with Magic.link
  */
@@ -147,6 +240,15 @@ export async function POST(request: NextRequest) {
     
     console.log('📋 Purchase details:', { artistId, assetNumber, quantity, userAddress });
     
+    // Rate limiting
+    const clientIP = getClientIP(request);
+    if (!checkRateLimit(clientIP)) {
+      return NextResponse.json(
+        { error: 'Rate limit exceeded. Please try again in a minute.', code: 'RATE_LIMIT', retryable: true },
+        { status: 429 }
+      );
+    }
+    
     // 1. Fetch asset price from database
     const { data: asset, error: assetError } = await supabase
       .from('artist_assets')
@@ -165,22 +267,22 @@ export async function POST(request: NextRequest) {
     
     console.log('💰 Asset price:', asset.price_usd, 'USD');
     
-    // 2. Fetch downloads contract address from artist_registry
-    const { data: registry, error: registryError } = await supabase
-      .from('artist_registry')
-      .select('downloads, treasury_wallet')
+    // 2. Fetch downloads contract address from artists table
+    const { data: artistData, error: artistError } = await supabase
+      .from('artists')
+      .select('download_address, treasury_wallet')
       .eq('id', artistId)
       .single();
     
-    if (registryError || !registry?.downloads) {
-      console.error('❌ Downloads contract not found:', registryError);
+    if (artistError || !artistData?.download_address) {
+      console.error('❌ Downloads contract not found:', artistError);
       return NextResponse.json(
         { error: 'Downloads contract not found for this artist' },
         { status: 404 }
       );
     }
     
-    console.log('📝 Downloads contract:', registry.downloads);
+    console.log('📝 Downloads contract:', artistData.download_address);
     
     // 3. Enforce free mint caps if price is 0
     if (asset.price_usd === 0) {
@@ -209,6 +311,23 @@ export async function POST(request: NextRequest) {
       console.log(`💱 Price conversion: $${asset.price_usd} → ${priceETH.toFixed(8)} ETH → ${priceWei.toString()} wei`);
     }
     
+    // Generate request hash for idempotency
+    const today = new Date().toISOString().split('T')[0];
+    const requestHash = generateRequestHash(artistId, assetNumber, userAddress, priceWei, today);
+    
+    // Check for duplicate purchase
+    const duplicateCheck = await checkDuplicatePurchase(requestHash);
+    if (duplicateCheck.exists) {
+      console.log('🔄 Duplicate purchase detected, returning existing tx:', duplicateCheck.txHash);
+      return NextResponse.json({
+        success: true,
+        txHash: duplicateCheck.txHash,
+        tokenId: assetNumber,
+        amountWei: priceWei.toString(),
+        duplicate: true
+      });
+    }
+    
     // 5. Set up blockchain provider and signer
     const rpcUrl = process.env.BASE_SEPOLIA_RPC_URL || 'https://sepolia.base.org';
     const provider = new ethers.JsonRpcProvider(rpcUrl);
@@ -227,7 +346,7 @@ export async function POST(request: NextRequest) {
     
     // 6. Create contract instance
     const downloadsContract = new ethers.Contract(
-      registry.downloads,
+      artistData.download_address,
       DOWNLOADS_ABI,
       signer
     );
@@ -266,8 +385,24 @@ export async function POST(request: NextRequest) {
     console.log(`   Gas used: ${receipt.gasUsed.toString()}`);
     console.log(`   Block: ${receipt.blockNumber}`);
     
-    // 8. Log gas sponsorship
-    await logGasSponsorship(receipt, artistId, userAddress, priceWei, assetNumber);
+    // 8. Log purchase and gas sponsorship
+    const gasCostWei = receipt.gasUsed * (receipt.gasPrice || 0n);
+    
+    await Promise.all([
+      logPurchase(
+        requestHash,
+        artistId,
+        userAddress,
+        assetNumber,
+        quantity,
+        asset.price_usd,
+        priceWei,
+        receipt.hash,
+        receipt.blockNumber,
+        gasCostWei
+      ),
+      logGasSponsorship(receipt, artistId, userAddress, priceWei, assetNumber)
+    ]);
     
     // 9. Verify NFT was minted (optional sanity check)
     try {
@@ -292,10 +427,31 @@ export async function POST(request: NextRequest) {
     
   } catch (error: any) {
     console.error('❌ Purchase failed:', error);
+    
+    // Handle structured errors
+    let errorMessage = 'Purchase failed';
+    let errorCode = 'UNKNOWN_ERROR';
+    let retryable = false;
+    
+    if (error.message) {
+      errorMessage = error.message;
+      if (error.message.includes('rate limit')) {
+        errorCode = 'RATE_LIMIT';
+        retryable = true;
+      } else if (error.message.includes('caps')) {
+        errorCode = 'CAP_EXCEEDED';
+        retryable = false;
+      } else if (error.message.includes('not found')) {
+        errorCode = 'NOT_FOUND';
+        retryable = false;
+      }
+    }
+    
     return NextResponse.json(
       { 
-        error: error.message || 'Purchase failed',
-        details: error.toString()
+        error: errorMessage,
+        code: errorCode,
+        retryable
       },
       { status: 500 }
     );

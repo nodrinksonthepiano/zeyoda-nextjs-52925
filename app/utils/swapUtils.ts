@@ -1,379 +1,106 @@
 import { ethers } from 'ethers';
-import SwapArtifact from '../../artifacts/contracts/Swap.sol/Swap.json';
 
-// Swap contract deployed on Base Sepolia (NEW - with correct ownership)
-export const SWAP_CONTRACT_ADDRESS = "0xdBBfFD696484bBFCa3dA059FB1d8e2Cf40c450dE";
+// UUPS AMM ABI (minimal - only what we need)
+const UUPS_AMM_ABI = [
+  'function swapEthForTokens(address token, uint256 minTokens) external payable',
+  'function swapTokensForEth(address token, uint256 tokenAmount, uint256 minEth) external',
+  'function getReserves(address token) view returns (uint256 tokenReserve, uint256 ethReserve)',
+  'function getTokenQuote(address token, uint256 ethAmount) view returns (uint256)',
+  'function getEthQuote(address token, uint256 tokenAmount) view returns (uint256)'
+] as const;
 
-export interface SwapQuote {
-  inputAmount: string;
-  outputAmount: string;
-  priceImpact: number;
-  minimumOutput: string;
+/**
+ * Get AMM contract instance
+ * @param ammAddress - The AMM contract address (from artist config.swap)
+ * @param signerOrProvider - Ethers signer or provider
+ */
+export function getAMMContract(
+  ammAddress: string,
+  signerOrProvider: ethers.Signer | ethers.Provider
+): ethers.Contract {
+  return new ethers.Contract(ammAddress, UUPS_AMM_ABI, signerOrProvider);
 }
 
-// Price cache to avoid constant RPC calls
-interface PriceCache {
-  price: number;
-  timestamp: number;
-  ethPrice: number;
+/**
+ * Swap ETH for tokens
+ * @param ammAddress - AMM contract address
+ * @param tokenAddress - Token to buy
+ * @param ethAmount - Amount of ETH to spend (in wei)
+ * @param minTokensOut - Minimum tokens expected (slippage protection)
+ * @param signer - Ethers signer
+ */
+export async function swapETHForTokens(
+  ammAddress: string,
+  tokenAddress: string,
+  ethAmount: bigint,
+  minTokensOut: bigint,
+  signer: ethers.Signer
+): Promise<ethers.ContractTransactionResponse> {
+  const amm = getAMMContract(ammAddress, signer);
+  return await amm.swapEthForTokens(tokenAddress, minTokensOut, { value: ethAmount });
 }
 
-const priceCache = new Map<string, PriceCache>();
-const CACHE_DURATION = 30000; // 30 seconds
+/**
+ * Swap tokens for ETH
+ * @param ammAddress - AMM contract address
+ * @param tokenAddress - Token to sell
+ * @param tokenAmount - Amount of tokens to sell (in wei)
+ * @param minEthOut - Minimum ETH expected (slippage protection)
+ * @param signer - Ethers signer
+ */
+export async function swapTokensForETH(
+  ammAddress: string,
+  tokenAddress: string,
+  tokenAmount: bigint,
+  minEthOut: bigint,
+  signer: ethers.Signer
+): Promise<ethers.ContractTransactionResponse> {
+  const amm = getAMMContract(ammAddress, signer);
+  
+  // Approve AMM to spend tokens
+  const tokenAbi = ['function approve(address spender, uint256 amount) returns (bool)'];
+  const token = new ethers.Contract(tokenAddress, tokenAbi, signer);
+  const approveTx = await token.approve(ammAddress, tokenAmount);
+  await approveTx.wait();
+  
+  return await amm.swapTokensForEth(tokenAddress, tokenAmount, minEthOut);
+}
 
-export class SwapService {
-  private contract: ethers.Contract;
-  private signerOrProvider: ethers.Signer | ethers.Provider;
+/**
+ * Get reserves for a token in the AMM
+ * @param ammAddress - AMM contract address
+ * @param tokenAddress - Token address
+ * @param provider - Ethers provider
+ */
+export async function getReserves(
+  ammAddress: string,
+  tokenAddress: string,
+  provider: ethers.Provider
+): Promise<{ tokenReserve: bigint; ethReserve: bigint }> {
+  const amm = getAMMContract(ammAddress, provider);
+  const [tokenReserve, ethReserve] = await amm.getReserves(tokenAddress);
+  return { tokenReserve, ethReserve };
+}
 
-  constructor(signerOrProvider: ethers.Signer | ethers.Provider) {
-    this.signerOrProvider = signerOrProvider;
-    this.contract = new ethers.Contract(
-      SWAP_CONTRACT_ADDRESS,
-      SwapArtifact.abi,
-      signerOrProvider
-    );
+/**
+ * Calculate output amount with 0.3% fee
+ * @param amountIn - Input amount
+ * @param reserveIn - Reserve of input token
+ * @param reserveOut - Reserve of output token
+ */
+export function calculateAmountOut(
+  amountIn: bigint,
+  reserveIn: bigint,
+  reserveOut: bigint
+): bigint {
+  if (amountIn === 0n || reserveIn === 0n || reserveOut === 0n) {
+    return 0n;
   }
-
-  /**
-   * Get live ETH price from Coinbase API with fallback
-   */
-  private async getLiveETHPrice(): Promise<number> {
-    try {
-      const response = await fetch('https://api.coinbase.com/v2/prices/ETH-USD/spot');
-      const data = await response.json();
-      const price = parseFloat(data.data.amount);
-      
-      if (isNaN(price) || price <= 0) {
-        throw new Error('Invalid price data');
-      }
-      
-      return price;
-    } catch (error) {
-      console.warn('Failed to fetch live ETH price, using fallback:', error);
-      return 2500; // Fallback rate
-    }
-  }
-
-  /**
-   * Get real-time token price in USD from LP reserves
-   */
-  async getTokenPriceInUSD(tokenAddress: string): Promise<number> {
-    try {
-      // Check cache first
-      const cached = priceCache.get(tokenAddress);
-      if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
-        return cached.price;
-      }
-
-      const pool = await this.contract.getPool(tokenAddress);
-      
-      if (!pool.active || pool.ethReserve === 0 || pool.tokenReserve === 0) {
-        console.log(`No active liquidity pool for token ${tokenAddress}`);
-        return 0; // No liquidity
-      }
-
-      // Calculate token price: ETH per token
-      const ethPerToken = Number(ethers.formatEther(pool.ethReserve)) / Number(ethers.formatUnits(pool.tokenReserve, 18));
-      
-      // Get live ETH/USD price
-      const ethUsdRate = await this.getLiveETHPrice();
-      const tokenPriceUSD = ethPerToken * ethUsdRate;
-
-      // Cache the result
-      priceCache.set(tokenAddress, {
-        price: tokenPriceUSD,
-        timestamp: Date.now(),
-        ethPrice: ethUsdRate
-      });
-
-      console.log(`💰 Live LP Price for ${tokenAddress}:`, {
-        ethPerToken,
-        ethUsdRate,
-        tokenPriceUSD,
-        tokenReserve: ethers.formatUnits(pool.tokenReserve, 18),
-        ethReserve: ethers.formatEther(pool.ethReserve)
-      });
-
-      return tokenPriceUSD;
-    } catch (error) {
-      console.error('Error getting token price from LP:', error);
-      return 0;
-    }
-  }
-
-  /**
-   * Get tokens per dollar (inverse of price)
-   */
-  async getTokensPerDollar(tokenAddress: string): Promise<number> {
-    const priceUSD = await this.getTokenPriceInUSD(tokenAddress);
-    if (priceUSD <= 0) return 0;
-    return 1 / priceUSD;
-  }
-
-  /**
-   * Check if liquidity pool exists for token
-   */
-  async hasLiquidityPool(tokenAddress: string): Promise<boolean> {
-    try {
-      const pool = await this.contract.getPool(tokenAddress);
-      return pool.active && pool.ethReserve > 0 && pool.tokenReserve > 0;
-    } catch (error) {
-      console.error('Error checking pool existence:', error);
-      return false;
-    }
-  }
-
-  /**
-   * Record LP fee for a completed swap transaction
-   */
-  private async recordLPFee(
-    tokenAddress: string, 
-    tx: ethers.TransactionResponse, 
-    amountIn: string, 
-    baseQuote: 'ETH' | 'USDC',
-    tokenDecimals: number = 18,
-    logIndex: number = 0
-  ): Promise<void> {
-    try {
-      // Wait for transaction receipt to get logs
-      const receipt = await tx.wait(1);
-      if (!receipt) return;
-
-      console.log('💰 Recording LP fee for token:', tokenAddress.slice(0, 8) + '...', 'tx:', receipt.hash.slice(0, 10) + '...');
-
-      // Record the LP fee (server derives artistId from tokenAddress)
-      const response = await fetch('/api/lp-fees/record', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          poolAddress: SWAP_CONTRACT_ADDRESS,
-          txHash: receipt.hash,
-          logIndex, // Proper log index for multi-leg swaps
-          tokenIn: tokenAddress,
-          amountInRaw: ethers.parseUnits(amountIn, tokenDecimals).toString(),
-          tokenInDecimals,
-          baseQuote,
-          blockNumber: receipt.blockNumber
-        })
-      });
-
-      if (!response.ok) {
-        const error = await response.json();
-        console.warn('⚠️ LP fee recording failed:', error);
-      } else {
-        const result = await response.json();
-        if (!result.duplicate) {
-          console.log('✅ LP fee recorded: $' + result.feeUsd + ' for ' + artistId);
-        }
-      }
-
-    } catch (error) {
-      console.warn('⚠️ LP fee recording error:', error);
-      // Don't throw - fee recording shouldn't break swaps
-    }
-  }
-
-  /**
-   * Get pool information for debugging
-   */
-  async getPoolInfo(tokenAddress: string): Promise<any> {
-    try {
-      const pool = await this.contract.getPool(tokenAddress);
-      return {
-        token: pool.token,
-        tokenReserve: ethers.formatUnits(pool.tokenReserve, 18),
-        ethReserve: ethers.formatEther(pool.ethReserve),
-        active: pool.active
-      };
-    } catch (error) {
-      console.error('Error getting pool info:', error);
-      return null;
-    }
-  }
-
-  /**
-   * Clear price cache (useful for testing)
-   */
-  clearPriceCache(): void {
-    priceCache.clear();
-  }
-
-  /**
-   * Get quote for swapping ETH to tokens
-   */
-  async getTokenQuote(tokenAddress: string, ethAmount: string): Promise<SwapQuote> {
-    try {
-      const ethAmountWei = ethers.parseEther(ethAmount);
-      const tokenAmountWei = await this.contract.getTokenQuote(tokenAddress, ethAmountWei);
-      
-      const tokenAmount = ethers.formatUnits(tokenAmountWei, 18);
-      const slippage = 0.10; // 10% slippage tolerance (for small test pools)
-      const minimumOutput = (parseFloat(tokenAmount) * (1 - slippage)).toString();
-      
-      return {
-        inputAmount: ethAmount,
-        outputAmount: tokenAmount,
-        priceImpact: 0.3, // 0.3% fee
-        minimumOutput
-      };
-    } catch (error) {
-      console.error('Error getting token quote:', error);
-      throw error;
-    }
-  }
-
-  /**
-   * Get quote for swapping tokens to ETH  
-   */
-  async getEthQuote(tokenAddress: string, tokenAmount: string): Promise<SwapQuote> {
-    try {
-      const tokenAmountWei = ethers.parseUnits(tokenAmount, 18);
-      const ethAmountWei = await this.contract.getEthQuote(tokenAddress, tokenAmountWei);
-      
-      const ethAmount = ethers.formatEther(ethAmountWei);
-      const slippage = 0.10; // 10% slippage tolerance (for small test pools)
-      const minimumOutput = (parseFloat(ethAmount) * (1 - slippage)).toString();
-      
-      return {
-        inputAmount: tokenAmount,
-        outputAmount: ethAmount,
-        priceImpact: 0.3, // 0.3% fee
-        minimumOutput
-      };
-    } catch (error) {
-      console.error('Error getting ETH quote:', error);
-      throw error;
-    }
-  }
-
-  /**
-   * Swap ETH for tokens
-   */
-  async swapEthForTokens(
-    tokenAddress: string, 
-    ethAmount: string, 
-    minimumTokens: string
-  ): Promise<ethers.TransactionResponse> {
-    try {
-      const ethAmountWei = ethers.parseEther(ethAmount);
-      const minimumTokensWei = ethers.parseUnits(minimumTokens, 18);
-      
-      const tx = await this.contract.swapEthForTokens(
-        tokenAddress,
-        minimumTokensWei,
-        { value: ethAmountWei }
-      );
-      
-      // Record LP fee after successful transaction (non-blocking)
-      this.recordLPFee(tokenAddress, tx, ethAmount, 'ETH', 18, 0).catch(error => {
-        console.warn('⚠️ Failed to record LP fee for ETH→Token swap:', error);
-      });
-      
-      return tx;
-    } catch (error) {
-      console.error('Error swapping ETH for tokens:', error);
-      throw error;
-    }
-  }
-
-  /**
-   * Swap tokens for ETH
-   */
-  async swapTokensForEth(
-    tokenAddress: string,
-    tokenAmount: string,
-    minimumEth: string
-  ): Promise<ethers.TransactionResponse> {
-    try {
-      const tokenAmountWei = ethers.parseUnits(tokenAmount, 18);
-      const minimumEthWei = ethers.parseEther(minimumEth);
-      
-      const tx = await this.contract.swapTokensForEth(
-        tokenAddress,
-        tokenAmountWei,
-        minimumEthWei
-      );
-      
-      // Record LP fee after successful transaction (non-blocking)
-      this.recordLPFee(tokenAddress, tx, tokenAmount, 'ETH', 18, 0).catch(error => {
-        console.warn('⚠️ Failed to record LP fee for Token→ETH swap:', error);
-      });
-      
-      return tx;
-    } catch (error) {
-      console.error('Error swapping tokens for ETH:', error);
-      throw error;
-    }
-  }
-
-  /**
-   * Swap one token for another
-   */
-  async swapTokens(
-    tokenInAddress: string,
-    tokenOutAddress: string,
-    tokenInAmount: string,
-    minimumTokensOut: string
-  ): Promise<ethers.TransactionResponse> {
-    try {
-      const tokenInAmountWei = ethers.parseUnits(tokenInAmount, 18);
-      const minimumTokensOutWei = ethers.parseUnits(minimumTokensOut, 18);
-      
-      console.log('🔄 Executing swapTokens with params:', {
-        tokenIn: tokenInAddress,
-        tokenOut: tokenOutAddress,
-        amountIn: tokenInAmount,
-        minimumOut: minimumTokensOut,
-        gasLimit: 1500000
-      });
-      
-      // Try to estimate gas first
-      try {
-        const gasEstimate = await this.contract.swapTokens.estimateGas(
-          tokenInAddress,
-          tokenOutAddress,
-          tokenInAmountWei,
-          minimumTokensOutWei
-        );
-        console.log('⛽ Estimated gas:', gasEstimate.toString());
-      } catch (gasError) {
-        console.warn('⚠️ Gas estimation failed:', gasError);
-      }
-      
-      const tx = await this.contract.swapTokens(
-        tokenInAddress,
-        tokenOutAddress,
-        tokenInAmountWei,
-        minimumTokensOutWei,
-        { 
-          gasLimit: 1500000, // Massively increased gas limit for cross-token swaps
-          gasPrice: undefined // Let the network set gas price
-        }
-      );
-      
-      // Record LP fees for both sides of the two-hop swap (non-blocking)
-      // TokenA→ETH generates fee for TokenA's pool (logIndex: 0)
-      // ETH→TokenB generates fee for TokenB's pool (logIndex: 1)
-      Promise.all([
-        this.recordLPFee(tokenInAddress, tx, tokenInAmount, 'ETH', 18, 0),  // Input side fee
-        this.recordLPFee(tokenOutAddress, tx, tokenInAmount, 'ETH', 18, 1)  // Output side fee (same input amount)
-      ]).catch(error => {
-        console.warn('⚠️ Failed to record LP fees for token→token swap:', error);
-      });
-      
-      return tx;
-    } catch (error: any) {
-      console.error('Error swapping tokens:', error);
-      
-      // Try to decode the revert reason
-      if (error?.reason) {
-        console.error('Revert reason:', error.reason);
-      }
-      if (error?.data) {
-        console.error('Error data:', error.data);
-      }
-      
-      throw error;
-    }
-  }
-} 
+  
+  // Apply 0.3% fee: amountInWithFee = amountIn * 997
+  const amountInWithFee = amountIn * 997n;
+  const numerator = amountInWithFee * reserveOut;
+  const denominator = (reserveIn * 1000n) + amountInWithFee;
+  
+  return numerator / denominator;
+}

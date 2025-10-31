@@ -76,11 +76,11 @@ export const useCommandSystem = (
     if (newValue.toLowerCase() === 'zeyoda') {
       if (setAppMode) {
         // Always show onboarding mode (allows creating new artists from any page)
-        setAppMode('onboarding');
-        if (setOnboardingArtistName) {
-          setOnboardingArtistName('WELCOME, ARTIST!');
-        }
-        showToast('🎉 Treasure discovered! Welcome to artist creation!', 'success');
+          setAppMode('onboarding');
+          if (setOnboardingArtistName) {
+            setOnboardingArtistName('WELCOME, ARTIST!');
+          }
+          showToast('🎉 Treasure discovered! Welcome to artist creation!', 'success');
         setSafewordInput(''); // Clear input after trigger
       }
       return;

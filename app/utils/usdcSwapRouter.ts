@@ -295,59 +295,8 @@ export class UsdcSwapRouter {
     tokenAmount: string,
     userAddress: string
   ): Promise<SwapResult> {
-    try {
-      console.log('🔄 Executing AMM → Uniswap V3 fallback...');
-
-      // Step 1: Use existing AMM to convert token → WETH
-      const swapService = new SwapService(this.signer);
-      
-      // Approve tokens for AMM
-      await this.ensureTokenApproval(tokenAddress, SWAP_CONTRACT_ADDRESS, tokenAmount);
-
-      // Get WETH quote and execute
-      const ethQuote = await swapService.getEthQuote(tokenAddress, tokenAmount);
-      
-      // Calculate 5% slippage using BigInt precision (95% of expected output)
-      const expectedEthWei = ethers.parseEther(ethQuote.outputAmount);
-      const minimumEthWei = expectedEthWei * BigInt(95) / BigInt(100);
-      const minimumEth = ethers.formatEther(minimumEthWei);
-
-      console.log('📊 AMM quote:', {
-        tokenAmount,
-        expectedETH: ethQuote.outputAmount,
-        minimumETH: minimumEth
-      });
-
-      const ethTx = await swapService.swapTokensForEth(
-        tokenAddress,
-        tokenAmount,
-        minimumEth
-      );
-
-      await ethTx.wait();
-      console.log('✅ Token → WETH swap completed:', ethTx.hash);
-
-      // Step 2: Use Uniswap V3 to convert WETH → USDC
-      const ethAmount = ethQuote.outputAmount;
-      const usdcResult = await this.swapEthToUsdcViaUniswap(ethAmount);
-
-      if (usdcResult.success) {
-        return {
-          success: true,
-          usdcReceived: usdcResult.usdcReceived,
-          txHash: ethTx.hash // Return the first transaction hash
-        };
-      } else {
-        throw new Error('WETH → USDC swap failed');
-      }
-
-    } catch (error: any) {
-      console.error('❌ Fallback route failed:', error);
-      return {
-        success: false,
-        error: 'Cash-out can\'t complete right now—please try again later.'
-      };
-    }
+    // ⚠️ Cash-out via AMM disabled - needs refactoring for UUPS
+    throw new Error('Cash-out to USD temporarily disabled. Coming soon!');
   }
 
   /**

@@ -32,6 +32,7 @@ export async function POST(request: NextRequest) {
       download_address: artistData.downloadsAddress,
       swap_address: artistData.poolAddress,
       treasury_wallet: artistData.treasuryWallet,
+      hasLiquidityPool: true, // UUPS artists always have pools via factory
       theme: {
         primaryColor: artistData.primaryColor,
         accentColor: artistData.accentColor,

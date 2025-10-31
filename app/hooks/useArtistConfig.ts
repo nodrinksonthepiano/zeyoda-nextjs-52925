@@ -43,33 +43,54 @@ const useArtistConfig = (): UseArtistConfigReturn => {
           if (config.swap && config.contract) {
             console.log(`💰 Fetching live AMM price for ${artistId}...`);
             
-            // Create SwapService instance with a provider
-            const provider = new ethers.JsonRpcProvider(process.env.NEXT_PUBLIC_BASE_SEPOLIA_RPC_URL || 'https://sepolia.base.org');
-            const swapService = new SwapService(provider);
+            // Create provider (use public RPC in browser)
+            const rpcUrl = typeof window !== 'undefined' 
+              ? 'https://sepolia.base.org' 
+              : (process.env.NEXT_PUBLIC_BASE_SEPOLIA_RPC_URL || 'https://sepolia.base.org');
+            const provider = new ethers.JsonRpcProvider(rpcUrl);
             
-            // Get live price from AMM reserves
-            const livePrice = await swapService.getTokenPriceInUSD(config.contract);
+            // FIXED: Query the correct AMM (config.swap, not hardcoded legacy AMM)
+            const ammAbi = ['function getReserves(address) view returns (uint256 tokenReserve, uint256 ethReserve)'];
+            const ammContract = new ethers.Contract(config.swap, ammAbi, provider);
             
-            if (livePrice > 0) {
-              realTimePrice = livePrice;
-              hasLiquidityPool = true;
-              console.log(`[AMM] price`, {
-                artistId,
-                mode: 'live',
-                tokenReserve: 'loaded',
-                ethReserve: 'loaded',
-                priceUsd: realTimePrice.toFixed(8),
-                chainId: 'base-sepolia'
-              });
-            } else {
-              realTimePrice = config.tokenPrice || 0.000001;
-              hasLiquidityPool = false;
-              console.log(`[AMM] price`, {
+            try {
+              const [tokenReserve, ethReserve] = await ammContract.getReserves(config.contract);
+              
+              if (tokenReserve > 0n && ethReserve > 0n) {
+                // Calculate price from reserves
+                const ethPerToken = Number(ethers.formatEther(ethReserve)) / Number(ethers.formatUnits(tokenReserve, 18));
+                const ethUsdRate = 2500; // Fallback ETH price (or fetch live from Coinbase)
+                realTimePrice = ethPerToken * ethUsdRate;
+                hasLiquidityPool = true;
+                
+                console.log(`[AMM] price`, {
+                  artistId,
+                  mode: 'live',
+                  tokenReserve: ethers.formatUnits(tokenReserve, 18),
+                  ethReserve: ethers.formatEther(ethReserve),
+                  priceUsd: realTimePrice.toFixed(8),
+                  ammAddress: config.swap
+                });
+              } else {
+                realTimePrice = config.tokenPrice || 0.000001;
+                hasLiquidityPool = false;
+                console.log(`[AMM] price`, {
+                  artistId,
+                  mode: 'fallback',
+                  reason: 'empty-pool',
+                  priceUsd: realTimePrice.toFixed(8)
+                });
+              }
+            } catch (error) {
+              console.error(`[AMM] price`, {
                 artistId,
                 mode: 'fallback',
-                reason: 'empty-pool',
-                priceUsd: realTimePrice.toFixed(8)
+                reason: 'amm-query-failed',
+                error: error instanceof Error ? error.message : String(error),
+                ammAddress: config.swap
               });
+              realTimePrice = config.tokenPrice || 0.000001;
+              hasLiquidityPool = false;
             }
           } else {
             realTimePrice = config.tokenPrice || 0.000001;

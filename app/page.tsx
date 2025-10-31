@@ -1220,38 +1220,11 @@ const ArtistPageContent: React.FC<{
           setArtistocksInput("0");
         }
       }
-      // Token to Token swap (FIXED - use AMM quotes with proper provider)
+      // Token to Token swap - DISABLED (requires multiple UUPS artists)
       else if (swapFromAsset !== "USD" && swapToAsset !== "USD" && artistConfig?.hasLiquidityPool && magic) {
-        const fromTokenConfig = Object.values(allArtistsConfig).find(
-          config => config.tokenName === swapFromAsset
-        );
-        
-        if (fromTokenConfig?.hasLiquidityPool && fromTokenConfig?.contract && artistConfig?.contract && parseFloat(swapFromAmount) > 0) {
-          try {
-            // Import SwapService with proper Magic Link provider
-            const { SwapService } = await import('./utils/swapUtils');
-            const provider = new ethers.BrowserProvider(magic.rpcProvider as any);
-            const swapService = new SwapService(provider);
-            
-            // Get cross-token quote: fromToken → ETH → toToken
-            const fromTokenAmount = swapFromAmount;
-            const ethQuote = await swapService.getEthQuote(fromTokenConfig.contract, fromTokenAmount);
-            const tokenQuote = await swapService.getTokenQuote(artistConfig.contract, ethQuote.outputAmount);
-            
-            const expectedOutput = parseFloat(tokenQuote.outputAmount);
-            setSwapToAmount(expectedOutput.toFixed(8));
-            setArtistocksInput(Math.floor(expectedOutput).toString());
-            
-            console.log(`🔄 Cross-token quote: ${swapFromAmount} ${swapFromAsset} → ${expectedOutput.toFixed(2)} ${artistConfig.tokenName}`);
-          } catch (error) {
-            console.error('❌ Failed to get AMM quote:', error);
+        console.warn('⚠️ Token-to-token preview disabled - requires multiple artists');
             setSwapToAmount("");
             setArtistocksInput("0");
-          }
-        } else {
-          setSwapToAmount("");
-          setArtistocksInput("0");
-        }
       }
       // Token to USD swap (CASH-OUT) - FIXED PRICE CALCULATION
       else if (swapFromAsset !== "USD" && swapToAsset === "USD") {

@@ -64,36 +64,31 @@ export const useWalletBalances = ({
         freshBalances['ETH'] = BigInt(0);
       }
       
-      // Use the contract addresses from the registry
-      for (const [artistId, registryEntry] of Object.entries(ARTIST_REGISTRY)) {
-        if (!registryEntry.token) continue;
-        
-        // Map artist IDs to token names (including CANCAKES)
-        const tokenName = artistId === 'gosheesh' ? 'GOSH33SH' 
-                        : artistId === 'jaitea' ? 'JAIT33'
-                        : artistId === 'cancakes' ? 'CANCAK33'
-                        : '';
-        if (!tokenName) continue;
-        
-        try {
-          console.debug(`[BAL-TRACE] Fetching ${tokenName} balance from ${registryEntry.token}`);
+      // Fetch token balances for ALL artists from allArtistsConfig (not hardcoded registry)
+      if (allArtistsConfig) {
+        for (const [artistId, config] of Object.entries(allArtistsConfig)) {
+          if (!config.contract || !config.tokenName) continue;
           
-          const contract = new ethers.Contract(registryEntry.token, [
-            "function balanceOf(address owner) view returns (uint256)",
-            "function decimals() view returns (uint8)",
-            "function symbol() view returns (string)"
-          ], provider);
-          
-          const rawBalance = await contract.balanceOf(userAddress);
-          const decimals = await contract.decimals();
-          
-          console.log(`[BAL-DEBUG] raw balance for ${tokenName}:`, rawBalance.toString());
-          console.log(`[BAL-DEBUG] decimals for ${tokenName}:`, decimals);
-          
-          freshBalances[tokenName] = rawBalance;
-        } catch (error: any) {
-          console.warn(`[BAL-TRACE] Error fetching ${tokenName} balance:`, error.message);
-          freshBalances[tokenName] = BigInt(0);
+          try {
+            console.debug(`[BAL-TRACE] Fetching ${config.tokenName} balance from ${config.contract}`);
+            
+            const contract = new ethers.Contract(config.contract, [
+              "function balanceOf(address owner) view returns (uint256)",
+              "function decimals() view returns (uint8)",
+              "function symbol() view returns (string)"
+            ], provider);
+            
+            const rawBalance = await contract.balanceOf(userAddress);
+            const decimals = await contract.decimals();
+            
+            console.log(`[BAL-DEBUG] raw balance for ${config.tokenName}:`, rawBalance.toString());
+            console.log(`[BAL-DEBUG] decimals for ${config.tokenName}:`, decimals);
+            
+            freshBalances[config.tokenName] = rawBalance;
+          } catch (error: any) {
+            console.warn(`[BAL-TRACE] Error fetching ${config.tokenName} balance:`, error.message);
+            freshBalances[config.tokenName] = BigInt(0);
+          }
         }
       }
       

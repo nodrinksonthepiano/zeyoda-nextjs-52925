@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { ethers } from 'ethers';
 import { ArtistConfig, UserTokenBalances } from '../../types/artist-types';
-import { SwapService, SwapQuote } from '../utils/swapUtils';
+// SwapService removed - using direct AMM helper functions instead
 // TreasurySwapLite removed - using AMM only
 import { UsdcSwapRouter } from '../utils/usdcSwapRouter';
 import { useWallet } from './MagicProvider';
@@ -133,7 +133,6 @@ const PurchaseFlow: React.FC<PurchaseFlowProps> = ({
             
             // FIXED ROUTING LOGIC: Prioritize AMM when liquidity pools exist
             const hasLiquidityPool = artistConfig.hasLiquidityPool;
-            const hasTreasurySwap = artistConfig.swap && !artistConfig.paused;
             
             // Routing logic: Check for USD cash-out path
             
@@ -141,30 +140,50 @@ const PurchaseFlow: React.FC<PurchaseFlowProps> = ({
             let swapType = '';
             let downloadTxHash = '';
             
-            if (hasLiquidityPool && swapFromAsset === "USD") {
+            // Check if we should skip swap entirely (amount is 0)
+            const swapAmountNum = parseFloat(swapFromAmount) || 0;
+            const shouldExecuteSwap = swapAmountNum > 0;
+            
+            console.log('🎯 Purchase decision:', {
+                swapAmount: swapAmountNum,
+                shouldExecuteSwap,
+                includeDownload,
+                swapFromAsset,
+                swapToAsset: swapToAsset || artistConfig.tokenName
+            });
+            
+            if (shouldExecuteSwap && hasLiquidityPool && swapFromAsset === "USD") {
                 // ✅ PRIORITY: Use AMM for USD purchases when liquidity pools exist (live pricing)
                 console.log('🏊 Using AMM system for LP-based swap (live pricing)');
                 
-                const swapService = new SwapService(signer);
+                // Import new swap utils
+                const { swapETHForTokens, getReserves, calculateAmountOut } = await import('../utils/swapUtils');
                 
                 // Convert total USD amount (including download fee) to ETH for AMM with proper precision
-                const ethAmount = (totalUsdAmount / 2500).toFixed(18); // Max 18 decimals for ETH
+                const ethAmount = ethers.parseEther((totalUsdAmount / 2500).toFixed(18)); // Convert to wei
                 swapType = `$${totalUsdAmount} USD → ${artistConfig.tokenName}${includeDownload ? ' + Download' : ''} (AMM Live Price)`;
                 
-                // Get actual AMM quote with proper slippage tolerance
-                const quote = await swapService.getTokenQuote(artistConfig.contract, ethAmount);
+                // Get reserves and calculate expected output
+                const ammAddress = artistConfig.swap;
+                if (!ammAddress) throw new Error('No AMM address for this artist');
+                
+                const reserves = await getReserves(ammAddress, artistConfig.contract, signer.provider!);
+                const expectedOut = calculateAmountOut(ethAmount, reserves.ethReserve, reserves.tokenReserve);
+                const minTokensOut = (expectedOut * 95n) / 100n; // 5% slippage tolerance
+                
                 console.log('📊 AMM Quote:', {
-                    ethAmount,
-                    expectedTokens: quote.outputAmount,
-                    minimumOutput: quote.minimumOutput,
-                    frontendEstimate: artistocksInput,
-                    includesDownloadFee: includeDownload
+                    ethAmount: ethers.formatEther(ethAmount),
+                    expectedTokens: ethers.formatUnits(expectedOut, 18),
+                    minimumOutput: ethers.formatUnits(minTokensOut, 18),
+                    ammAddress
                 });
                 
-                const tx = await swapService.swapEthForTokens(
+                const tx = await swapETHForTokens(
+                    ammAddress,
                     artistConfig.contract,
                     ethAmount,
-                    quote.minimumOutput  // ✅ Use AMM quote with slippage, not frontend estimate
+                    minTokensOut,
+                    signer
                 );
                 
                 await tx.wait();
@@ -177,93 +196,11 @@ const PurchaseFlow: React.FC<PurchaseFlowProps> = ({
                 }));
                 
             } else if (hasLiquidityPool && swapFromAsset !== "USD" && swapToAsset !== "USD") {
-                // ✅ Use AMM for token-to-token swaps
-                console.log('🏊 Using AMM system for token-to-token swap');
-                console.log('📋 Swap details:', {
-                    from: swapFromAsset,
-                    to: swapToAsset || artistConfig.tokenName,
-                    amount: swapFromAmount
-                });
+                // ⚠️ Token-to-token swaps disabled - requires multiple UUPS artists
+                console.warn('⚠️ Token-to-token swaps not yet implemented for UUPS');
+                throw new Error('Token-to-token swaps require multiple artists. Coming soon!');
                 
-                const swapService = new SwapService(signer);
-                
-                // Find FROM token config
-                const fromTokenConfig = Object.values(allArtistsConfig || {}).find(
-                    config => config.tokenName === swapFromAsset
-                );
-                
-                // Find TO token config (use swapToAsset if set, otherwise fallback to artistConfig)
-                const toTokenName = swapToAsset || artistConfig.tokenName;
-                const toTokenConfig = Object.values(allArtistsConfig || {}).find(
-                    config => config.tokenName === toTokenName
-                );
-                
-                if (fromTokenConfig?.contract && toTokenConfig?.contract) {
-                    swapType = `${swapFromAmount} ${swapFromAsset} → ${toTokenName}`;
-                    
-                    console.log('🎯 Token contracts:', {
-                        fromToken: fromTokenConfig.contract,
-                        toToken: toTokenConfig.contract,
-                        fromSymbol: swapFromAsset,
-                        toSymbol: toTokenName
-                    });
-                    
-                    // IMPORTANT: Approve tokens before swap
-                    const { ethers: ethersLib } = await import('ethers');
-                    const fromTokenContract = new ethersLib.Contract(
-                        fromTokenConfig.contract,
-                        ["function approve(address spender, uint256 amount) external returns (bool)"],
-                        signer
-                    );
-                    
-                    const swapAmountWei = ethersLib.parseUnits(swapFromAmount, 18);
-                    console.log('🔑 Approving tokens for swap...');
-                    const approveTx = await fromTokenContract.approve(
-                        '0xdBBfFD696484bBFCa3dA059FB1d8e2Cf40c450dE', // Main swap contract
-                        swapAmountWei
-                    );
-                    await approveTx.wait();
-                    console.log('✅ Tokens approved for swap');
-                    
-                    // Calculate minimum output with EXTREME slippage tolerance for testing (50%)
-                    const ethQuote = await swapService.getEthQuote(fromTokenConfig.contract, swapFromAmount);
-                    const tokenQuote = await swapService.getTokenQuote(toTokenConfig.contract, ethQuote.outputAmount);
-                    const minimumOutput = (parseFloat(tokenQuote.outputAmount) * 0.50).toString(); // 50% slippage tolerance for testing
-                    
-                    console.log('📊 Cross-token swap quotes:', {
-                        fromAmount: swapFromAmount,
-                        fromToken: swapFromAsset,
-                        toToken: toTokenName,
-                        ethIntermediate: ethQuote.outputAmount,
-                        expectedTokens: tokenQuote.outputAmount,
-                        minimumOutput,
-                        slippageTolerance: '50%'
-                    });
-                    
-                    const tx = await swapService.swapTokens(
-                        fromTokenConfig.contract,
-                        toTokenConfig.contract, // Use the correct TO token contract
-                        swapFromAmount,
-                        minimumOutput // Use calculated minimum with very lenient slippage
-                    );
-                    
-                    await tx.wait();
-                    transactionHash = tx.hash;
-                    console.log('✅ AMM token swap successful:', tx.hash);
-
-                    // Trigger balance refresh
-                    window.dispatchEvent(new CustomEvent('transactionSuccess', {
-                        detail: { type: 'swap', hash: tx.hash }
-                    }));
-                } else {
-                    throw new Error(`Missing contract addresses: FROM=${fromTokenConfig?.contract}, TO=${toTokenConfig?.contract}`);
-                }
-                
-            } else if (hasTreasurySwap && swapFromAsset === "USD") {
-                // TreasurySwapLite removed - AMM only
-                throw new Error('TreasurySwapLite no longer supported. Use AMM pools only.');
-                
-            } else if (swapFromAsset !== "USD" && swapToAsset === "USD") {
+            } else if (shouldExecuteSwap && swapFromAsset !== "USD" && swapToAsset === "USD") {
                 // 💰 CASH-OUT: Convert tokens to USDC → USD balance via new router
                 console.log('💰 Processing USDC cash-out transaction');
                 
@@ -317,32 +254,54 @@ const PurchaseFlow: React.FC<PurchaseFlowProps> = ({
                     throw new Error(result.error || 'USDC cash-out failed');
                 }
                 
-            } else {
+            } else if (shouldExecuteSwap) {
+                // No valid swap path found
                 throw new Error('No swap system available for this configuration');
+            } else {
+                // Skip swap entirely when amount is 0
+                console.log('⏭️ Skipping swap (amount = $0), proceeding to download only...');
             }
             
-            // 🎯 DOWNLOAD TOKEN MINTING (after successful swap)
-            // Call backend relayer service to mint download token
-            if (includeDownload && transactionHash && user) {
-                console.log('🪙 Starting download token mint via backend relayer...');
+            // 🎯 DOWNLOAD TOKEN MINTING (after successful swap OR if no swap was needed)
+            // Use new purchase API that supports UUPS
+            if (includeDownload && user) {
+                console.log('🪙 Starting download token purchase via new API...');
                 
                 try {
-                    const mintRequestBody = {
-                        artistId: artistConfig.name?.toLowerCase() || '',
-                        userAddress: user,
-                        assetId: 1, // Featured asset is always #1
-                        txHash: transactionHash,
-                        amount: 1
-                    };
+                    // Get artistId from URL - handle both /artist=joz3n and /artist=joz3n/
+                    const urlPath = window.location.pathname;
+                    let artistId = '';
                     
-                    console.log('🔍 DEBUG: Sending mint request:', mintRequestBody);
+                    // Try splitting by /artist=
+                    if (urlPath.includes('/artist=')) {
+                        const parts = urlPath.split('/artist=')[1];
+                        artistId = parts ? parts.split('/')[0] : '';
+                    }
                     
-                    const mintResponse = await fetch('/api/mintDownload', {
+                    // Fallback: try query params
+                    if (!artistId) {
+                        const params = new URLSearchParams(window.location.search);
+                        artistId = params.get('artist') || '';
+                    }
+                    
+                    if (!artistId) {
+                        console.error('❌ Could not determine artistId from URL:', urlPath);
+                        throw new Error('Could not determine artist from URL');
+                    }
+                    
+                    console.log('🔍 DEBUG: Purchasing download:', { artistId, user, urlPath });
+                    
+                    const mintResponse = await fetch('/api/purchase/1155', {
                         method: 'POST',
                         headers: {
                             'Content-Type': 'application/json',
                         },
-                        body: JSON.stringify(mintRequestBody)
+                        body: JSON.stringify({
+                            artistId: artistId,
+                            assetNumber: 1,
+                            quantity: 1,
+                            userAddress: user
+                        })
                     });
                     
                     const mintData = await mintResponse.json();
@@ -353,13 +312,9 @@ const PurchaseFlow: React.FC<PurchaseFlowProps> = ({
                         data: mintData
                     });
                     
-                    if (mintResponse.ok && mintData.success) {
-                        downloadTxHash = mintData.mintTxHash;
+                    if (mintResponse.ok) {
+                        downloadTxHash = mintData.txHash;
                         console.log('✅ Download token minted successfully:', downloadTxHash);
-                        
-                        if (mintData.alreadyOwned) {
-                            console.log('ℹ️ User already owned this download');
-                        }
                         
                         // Refresh download access to show the newly minted token
                         refreshDownloadAccess();
@@ -615,9 +570,10 @@ const PurchaseFlow: React.FC<PurchaseFlowProps> = ({
 
                           const userBalance = userTokenBalances[artist.tokenName] || 0;
                           const hasTokens = userBalance > 0;
+                          const isCurrentArtist = artist.tokenName === artistConfig?.tokenName;
 
-                          // Show all main artist tokens (GOSH33SH, JAIT33, CANCAK33) for cross-trading
-                          if (artist.tokenName && ['GOSH33SH', 'JAIT33', 'CANCAK33'].includes(artist.tokenName)) {
+                          // Show current artist OR artists user owns
+                          if (artist.tokenName && (isCurrentArtist || hasTokens)) {
                             return (
                               <option key={`from-${id}-${artist.tokenName}`} value={artist.tokenName!}>
                                 {artist.tokenName} {hasTokens ? `(${Number(ethers.formatUnits(userBalance, 18)).toLocaleString(undefined, {maximumFractionDigits: 0})})` : '(0)'}
@@ -668,8 +624,12 @@ const PurchaseFlow: React.FC<PurchaseFlowProps> = ({
                                 allArtistsConfig && Object.entries(allArtistsConfig).map(([id, artist]) => {
                                     if (!artist || !artist.tokenName) return null;
                                     
-                                    // Show all main artist tokens for USD purchases
-                                    if (['GOSH33SH', 'JAIT33', 'CANCAK33'].includes(artist.tokenName)) {
+                                    const isCurrentArtist = artist.tokenName === artistConfig?.tokenName;
+                                    const userBalance = userTokenBalances[artist.tokenName] || 0;
+                                    const hasTokens = userBalance > 0;
+                                    
+                                    // Show current artist OR artists user owns
+                                    if (isCurrentArtist || hasTokens) {
                                         return (
                                             <option key={`to-usd-${id}-${artist.tokenName}`} value={artist.tokenName}>
                                                 {artist.tokenName}
@@ -685,9 +645,12 @@ const PurchaseFlow: React.FC<PurchaseFlowProps> = ({
                                     {allArtistsConfig && Object.entries(allArtistsConfig).map(([id, artist]) => {
                                         if (!artist || !artist.tokenName) return null;
                                         
-                                        // Show if different from FROM asset and is main tokens
-                                        if (artist.tokenName !== swapFromAsset && 
-                                            ['GOSH33SH', 'JAIT33', 'CANCAK33'].includes(artist.tokenName)) {
+                                        const isCurrentArtist = artist.tokenName === artistConfig?.tokenName;
+                                        const userBalance = userTokenBalances[artist.tokenName] || 0;
+                                        const hasTokens = userBalance > 0;
+                                        
+                                        // Show if different from FROM asset AND (current OR owned)
+                                        if (artist.tokenName !== swapFromAsset && (isCurrentArtist || hasTokens)) {
                                             return (
                                                 <option key={`to-${id}-${artist.tokenName}`} value={artist.tokenName}>
                                                     {artist.tokenName}
@@ -722,7 +685,7 @@ const PurchaseFlow: React.FC<PurchaseFlowProps> = ({
                         if (swapFromAsset === "USD" && artistConfig) {
                             return (
                                 <p>
-                                    1 {artistConfig.tokenName} = ${(artistConfig.realTimePrice || artistConfig.tokenPrice).toFixed(6)} USD
+                                    1 {artistConfig.tokenName} = ${(artistConfig.realTimePrice || artistConfig.tokenPrice).toFixed(10)} USD
                                     {artistConfig.hasLiquidityPool ? (
                                         <span className="ml-2 text-green-400">● Live Price</span>
                                     ) : (
@@ -740,7 +703,7 @@ const PurchaseFlow: React.FC<PurchaseFlowProps> = ({
                             if (fromTokenConfig) {
                                 return (
                                     <p>
-                                        1 {fromTokenConfig.tokenName} = ${(fromTokenConfig.realTimePrice || fromTokenConfig.tokenPrice).toFixed(6)} USD
+                                        1 {fromTokenConfig.tokenName} = ${(fromTokenConfig.realTimePrice || fromTokenConfig.tokenPrice).toFixed(10)} USD
                                         {fromTokenConfig.hasLiquidityPool ? (
                                             <span className="ml-2 text-green-400">● Live Price</span>
                                         ) : (

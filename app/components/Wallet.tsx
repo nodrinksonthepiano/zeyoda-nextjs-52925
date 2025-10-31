@@ -435,7 +435,7 @@ const Wallet: React.FC<WalletProps> = ({
 
   // Filter artists to only show those with assets
   const artistsWithAssets = allArtistsConfig ? Object.entries(allArtistsConfig).filter(([id, config]) => {
-    const tokenBalance = combinedBalances[id === 'gosheesh' ? 'GOSH33SH' : id === 'jaitea' ? 'JAIT33' : config.tokenName];
+    const tokenBalance = combinedBalances[config.tokenName];
     const hasTokens = tokenBalance && tokenBalance > BigInt(0);
     const hasDownloads = allDownloads[id] && allDownloads[id].length > 0;
     return hasTokens || hasDownloads;
