@@ -300,12 +300,25 @@ const PurchaseFlow: React.FC<PurchaseFlowProps> = ({
                 // Log protocol fee to database (0.3% of ETH input)
                 try {
                     const feeAmountWei = (ethAmount * 30n) / 10000n; // 0.3%
+                    
+                    // Get artistId from URL
+                    const urlPath = window.location.pathname;
+                    let artistId = '';
+                    if (urlPath.includes('/artist=')) {
+                        const parts = urlPath.split('/artist=')[1];
+                        artistId = parts ? parts.split('/')[0] : '';
+                    }
+                    if (!artistId) {
+                        const params = new URLSearchParams(window.location.search);
+                        artistId = params.get('artist') || '';
+                    }
+                    
                     await fetch('/api/protocol-fees/log', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
                             txHash: tx.hash,
-                            artistId: artistConfig.id,
+                            artistId: artistId || null,
                             tokenAddress: artistConfig.contract,
                             userAddress: user,
                             swapDirection: 'ETH_TO_TOKEN',

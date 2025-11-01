@@ -71,17 +71,26 @@ export async function GET(request: NextRequest) {
     }
     
     // Format recent fees (last 50)
-    const recentFees = (fees || []).slice(0, 50).map(fee => ({
-      id: fee.id,
-      artistId: fee.artist_id || 'unknown',
-      artistName: fee.artist_id || 'Unknown Artist',
-      feeAmount: parseFloat(fee.fee_usd?.toString() || '0'),
-      feeType: fee.swap_direction === 'ETH_TO_TOKEN' ? 'Buy (ETH→Token)' : 
-                fee.swap_direction === 'TOKEN_TO_ETH' ? 'Sell (Token→ETH)' : 
-                'Swap (Token→Token)',
-      createdAt: fee.collected_at,
-      txHash: fee.tx_hash
-    }));
+    const recentFees = (fees || []).slice(0, 50).map(fee => {
+      // Try to get artist display name from database
+      let artistDisplayName = 'Unknown Artist';
+      if (fee.artist_id) {
+        // Format artist ID for display (e.g., "jait333a" -> "JAIT333A")
+        artistDisplayName = fee.artist_id.toUpperCase();
+      }
+      
+      return {
+        id: fee.id,
+        artistId: fee.artist_id || 'unknown',
+        artistName: artistDisplayName,
+        feeAmount: parseFloat(fee.fee_usd?.toString() || '0'),
+        feeType: fee.swap_direction === 'ETH_TO_TOKEN' ? 'Buy (ETH→Token)' : 
+                  fee.swap_direction === 'TOKEN_TO_ETH' ? 'Sell (Token→ETH)' : 
+                  'Swap (Token→Token)',
+        createdAt: fee.collected_at,
+        txHash: fee.tx_hash
+      };
+    });
     
     console.log('📈 Treasury stats:', {
       totalFeesUsd: totalFeesUsd.toFixed(4),
