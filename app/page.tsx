@@ -2,7 +2,7 @@
 
 import React from 'react';
 import Image from "next/image";
-import { useEffect, useState, useRef, useCallback } from "react";
+import { useEffect, useState, useRef, useCallback, useMemo } from "react";
 import { useSearchParams, useRouter } from 'next/navigation';
 import Wallet from './components/Wallet';
 import dynamic from 'next/dynamic';
@@ -16,6 +16,7 @@ import { useFeaturedAsset } from "./hooks/useFeaturedAsset";
 import OwnerControls from "./components/OwnerControls";
 import ArtistVideo from "./components/ArtistVideo";
 import { useArtistAssets } from './hooks/useArtistAssets';
+import { useAllArtistsDownloadAccess } from './hooks/useDownloadAccess';
 import OrbitPeekCarousel from './components/OrbitPeekCarousel';
 import OvalGlowBackdrop from './components/OvalGlowBackdrop';
 import ThemeOrbitRenderer from "./components/ThemeOrbitRenderer";
@@ -83,6 +84,14 @@ const ArtistPageContent: React.FC<{
   const [editingAsset, setEditingAsset] = useState<any | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   
+  // Search state
+  const [searchQuery, setSearchQuery] = useState('');
+  const [artistResults, setArtistResults] = useState<any[]>([]);
+  const [assetResults, setAssetResults] = useState<any[]>([]);
+  const [showSearchDropdown, setShowSearchDropdown] = useState(false);
+  const [selectedSearchIndex, setSelectedSearchIndex] = useState(0);
+  const [assetMetadata, setAssetMetadata] = useState<{ [key: string]: any }>({});
+  
   // Upload mode state
   const [uploadAssetData, setUploadAssetData] = useState({
     title: '',
@@ -100,12 +109,107 @@ const ArtistPageContent: React.FC<{
   }, [initialArtistConfig]);
 
   const artistIdFromUrl = (searchParams.get('artist') ?? 'gosheesh') as string;
+  const assetNumberFromUrl = searchParams.get('asset');
   const [carouselIndex, setCarouselIndex] = useState(0);
 
   // When artist changes, reset the carousel to the first item.
   useEffect(() => {
     setCarouselIndex(0);
   }, [artistIdFromUrl]);
+
+  // Deep-link: Focus specific asset from URL parameter (race-safe)
+  useEffect(() => {
+    // Only run client-side after assets are loaded
+    if (typeof window === 'undefined') return;
+    if (!assetNumberFromUrl || !artistAssets || artistAssets.length === 0) return;
+    
+    const targetAssetNumber = parseInt(assetNumberFromUrl, 10);
+    
+    // Guard against NaN/negative
+    if (isNaN(targetAssetNumber) || targetAssetNumber < 0) {
+      console.warn('[Deep-link] Invalid asset number:', assetNumberFromUrl);
+      setCarouselIndex(0);
+      return;
+    }
+    
+    // Find by assetNumber (not array index!)
+    const foundIndex = artistAssets.findIndex((a: any) => a.assetNumber === targetAssetNumber);
+    
+    if (foundIndex >= 0) {
+      setCarouselIndex(foundIndex);
+      console.log('[Deep-link] ✅ Focused asset:', targetAssetNumber, 'at index', foundIndex);
+    } else {
+      // Asset doesn't exist - fallback to first
+      setCarouselIndex(0);
+      console.warn('[Deep-link] ⚠️ Asset not found:', targetAssetNumber, '- falling back to first asset');
+    }
+  }, [assetNumberFromUrl, artistAssets]);
+
+  // ==================== SEARCH FUNCTIONALITY ====================
+  
+  // Debounce hook
+  function useDebounced<T>(value: T, delay: number = 150): T {
+    const [debouncedValue, setDebouncedValue] = useState(value);
+    
+    useEffect(() => {
+      const timer = setTimeout(() => setDebouncedValue(value), delay);
+      return () => clearTimeout(timer);
+    }, [value, delay]);
+    
+    return debouncedValue;
+  }
+  
+  const debouncedQuery = useDebounced(searchQuery, 150);
+  
+  // Damerau-Levenshtein distance (handles transpositions)
+  function damerauLevenshtein(a: string, b: string): number {
+    const len1 = a.length, len2 = b.length;
+    const matrix: number[][] = Array(len1 + 1).fill(null).map(() => Array(len2 + 1).fill(0));
+    
+    for (let i = 0; i <= len1; i++) matrix[i][0] = i;
+    for (let j = 0; j <= len2; j++) matrix[0][j] = j;
+    
+    for (let i = 1; i <= len1; i++) {
+      for (let j = 1; j <= len2; j++) {
+        const cost = a[i-1] === b[j-1] ? 0 : 1;
+        matrix[i][j] = Math.min(
+          matrix[i-1][j] + 1,      // deletion
+          matrix[i][j-1] + 1,      // insertion
+          matrix[i-1][j-1] + cost  // substitution
+        );
+        
+        // Transposition
+        if (i > 1 && j > 1 && a[i-1] === b[j-2] && a[i-2] === b[j-1]) {
+          matrix[i][j] = Math.min(matrix[i][j], matrix[i-2][j-2] + cost);
+        }
+      }
+    }
+    
+    return matrix[len1][len2];
+  }
+  
+  // Score a match (higher is better)
+  function scoreMatch(query: string, target: string, queryLen: number): number {
+    const q = query.toLowerCase().trim();
+    const t = target.toLowerCase().trim();
+    
+    // Prefix match (highest priority)
+    if (t.startsWith(q)) return 100;
+    
+    // Substring match
+    if (t.includes(q)) return 80;
+    
+    // Fuzzy matching with dynamic thresholds
+    const maxDistance = queryLen <= 2 ? 0 : queryLen <= 4 ? 1 : 2;
+    const compareLen = Math.min(t.length, q.length + 1);
+    const distance = damerauLevenshtein(q, t.slice(0, compareLen));
+    
+    if (distance === 0) return 100;
+    if (distance === 1) return 60;
+    if (distance === 2 && queryLen >= 5) return 40;
+    
+    return 0;
+  }
 
   const selectedAsset = React.useMemo(() => {
     if (!artistAssets || artistAssets.length === 0) return null;
@@ -228,6 +332,163 @@ const ArtistPageContent: React.FC<{
       }
     };
   }, [filePreviewUrl]);
+
+  // ==================== SEARCH FUNCTIONALITY ====================
+  
+  // Fetch user's downloads for search
+  const { allDownloads } = useAllArtistsDownloadAccess(
+    magic,
+    user || null,
+    allArtistsConfig
+  );
+  
+  // Fetch asset metadata for search
+  useEffect(() => {
+    if (!allDownloads || !allArtistsConfig) return;
+    
+    const fetchMetadata = async () => {
+      const metadata: { [key: string]: any } = {};
+      
+      for (const [artistId, downloads] of Object.entries(allDownloads)) {
+        if (!downloads || downloads.length === 0) continue;
+        
+        for (const download of downloads as any[]) {
+          const assetKey = `${artistId}_${download.assetNumber}`;
+          
+          try {
+            const { data } = await supabase
+              .from('artist_assets')
+              .select('metadata, asset_number')
+              .eq('artist_id', artistId)
+              .eq('asset_number', download.assetNumber)
+              .single();
+            
+            if (data) {
+              metadata[assetKey] = data;
+            }
+          } catch (error) {
+            console.warn(`Failed to fetch metadata for ${assetKey}:`, error);
+          }
+        }
+      }
+      
+      setAssetMetadata(metadata);
+    };
+    
+    fetchMetadata();
+  }, [allDownloads, allArtistsConfig]);
+  
+  // Build owned assets index (for search)
+  const ownedAssetsIndex = useMemo(() => {
+    if (!allArtistsConfig || !allDownloads) return [];
+    
+    const index: any[] = [];
+    
+    Object.entries(allDownloads).forEach(([artistId, downloads]) => {
+      const config = allArtistsConfig[artistId];
+      if (!config || !downloads || downloads.length === 0) return;
+      
+      (downloads as any[]).forEach((download: any) => {
+        const assetKey = `${artistId}_${download.assetNumber}`;
+        const metadata = assetMetadata?.[assetKey];
+        const title = metadata?.metadata?.title || `${config.artworkTitle || config.name} #${download.assetNumber}`;
+        
+        index.push({
+          kind: '1155',
+          artistId,
+          artistDisplayName: config.displayName || config.name,
+          assetNumber: download.assetNumber,
+          title,
+          titleNorm: title.toLowerCase().trim(),
+          theme: config.theme
+        });
+      });
+    });
+    
+    return index;
+  }, [allArtistsConfig, allDownloads, assetMetadata]);
+  
+  // Build owned artists index (for search)
+  const ownedArtistsIndex = useMemo(() => {
+    if (!allArtistsConfig || !user) return [];
+    
+    return Object.entries(allArtistsConfig).filter(([id, config]) => {
+      const tokenBalance = userTokenBalances?.[config.tokenName] ?? 0n;
+      const hasTokens = (typeof tokenBalance === 'bigint' ? tokenBalance : BigInt(tokenBalance || 0)) > 0n;
+      const hasDownloads = allDownloads?.[id] && allDownloads[id].length > 0;
+      return hasTokens || hasDownloads;
+    }).map(([id, config]) => ({
+      kind: 'artist' as const,
+      id,
+      config,
+      scoreFields: [
+        config.name?.toLowerCase() || '',
+        config.displayName?.toLowerCase() || '',
+        config.tokenName?.toLowerCase() || ''
+      ]
+    }));
+  }, [allArtistsConfig, userTokenBalances, allDownloads, user]);
+  
+  // Search effect (runs on debounced query)
+  useEffect(() => {
+    if (!debouncedQuery || debouncedQuery.length === 0) {
+      setArtistResults([]);
+      setAssetResults([]);
+      setShowSearchDropdown(false);
+      return;
+    }
+    
+    if (!user) return;
+    
+    const queryLen = debouncedQuery.length;
+    
+    // Search artists
+    const scoredArtists = ownedArtistsIndex
+      .map(artist => {
+        const maxScore = Math.max(
+          ...artist.scoreFields.map(field => scoreMatch(debouncedQuery, field, queryLen))
+        );
+        return { artist, score: maxScore };
+      })
+      .filter(({ score }) => score >= 40)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 5)
+      .map(({ artist }) => artist);
+    
+    // Search owned assets
+    const scoredAssets = ownedAssetsIndex
+      .map(asset => {
+        const score = Math.max(
+          scoreMatch(debouncedQuery, asset.titleNorm, queryLen),
+          scoreMatch(debouncedQuery, asset.artistDisplayName.toLowerCase(), queryLen)
+        );
+        return { asset, score };
+      })
+      .filter(({ score }) => score >= 40)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 5)
+      .map(({ asset }) => asset);
+    
+    setArtistResults(scoredArtists);
+    setAssetResults(scoredAssets);
+    setShowSearchDropdown(scoredArtists.length > 0 || scoredAssets.length > 0);
+    setSelectedSearchIndex(0);
+  }, [debouncedQuery, ownedArtistsIndex, ownedAssetsIndex, user]);
+  
+  // Click outside to close dropdown
+  useEffect(() => {
+    if (!showSearchDropdown) return;
+    
+    const handleClickOutside = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      if (!target.closest('.chat-input-container')) {
+        setShowSearchDropdown(false);
+      }
+    };
+    
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [showSearchDropdown]);
 
   const handleUploadClick = useCallback(() => {
     fileInputRef.current?.click();
@@ -1717,7 +1978,13 @@ const ArtistPageContent: React.FC<{
                             key={carouselKey}
                             items={artistAssets}
                             index={carouselIndex}
-                            onIndexChange={setCarouselIndex}
+                            onIndexChange={(nextIndex) => {
+                              setCarouselIndex(nextIndex);
+                              // Clear deep-link parameter on manual navigation
+                              if (assetNumberFromUrl) {
+                                router.replace(`/?artist=${artistIdFromUrl}`, { scroll: false });
+                              }
+                            }}
                             containerRef={videoContainerRef}
                             peekPercent={10}
                             theme={{ fontFamily: artistConfig?.theme?.fontFamily, primaryColor: artistConfig?.theme?.primaryColor, accentColor: artistConfig?.theme?.accentColor }}
@@ -1957,7 +2224,7 @@ const ArtistPageContent: React.FC<{
               )}
               
               {/* Main input */}
-              <div className="flex items-center w-full">
+              <div className="flex items-center w-full chat-input-container relative">
                 {/* Action buttons - match top button styling */}
                 {user && artistConfig && artistConfig.contract && (
                   <div className="flex gap-2 mr-3">
@@ -2002,26 +2269,185 @@ const ArtistPageContent: React.FC<{
                   </div>
                 )}
                 
+                {/* Search Dropdown */}
+                {showSearchDropdown && (artistResults.length > 0 || assetResults.length > 0) && (
+                  <div 
+                    className="absolute bottom-full left-0 right-0 mb-2 bg-gray-900 border border-gray-600 rounded-lg shadow-2xl max-h-96 overflow-y-auto z-[10000]"
+                    style={{ backdropFilter: 'blur(10px)' }}
+                  >
+                    {/* My Downloads Section */}
+                    {assetResults.length > 0 && (
+                      <>
+                        <div className="px-3 py-2 text-xs text-gray-400 font-bold uppercase border-b border-gray-700">
+                          My Downloads
+                        </div>
+                        {assetResults.map((asset, idx) => {
+                          const globalIdx = idx;
+                          const isSelected = globalIdx === selectedSearchIndex;
+                          
+                          return (
+                            <div
+                              key={`asset-${asset.artistId}-${asset.assetNumber}`}
+                              className={`p-3 cursor-pointer transition-all min-h-[44px] flex flex-col justify-center ${
+                                isSelected ? 'opacity-100' : 'opacity-70 hover:opacity-90'
+                              }`}
+                              style={{
+                                backgroundColor: isSelected 
+                                  ? `${asset.theme.primaryColor}CC` 
+                                  : `${asset.theme.primaryColor}80`,
+                                borderLeft: isSelected 
+                                  ? `4px solid ${asset.theme.accentColor}` 
+                                  : '4px solid transparent'
+                              }}
+                              onClick={() => {
+                                router.push(`/?artist=${asset.artistId}&asset=${asset.assetNumber}`);
+                                setSearchQuery('');
+                                setSafewordInput('');
+                                setShowSearchDropdown(false);
+                              }}
+                              onMouseEnter={() => {
+                                router.prefetch(`/?artist=${asset.artistId}&asset=${asset.assetNumber}`);
+                              }}
+                            >
+                              <div 
+                                className="font-bold text-base"
+                                style={{ 
+                                  color: asset.theme.accentColor,
+                                  fontFamily: asset.theme.fontFamily || 'inherit'
+                                }}
+                              >
+                                {asset.title}
+                              </div>
+                              <div className="text-xs text-gray-300">
+                                by {asset.artistDisplayName} • #{asset.assetNumber} <span className="text-green-400">• Owned</span>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </>
+                    )}
+                    
+                    {/* Artists Section */}
+                    {artistResults.length > 0 && (
+                      <>
+                        <div className="px-3 py-2 text-xs text-gray-400 font-bold uppercase border-b border-gray-700">
+                          Artists
+                        </div>
+                        {artistResults.map((artist, idx) => {
+                          const globalIdx = assetResults.length + idx;
+                          const isSelected = globalIdx === selectedSearchIndex;
+                          
+                          return (
+                            <div
+                              key={`artist-${artist.id}`}
+                              className={`p-3 cursor-pointer transition-all min-h-[44px] flex flex-col justify-center ${
+                                isSelected ? 'opacity-100' : 'opacity-70 hover:opacity-90'
+                              }`}
+                              style={{
+                                backgroundColor: isSelected 
+                                  ? `${artist.config.theme.primaryColor}CC` 
+                                  : `${artist.config.theme.primaryColor}80`,
+                                borderLeft: isSelected 
+                                  ? `4px solid ${artist.config.theme.accentColor}` 
+                                  : '4px solid transparent'
+                              }}
+                              onClick={() => {
+                                router.push(`/?artist=${artist.id}`);
+                                setSearchQuery('');
+                                setSafewordInput('');
+                                setShowSearchDropdown(false);
+                              }}
+                              onMouseEnter={() => {
+                                router.prefetch(`/?artist=${artist.id}`);
+                              }}
+                            >
+                              <div 
+                                className="font-bold text-lg"
+                                style={{ 
+                                  color: artist.config.theme.accentColor,
+                                  fontFamily: artist.config.theme.fontFamily || 'inherit'
+                                }}
+                              >
+                                {artist.config.displayName || artist.config.name}
+                              </div>
+                              <div className="text-sm text-gray-300">
+                                {artist.config.tokenName}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </>
+                    )}
+                  </div>
+                )}
+                
                 <input
                   type={user ? "text" : "email"}
                   value={showClueInput ? clueMessage : (user ? safewordInput : email)}
-                  onChange={showClueInput 
-                    ? (e) => setClueMessage(e.target.value)
-                    : (user ? handleSafewordInputChange : (e) => setEmail(e.target.value))
-                  }
+                  onChange={(e) => {
+                    const value = e.target.value;
+                    
+                    if (showClueInput) {
+                      setClueMessage(value);
+                    } else if (user) {
+                      setSearchQuery(value);
+                      setSafewordInput(value);
+                    } else {
+                      setEmail(value);
+                    }
+                  }}
                   placeholder={
                     user 
                       ? (appMode === 'onboarding' 
                           ? (uploadedFile 
                               ? "Type your artist name or try: gold, emerald, sapphire..." 
                               : "Type your artist name, upload content, or try colors: gold, emerald...")
-                          : "Type command, search, or safeword...")
+                          : "Search artists & downloads you own, or type command...")
                       : showClueInput 
                         ? "Who sent you? Enter a clue here..." 
                         : "Enter your email address to continue"
                   }
                 className={`flex-grow p-3 border border-gray-600 ${user ? '' : 'rounded-l-lg'} bg-gray-900 bg-opacity-70 text-white focus:ring-accentColor focus:border-accentColor backdrop-blur-sm`}
                 onKeyDown={(e) => {
+                  const totalResults = artistResults.length + assetResults.length;
+                  
+                  // Navigation for dropdown
+                  if (showSearchDropdown && totalResults > 0) {
+                    if (e.key === 'ArrowDown') {
+                      e.preventDefault();
+                      setSelectedSearchIndex((prev) => (prev + 1) % totalResults);
+                      return;
+                    }
+                    if (e.key === 'ArrowUp') {
+                      e.preventDefault();
+                      setSelectedSearchIndex((prev) => (prev - 1 + totalResults) % totalResults);
+                      return;
+                    }
+                    if (e.key === 'Escape') {
+                      e.preventDefault();
+                      setShowSearchDropdown(false);
+                      return;
+                    }
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      const allResults = [...assetResults, ...artistResults];
+                      const selected = allResults[selectedSearchIndex];
+                      
+                      if (selected) {
+                        if (selected.kind === 'artist') {
+                          router.push(`/?artist=${selected.id}`);
+                        } else {
+                          router.push(`/?artist=${selected.artistId}&asset=${selected.assetNumber}`);
+                        }
+                        setSearchQuery('');
+                        setSafewordInput('');
+                        setShowSearchDropdown(false);
+                      }
+                      return;
+                    }
+                  }
+                  
+                  // Original Enter logic (safeword/login)
                   if (e.key === 'Enter') {
                     if (!user) {
                       if (showClueInput) {

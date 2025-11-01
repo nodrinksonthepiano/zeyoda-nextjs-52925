@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { ethers } from 'ethers';
+import { useRouter } from 'next/navigation';
 import { useAllArtistsDownloadAccess } from '../hooks/useDownloadAccess';
 import { useWalletBalances } from '../hooks/useWalletBalances';
 import { useArtistEarnings } from '../hooks/useArtistEarnings';
@@ -56,6 +57,7 @@ const Wallet: React.FC<WalletProps> = ({
   const [cashAmount, setCashAmount] = useState<string>('0.00');
   const { showToast } = useToast();
   const { usdBalance, isLoading: usdLoading } = useUsdBalance();
+  const router = useRouter();
 
   // Use the new wallet balances hook
   const { 
@@ -523,11 +525,40 @@ const Wallet: React.FC<WalletProps> = ({
                         const metadata = assetMetadata[assetKey];
                         const isDownloading = downloadingAssets.has(assetKey);
                         
+                        const handleCardClick = () => {
+                          const targetUrl = `/?artist=${download.artistId}&asset=${download.assetNumber}`;
+                          if (typeof window !== 'undefined') {
+                            router.prefetch(targetUrl);
+                          }
+                          router.push(targetUrl);
+                        };
+                        
+                        const handleCardKeyDown = (e: React.KeyboardEvent) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            handleCardClick();
+                          }
+                        };
+                        
                         return (
-                          <div key={assetKey} className="flex items-center justify-between rounded p-2" style={{ 
-                            backgroundColor: `${config.theme.primaryColor}80`, // 50% opacity like ERC-20 tokens
-                            borderColor: config.theme.accentColor 
-                          }}>
+                          <div 
+                            key={assetKey} 
+                            className="flex items-center justify-between rounded p-2 cursor-pointer hover:opacity-80 active:opacity-70 transition-opacity" 
+                            style={{ 
+                              backgroundColor: `${config.theme.primaryColor}80`, // 50% opacity like ERC-20 tokens
+                              borderColor: config.theme.accentColor 
+                            }}
+                            role="button"
+                            tabIndex={0}
+                            aria-label={`View ${metadata?.metadata?.title || `${config.artworkTitle} #${download.assetNumber}`} on artist page`}
+                            onClick={handleCardClick}
+                            onKeyDown={handleCardKeyDown}
+                            onMouseEnter={() => {
+                              if (typeof window !== 'undefined') {
+                                router.prefetch(`/?artist=${download.artistId}&asset=${download.assetNumber}`);
+                              }
+                            }}
+                          >
                             <div>
                               <div className="text-white font-medium text-sm">
                                 {metadata?.metadata?.title || `${config.artworkTitle} #${download.assetNumber}`}
@@ -537,13 +568,18 @@ const Wallet: React.FC<WalletProps> = ({
                               </div>
                             </div>
                             <button
-                              onClick={() => handleDownload(download.artistId, download.assetNumber)}
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleDownload(download.artistId, download.assetNumber);
+                              }}
                               disabled={isDownloading}
                               className="text-xs font-medium px-2 py-1 rounded disabled:opacity-50 hover:opacity-80 transition-opacity"
                               style={{ 
                                 color: config.theme.accentColor,
                                 backgroundColor: `${config.theme.primaryColor}CC` // 80% opacity for contrast
                               }}
+                              aria-label={`Download ${metadata?.metadata?.title || `asset #${download.assetNumber}`}`}
                             >
                               {isDownloading ? '...' : 'Download'}
                             </button>
