@@ -2390,8 +2390,10 @@ const ArtistPageContent: React.FC<{
                     if (showClueInput) {
                       setClueMessage(value);
                     } else if (user) {
+                      // Update search query for dropdown
                       setSearchQuery(value);
-                      setSafewordInput(value);
+                      // CRITICAL: Call the proper safeword handler to maintain functionality
+                      handleSafewordInputChange(e);
                     } else {
                       setEmail(value);
                     }
@@ -2456,6 +2458,9 @@ const ArtistPageContent: React.FC<{
                         login();
                       }
                     } else {
+                      // Clear search query before executing safeword
+                      setSearchQuery('');
+                      setShowSearchDropdown(false);
                       handleSafewordSubmit();
                     }
                   }
@@ -2471,6 +2476,9 @@ const ArtistPageContent: React.FC<{
                       login();
                     }
                   } else {
+                    // Clear search query before executing safeword
+                    setSearchQuery('');
+                    setShowSearchDropdown(false);
                     handleSafewordSubmit();
                   }
                 }}
