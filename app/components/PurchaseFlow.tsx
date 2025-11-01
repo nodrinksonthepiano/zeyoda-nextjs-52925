@@ -38,7 +38,6 @@ interface PurchaseFlowProps {
   handleIncludeDownloadChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
   totalPurchasePrice: number;
   handlePreviewSwap: () => void;
-  handleDollarPurchase: () => void;
   setShakeActive: (active: boolean) => void;
   swapToAmount: string;
 }
@@ -66,7 +65,6 @@ const PurchaseFlow: React.FC<PurchaseFlowProps> = ({
   handleIncludeDownloadChange,
   totalPurchasePrice,
   handlePreviewSwap,
-  handleDollarPurchase,
   setShakeActive,
   swapToAmount
 }) => {
@@ -92,6 +90,115 @@ const PurchaseFlow: React.FC<PurchaseFlowProps> = ({
     const handleSliderChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const usdString = e.target.value;
         handleSwapFromAmountChange({ target: { value: usdString } } as React.ChangeEvent<HTMLInputElement>);
+    };
+
+    // 🎯 HELPER: Mint download token (extracted for reuse)
+    const mintDownloadToken = async (userAddress: string): Promise<string> => {
+        console.log('🪙 Starting download token purchase via new API...');
+        
+        // Get artistId from URL - handle both /artist=joz3n and /artist=joz3n/
+        const urlPath = window.location.pathname;
+        let artistId = '';
+        
+        // Try splitting by /artist=
+        if (urlPath.includes('/artist=')) {
+            const parts = urlPath.split('/artist=')[1];
+            artistId = parts ? parts.split('/')[0] : '';
+        }
+        
+        // Fallback: try query params
+        if (!artistId) {
+            const params = new URLSearchParams(window.location.search);
+            artistId = params.get('artist') || '';
+        }
+        
+        if (!artistId) {
+            console.error('❌ Could not determine artistId from URL:', urlPath);
+            throw new Error('Could not determine artist from URL');
+        }
+        
+        console.log('🔍 DEBUG: Purchasing download:', { artistId, user: userAddress, urlPath });
+        
+        const mintResponse = await fetch('/api/purchase/1155', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                artistId: artistId,
+                assetNumber: 1,
+                quantity: 1,
+                userAddress: userAddress
+            })
+        });
+        
+        const mintData = await mintResponse.json();
+        
+        console.log('🔍 DEBUG: Mint response:', {
+            status: mintResponse.status,
+            ok: mintResponse.ok,
+            data: mintData
+        });
+        
+        if (mintResponse.ok) {
+            console.log('✅ Download token minted successfully:', mintData.txHash);
+            // Refresh download access to show the newly minted token
+            refreshDownloadAccess();
+            return mintData.txHash;
+        } else {
+            // Create user-friendly error message
+            let errorMessage = `⚠️ Download Token Update\n\n`;
+            
+            if (mintData.error === 'Transaction not found on blockchain' || 
+                mintData.error === 'Transaction still pending confirmation') {
+                errorMessage += `Your payment was successful! 🎉\n\n`;
+                errorMessage += `However, we need to wait for the network to confirm it.\n`;
+                errorMessage += `This usually takes 1-2 minutes.\n\n`;
+                errorMessage += mintData.details?.suggestion || 'Please wait a moment and try again.';
+            } else {
+                errorMessage += `There was an issue processing your download:\n`;
+                errorMessage += mintData.error;
+                
+                if (mintData.details?.suggestion) {
+                    errorMessage += `\n\n${mintData.details.suggestion}`;
+                }
+            }
+            
+            throw new Error(errorMessage);
+        }
+    };
+
+    // 🎯 DEDICATED: Download-only purchase (no artistocks logic)
+    const handleDownloadOnlyPurchase = async () => {
+        if (!magic || !user) {
+            console.error('Magic or user not available');
+            return;
+        }
+
+        setIsSwapping(true); // ← Immediate loading state
+        try {
+            console.log('💰 Download-only purchase: $1.00');
+            
+            // Mint the download token
+            const downloadTxHash = await mintDownloadToken(user);
+            
+            // Success feedback
+            const successMessage = `🎉 DOWNLOAD PURCHASED!\n\n✅ Payment: $1.00\n🎵 Download Token Minted!\n\nMint Transaction: ${downloadTxHash.substring(0, 10)}...\n\nYour download access is now available in your wallet!`;
+            alert(successMessage);
+            
+            // Refresh wallet after delay
+            setTimeout(() => {
+                console.log('🔄 Triggering wallet balance refresh after download purchase...');
+                localStorage.removeItem('zeyodaUserTokenBalances');
+                window.location.reload();
+            }, 8000);
+            
+        } catch (error: any) {
+            console.error('❌ Download purchase failed:', error);
+            alert(error.message || 'Download purchase failed');
+        } finally {
+            setIsSwapping(false);
+        }
     };
 
     const handleRealSwap = async () => {
@@ -186,9 +293,31 @@ const PurchaseFlow: React.FC<PurchaseFlowProps> = ({
                     signer
                 );
                 
-                await tx.wait();
+                const receipt = await tx.wait();
                 transactionHash = tx.hash;
                 console.log('✅ AMM swap successful:', tx.hash);
+                
+                // Log protocol fee to database (0.3% of ETH input)
+                try {
+                    const feeAmountWei = (ethAmount * 30n) / 10000n; // 0.3%
+                    await fetch('/api/protocol-fees/log', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            txHash: tx.hash,
+                            artistId: artistConfig.id,
+                            tokenAddress: artistConfig.contract,
+                            userAddress: user,
+                            swapDirection: 'ETH_TO_TOKEN',
+                            feeAmountWei: feeAmountWei.toString(),
+                            feeToken: 'ETH',
+                            blockNumber: receipt?.blockNumber || 0
+                        })
+                    });
+                    console.log('✅ Protocol fee logged to database');
+                } catch (logError) {
+                    console.error('⚠️ Failed to log protocol fee (non-critical):', logError);
+                }
                 
                 // Trigger balance refresh
                 window.dispatchEvent(new CustomEvent('transactionSuccess', {
@@ -263,130 +392,33 @@ const PurchaseFlow: React.FC<PurchaseFlowProps> = ({
             }
             
             // 🎯 DOWNLOAD TOKEN MINTING (after successful swap OR if no swap was needed)
-            // Use new purchase API that supports UUPS
             if (includeDownload && user) {
-                console.log('🪙 Starting download token purchase via new API...');
-                
                 try {
-                    // Get artistId from URL - handle both /artist=joz3n and /artist=joz3n/
-                    const urlPath = window.location.pathname;
-                    let artistId = '';
-                    
-                    // Try splitting by /artist=
-                    if (urlPath.includes('/artist=')) {
-                        const parts = urlPath.split('/artist=')[1];
-                        artistId = parts ? parts.split('/')[0] : '';
-                    }
-                    
-                    // Fallback: try query params
-                    if (!artistId) {
-                        const params = new URLSearchParams(window.location.search);
-                        artistId = params.get('artist') || '';
-                    }
-                    
-                    if (!artistId) {
-                        console.error('❌ Could not determine artistId from URL:', urlPath);
-                        throw new Error('Could not determine artist from URL');
-                    }
-                    
-                    console.log('🔍 DEBUG: Purchasing download:', { artistId, user, urlPath });
-                    
-                    const mintResponse = await fetch('/api/purchase/1155', {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                        },
-                        body: JSON.stringify({
-                            artistId: artistId,
-                            assetNumber: 1,
-                            quantity: 1,
-                            userAddress: user
-                        })
-                    });
-                    
-                    const mintData = await mintResponse.json();
-                    
-                    console.log('🔍 DEBUG: Mint response:', {
-                        status: mintResponse.status,
-                        ok: mintResponse.ok,
-                        data: mintData
-                    });
-                    
-                    if (mintResponse.ok) {
-                        downloadTxHash = mintData.txHash;
-                        console.log('✅ Download token minted successfully:', downloadTxHash);
-                        
-                        // Refresh download access to show the newly minted token
-                        refreshDownloadAccess();
-                    } else {
-                        // Show the exact error from the API with helpful context
-                        const errorDetails = {
-                            status: mintResponse.status,
-                            error: mintData.error || 'Unknown error',
-                            details: mintData.details || {},
-                            fullResponse: mintData
-                        };
-                        
-                        console.error('❌ Mint API error details:', errorDetails);
-                        
-                        // Create user-friendly error message
-                        let userErrorMessage = `⚠️ Download Token Update\n\n`;
-                        
-                        if (mintData.error === 'Transaction not found on blockchain' || 
-                            mintData.error === 'Transaction still pending confirmation') {
-                            userErrorMessage += `Your payment was successful! 🎉\n\n`;
-                            userErrorMessage += `However, we need to wait for the network to confirm it.\n`;
-                            userErrorMessage += `This usually takes 1-2 minutes.\n\n`;
-                            userErrorMessage += mintData.details?.suggestion || 'Please wait a moment and try again.';
-                            
-                            // Schedule automatic retry
-                            setTimeout(() => {
-                                console.log('🔄 Auto-retrying download token mint...');
-                                handleRealSwap();
-                            }, 60000); // Try again in 1 minute
-                            
-                        } else {
-                            userErrorMessage += `There was an issue processing your download:\n`;
-                            userErrorMessage += mintData.error;
-                            
-                            if (mintData.details?.suggestion) {
-                                userErrorMessage += `\n\n${mintData.details.suggestion}`;
-                            }
-                            
-                            userErrorMessage += `\n\nSwap Transaction: ${transactionHash.substring(0, 10)}...`;
-                            
-                            if (mintData.details?.timeWaited) {
-                                userErrorMessage += `\nTime waited: ${mintData.details.timeWaited}`;
-                            }
-                        }
-                        
-                        alert(userErrorMessage);
-                    }
-                    
+                    downloadTxHash = await mintDownloadToken(user);
                 } catch (mintError: any) {
                     console.error('❌ Download token mint failed:', mintError);
-                    
-                    // Show detailed error to user for debugging
-                    const errorMessage = mintError.message.includes('❌ Download Token Mint Failed') 
-                        ? mintError.message 
-                        : `⚠️ Your payment was successful, but we couldn't process the download yet.\n\n` +
-                          `This usually means the network is busy.\n` +
-                          `Please wait a minute and try refreshing the page.\n\n` +
-                          `Error: ${mintError.message || 'Connection issue'}\n` +
-                          `Swap TX: ${transactionHash.substring(0, 10)}...`;
-                    
-                    alert(errorMessage);
+                    alert(mintError.message || 'Download purchase failed');
                 }
             }
             
             // 🎉 SUCCESS - Show user-facing feedback
-            if (transactionHash) {
-                let successMessage = `🎉 PURCHASE SUCCESSFUL!\n\n${swapType}\n\nSwap Transaction: ${transactionHash.substring(0, 10)}...`;
+            if (transactionHash || downloadTxHash) {
+                let successMessage = '';
                 
-                if (includeDownload && downloadTxHash) {
-                    successMessage += `\n\n🎵 Download Token Minted! ✅\nMint Transaction: ${downloadTxHash.substring(0, 10)}...\n\nYour download access is now available in your wallet!`;
-                } else if (includeDownload) {
-                    successMessage += `\n\n💡 Download processing: Your payment included $1 for download access. Download tokens are being credited to your wallet.`;
+                // If only download (no swap)
+                if (downloadTxHash && !transactionHash) {
+                    successMessage = `🎉 DOWNLOAD PURCHASED!\n\n✅ Payment: $1.00\n🎵 Download Token Minted!\n\nMint Transaction: ${downloadTxHash.substring(0, 10)}...\n\nYour download access is now available in your wallet!`;
+                } 
+                // If both swap + download
+                else if (transactionHash && downloadTxHash) {
+                    successMessage = `🎉 PURCHASE SUCCESSFUL!\n\n${swapType}\n\nSwap Transaction: ${transactionHash.substring(0, 10)}...\n\n🎵 Download Token Minted! ✅\nMint Transaction: ${downloadTxHash.substring(0, 10)}...\n\nYour download access is now available in your wallet!`;
+                }
+                // If only swap (no download)
+                else if (transactionHash) {
+                    successMessage = `🎉 PURCHASE SUCCESSFUL!\n\n${swapType}\n\nSwap Transaction: ${transactionHash.substring(0, 10)}...`;
+                    if (includeDownload) {
+                        successMessage += `\n\n💡 Download processing: Your payment included $1 for download access. Download tokens are being credited to your wallet.`;
+                    }
                 }
                 
                 alert(successMessage);
@@ -514,14 +546,15 @@ const PurchaseFlow: React.FC<PurchaseFlowProps> = ({
                             setTimeout(() => chatInput?.focus(), 600);
                         }
                     } else {
-                        handleDollarPurchase();
+                        // Call dedicated download-only function (clean, no artistocks logic)
+                        handleDownloadOnlyPurchase();
                     }
                     }}
-                    disabled={isActionLoading && !!user}
+                    disabled={isSwapping || (isActionLoading && !!user)}
                     className={`w-full font-bold py-3 px-6 rounded-lg text-lg shadow-md transition duration-150 ease-in-out transform hover:scale-105 
                     ${!user ? 'bg-blue-600 hover:bg-blue-700' : 'bg-green-500 hover:bg-green-600'} text-white`}
                 >
-                    {isActionLoading && !!user ? 'Processing...' : 
+                    {isSwapping ? 'Processing...' : 
                     !user ? '$1.00 INCLUDES PERMANENT ACCESS (SIGN IN TO SELECT)' : `GET DOWNLOAD ($${(1).toFixed(2)})`}
                 </button>
                 </div>
@@ -760,7 +793,7 @@ const PurchaseFlow: React.FC<PurchaseFlowProps> = ({
                 <div className="text-center">
                     <button
                         onClick={handleRealSwap}
-                        disabled={isSwapping || !swapFromAmount || parseFloat(swapFromAmount) <= 0}
+                        disabled={isSwapping || (!includeDownload && (!swapFromAmount || parseFloat(swapFromAmount) <= 0))}
                         className={`w-full py-4 px-6 rounded-lg font-bold text-lg transition-all duration-200 ${
                             isSwapping 
                                 ? 'bg-gray-600 cursor-not-allowed' 

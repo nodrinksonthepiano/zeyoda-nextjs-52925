@@ -41,8 +41,12 @@ contract UupsAMM is
     uint256 public tradingFee; // 0.3% = 30 basis points
     uint256 public constant MINIMUM_LIQUIDITY = 1000;
 
-    // Storage gap for future upgrades
-    uint256[47] private __gap;
+    // V2 UPGRADE: Protocol fee collection
+    address payable public treasury;  // Protocol treasury wallet
+    uint16 public feeBps;              // Protocol fee in basis points (30 = 0.3%)
+
+    // Storage gap for future upgrades (reduced by 2 for new vars)
+    uint256[45] private __gap;
 
     // Events (match legacy)
     event PoolCreated(address indexed token, uint256 tokenAmount, uint256 ethAmount);
@@ -55,6 +59,11 @@ contract UupsAMM is
         uint256 amountIn,
         uint256 amountOut
     );
+    
+    // V2 Events
+    event ProtocolFeeCollected(address indexed payer, address indexed tokenIn, uint256 feeAmount);
+    event TreasuryUpdated(address indexed oldTreasury, address indexed newTreasury);
+    event FeeBpsUpdated(uint16 oldFeeBps, uint16 newFeeBps);
 
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
@@ -79,9 +88,47 @@ contract UupsAMM is
     }
 
     /**
+     * @dev Initialize V2 upgrade - set treasury and fee
+     * @param _treasury Protocol treasury wallet address
+     * @param _feeBps Protocol fee in basis points (30 = 0.3%)
+     */
+    function initializeV2(address payable _treasury, uint16 _feeBps) external reinitializer(2) {
+        require(_treasury != address(0), "Invalid treasury");
+        require(_feeBps <= 100, "Fee too high"); // Max 1.0% for safety
+        
+        treasury = _treasury;
+        feeBps = _feeBps;
+        
+        emit TreasuryUpdated(address(0), _treasury);
+        emit FeeBpsUpdated(0, _feeBps);
+    }
+
+    /**
      * @dev Authorize upgrade (only owner can upgrade)
      */
     function _authorizeUpgrade(address newImplementation) internal override onlyOwner {}
+
+    /**
+     * @dev Set treasury wallet address (only owner)
+     * @param _treasury New treasury wallet address
+     */
+    function setTreasury(address payable _treasury) external onlyOwner {
+        require(_treasury != address(0), "Invalid treasury");
+        address oldTreasury = treasury;
+        treasury = _treasury;
+        emit TreasuryUpdated(oldTreasury, _treasury);
+    }
+
+    /**
+     * @dev Set protocol fee in basis points (only owner)
+     * @param _feeBps New fee in basis points (max 100 = 1.0%)
+     */
+    function setFeeBps(uint16 _feeBps) external onlyOwner {
+        require(_feeBps <= 100, "Fee too high"); // Max 1.0% for safety
+        uint16 oldFeeBps = feeBps;
+        feeBps = _feeBps;
+        emit FeeBpsUpdated(oldFeeBps, _feeBps);
+    }
 
     /**
      * @dev Create a new liquidity pool for an artist token
@@ -187,10 +234,23 @@ contract UupsAMM is
         require(pool.active, "Pool not active");
         require(msg.value > 0, "Invalid ETH amount");
 
-        uint256 tokensOut = _getAmountOut(msg.value, pool.ethReserve, pool.tokenReserve);
+        // V2: Extract protocol fee FIRST
+        uint256 protocolFee = (msg.value * feeBps) / FEE_DENOMINATOR;
+        uint256 amountIn = msg.value - protocolFee;
+
+        // Transfer protocol fee to treasury immediately
+        if (protocolFee > 0 && treasury != address(0)) {
+            (bool success, ) = treasury.call{value: protocolFee}("");
+            require(success, "Fee transfer failed");
+            emit ProtocolFeeCollected(msg.sender, address(0), protocolFee);
+        }
+
+        // Calculate tokens out using NET amount (after fee extraction)
+        uint256 tokensOut = _getAmountOut(amountIn, pool.ethReserve, pool.tokenReserve);
         require(tokensOut >= minTokens, "Insufficient output amount");
 
-        pool.ethReserve += msg.value;
+        // Update reserves with NET amount only
+        pool.ethReserve += amountIn;
         pool.tokenReserve -= tokensOut;
 
         IERC20(token).safeTransfer(msg.sender, tokensOut);
@@ -213,12 +273,25 @@ contract UupsAMM is
         require(pool.active, "Pool not active");
         require(tokenAmount > 0, "Invalid token amount");
 
-        uint256 ethOut = _getAmountOut(tokenAmount, pool.tokenReserve, pool.ethReserve);
-        require(ethOut >= minEth, "Insufficient output amount");
-
+        // Transfer tokens from user first
         IERC20(token).safeTransferFrom(msg.sender, address(this), tokenAmount);
 
-        pool.tokenReserve += tokenAmount;
+        // V2: Extract protocol fee FIRST (in tokens)
+        uint256 protocolFee = (tokenAmount * feeBps) / FEE_DENOMINATOR;
+        uint256 amountIn = tokenAmount - protocolFee;
+
+        // Transfer protocol fee tokens to treasury immediately
+        if (protocolFee > 0 && treasury != address(0)) {
+            IERC20(token).safeTransfer(treasury, protocolFee);
+            emit ProtocolFeeCollected(msg.sender, token, protocolFee);
+        }
+
+        // Calculate ETH out using NET amount (after fee extraction)
+        uint256 ethOut = _getAmountOut(amountIn, pool.tokenReserve, pool.ethReserve);
+        require(ethOut >= minEth, "Insufficient output amount");
+
+        // Update reserves with NET amount only
+        pool.tokenReserve += amountIn;
         pool.ethReserve -= ethOut;
 
         payable(msg.sender).transfer(ethOut);
@@ -245,16 +318,28 @@ contract UupsAMM is
         Pool storage poolOut = pools[tokenOut];
         require(poolIn.active && poolOut.active, "Pool not active");
 
-        // First swap tokenIn to ETH
-        uint256 ethAmount = _getAmountOut(tokenAmountIn, poolIn.tokenReserve, poolIn.ethReserve);
+        // Transfer tokens from user first
+        IERC20(tokenIn).safeTransferFrom(msg.sender, address(this), tokenAmountIn);
+
+        // V2: Extract protocol fee FIRST (in tokenIn)
+        uint256 protocolFee = (tokenAmountIn * feeBps) / FEE_DENOMINATOR;
+        uint256 amountIn = tokenAmountIn - protocolFee;
+
+        // Transfer protocol fee tokens to treasury immediately
+        if (protocolFee > 0 && treasury != address(0)) {
+            IERC20(tokenIn).safeTransfer(treasury, protocolFee);
+            emit ProtocolFeeCollected(msg.sender, tokenIn, protocolFee);
+        }
+
+        // First swap tokenIn to ETH (using NET amount)
+        uint256 ethAmount = _getAmountOut(amountIn, poolIn.tokenReserve, poolIn.ethReserve);
         
         // Then swap ETH to tokenOut
         uint256 tokensOut = _getAmountOut(ethAmount, poolOut.ethReserve, poolOut.tokenReserve);
         require(tokensOut >= minTokensOut, "Insufficient output amount");
 
-        IERC20(tokenIn).safeTransferFrom(msg.sender, address(this), tokenAmountIn);
-
-        poolIn.tokenReserve += tokenAmountIn;
+        // Update reserves with NET amount
+        poolIn.tokenReserve += amountIn;
         poolIn.ethReserve -= ethAmount;
         poolOut.ethReserve += ethAmount;
         poolOut.tokenReserve -= tokensOut;

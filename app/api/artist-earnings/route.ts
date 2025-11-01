@@ -20,15 +20,20 @@ const SWAP_ABI = [
 ];
 
 // Calculate LP withdrawable amount (99.7% of pool USD value)
-async function calculateLPWithdrawable(artistId: string, tokenAddress: string): Promise<number> {
+async function calculateLPWithdrawable(artistId: string, tokenAddress: string, swapAddress: string): Promise<number> {
   try {
-    if (!tokenAddress) return 0;
+    if (!tokenAddress || !swapAddress) {
+      console.log(`  ⚠️ Missing tokenAddress or swapAddress for ${artistId}`);
+      return 0;
+    }
     
     console.log(`💎 Calculating LP withdrawable for ${artistId}...`);
+    console.log(`   Token: ${tokenAddress}`);
+    console.log(`   AMM: ${swapAddress}`);
     
     // Setup provider and contract
     const provider = new ethers.JsonRpcProvider(process.env.BASE_SEPOLIA_RPC_URL);
-    const swapContract = new ethers.Contract(SWAP_CONTRACT_ADDRESS, SWAP_ABI, provider);
+    const swapContract = new ethers.Contract(swapAddress, SWAP_ABI, provider);
     
     // Get pool reserves
     const pool = await swapContract.getPool(tokenAddress);
@@ -153,15 +158,21 @@ export async function GET(request: NextRequest) {
       createdAt: earning.created_at
     }));
     
-    // Get token address for LP calculation
-    const { data: registry, error: registryError } = await supabaseAdmin
-      .from('artist_registry')
-      .select('token')
+    // Get contract addresses from artists table (includes swap_address for UUPS artists)
+    const { data: artistContracts, error: contractError } = await supabaseAdmin
+      .from('artists')
+      .select('contract, swap_address')
       .eq('id', artistId)
       .single();
     
+    if (contractError || !artistContracts?.contract) {
+      console.warn(`⚠️ Could not fetch contract addresses for ${artistId}:`, contractError);
+    }
+    
     // Calculate LP withdrawable amount (99.7% of pool value)
-    const lpWithdrawable = registry?.token ? await calculateLPWithdrawable(artistId, registry.token) : 0;
+    const lpWithdrawable = (artistContracts?.contract && artistContracts?.swap_address) 
+      ? await calculateLPWithdrawable(artistId, artistContracts.contract, artistContracts.swap_address) 
+      : 0;
     
     // Calculate additional metrics
     const totalEarnings = artist.total_earnings_usd || 0;

@@ -893,8 +893,13 @@ const Wallet: React.FC<WalletProps> = ({
                 </div>
                 {!treasuryLoading && treasuryEarnings && showUsdBalance && (
                   <div className="text-yellow-200 text-xs mt-1">
-                    <div>Downloads: ${treasuryEarnings.downloadFeesUsd.toFixed(4)} • Swaps: ${treasuryEarnings.swapFeesUsd.toFixed(4)}</div>
-                    <div>{treasuryEarnings.totalTransactions} transactions • 0.3% protocol fee</div>
+                    <div>Swap Fees: ${treasuryEarnings.swapFeesUsd.toFixed(4)}</div>
+                    {treasuryEarnings.totalTransactions > 0 && (
+                      <div>{treasuryEarnings.totalTransactions} transactions • 0.3% protocol fee</div>
+                    )}
+                    {treasuryEarnings.totalTransactions === 0 && (
+                      <div>0.3% protocol fee on all swaps</div>
+                    )}
                   </div>
                 )}
               </div>

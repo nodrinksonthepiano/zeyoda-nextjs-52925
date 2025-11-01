@@ -1427,21 +1427,6 @@ const ArtistPageContent: React.FC<{
     setIncludeDownload(e.target.checked);
   };
 
-  const handleDollarPurchase = async () => {
-    if (!artistConfig || !magic) return;
-    setIsActionLoading(true);
-    showToast("Preparing transaction...", "info");
-    try {
-      await new Promise(res => setTimeout(res, 1500));
-      showToast("This flow is for demonstration only.", "success");
-    } catch (error) {
-      console.error("Dollar purchase error:", error);
-      showToast(error instanceof Error ? error.message : "An unknown error occurred.", "error");
-    } finally {
-      setIsActionLoading(false);
-    }
-  };
-
   // Initialize swapToAsset when artistConfig loads or FROM asset changes
   useEffect(() => {
     if (artistConfig) {
@@ -2063,7 +2048,6 @@ const ArtistPageContent: React.FC<{
               handleIncludeDownloadChange={handleIncludeDownloadChange}
               totalPurchasePrice={totalPurchasePrice}
               handlePreviewSwap={handlePreviewSwap}
-              handleDollarPurchase={handleDollarPurchase}
               setShakeActive={setShakeActive}
               swapToAmount={swapToAmount}
             />
