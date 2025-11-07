@@ -18,6 +18,15 @@ if (!deployerPrivateKey || !rpcUrl) {
 const serviceSupabase = createClient(supabaseUrl, supabaseServiceRoleKey);
 
 export async function POST(request: NextRequest) {
+  // SECURITY: Endpoint disabled pending security hardening
+  // This endpoint was vulnerable to mainnet transactions and lacked network guards
+  return NextResponse.json({ 
+    error: 'Endpoint disabled for security. Contact administrator.',
+    funded: false 
+  }, { status: 403 });
+  
+  // Original implementation below (disabled):
+  /*
   console.log('💰 Wallet funding API called...');
   
   try {
@@ -124,4 +133,5 @@ export async function POST(request: NextRequest) {
       funded: false 
     }, { status: 500 });
   }
+  */
 }
