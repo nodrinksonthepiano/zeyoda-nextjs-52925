@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { ethers, keccak256, toUtf8Bytes } from 'ethers';
+import { createGuardedSigner } from '@/app/utils/guardedSigner';
 import { ArtistDownloadsUUPSABI } from '../../../utils/abis/ArtistDownloadsUUPSABI';
+import { requireSecret, rateLimit, logInfo, logError } from '@/app/utils/apiGuard';
 
 // Supabase admin client (service role for database access)
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
@@ -57,7 +59,7 @@ async function getCachedETHPrice(): Promise<number> {
       return ethPrice;
     }
   } catch (error) {
-    console.warn('⚠️  Failed to fetch ETH price, using fallback:', error);
+    logError('⚠️  Failed to fetch ETH price, using fallback:', error);
   }
   
   // Fallback price
@@ -164,7 +166,7 @@ async function logGasSponsorship(
     });
   
   if (error) {
-    console.error('❌ Failed to log gas sponsorship:', error);
+    logError('❌ Failed to log gas sponsorship:', error);
   }
 }
 
@@ -199,7 +201,7 @@ async function logPurchase(
     });
   
   if (error) {
-    console.error('❌ Failed to log purchase:', error);
+    logError('❌ Failed to log purchase:', error);
     // Don't throw - logging failure shouldn't fail purchase
   }
 }
@@ -216,7 +218,37 @@ async function getUserAddressFromSession(request: NextRequest): Promise<string |
 }
 
 export async function POST(request: NextRequest) {
-  console.log('🛒 Purchase API called...');
+  // Security guards: secret header + rate limit - INLINE CHECK
+  console.error('[GUARD] Route handler called');
+  const expectedSecret = process.env.INTERNAL_API_SECRET;
+  const gotSecret = request.headers.get('x-internal-secret') ?? '';
+  
+  console.error('[GUARD] Expected exists:', !!expectedSecret);
+  console.error('[GUARD] Got header:', !!gotSecret);
+  console.error('[GUARD] Match:', gotSecret === expectedSecret);
+  
+  if (!expectedSecret) {
+    console.error('[GUARD] BLOCKING: Secret not configured');
+    return NextResponse.json(
+      { error: 'Server misconfigured: INTERNAL_API_SECRET missing' },
+      { status: 500 }
+    );
+  }
+  
+  if (gotSecret !== expectedSecret) {
+    console.error('[GUARD] BLOCKING: Header mismatch');
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+  
+  console.error('[GUARD] ALLOWING: Secret matches');
+  
+  // Guard passed, continue with rate limit
+  
+  // Note: This route already has its own rate limiting, but we'll use the unified one
+  const rl = rateLimit(request, 'purchase-1155', 10, 60_000); // 10/min per IP
+  if (rl) return rl;
+  
+  logInfo('🛒 Purchase API called...');
   
   try {
     const body = await request.json();
@@ -238,16 +270,7 @@ export async function POST(request: NextRequest) {
       );
     }
     
-    console.log('📋 Purchase details:', { artistId, assetNumber, quantity, userAddress });
-    
-    // Rate limiting
-    const clientIP = getClientIP(request);
-    if (!checkRateLimit(clientIP)) {
-      return NextResponse.json(
-        { error: 'Rate limit exceeded. Please try again in a minute.', code: 'RATE_LIMIT', retryable: true },
-        { status: 429 }
-      );
-    }
+    logInfo('📋 Purchase details:', { artistId, assetNumber, quantity, userAddress });
     
     // 1. Fetch asset price from database
     const { data: asset, error: assetError } = await supabase
@@ -258,14 +281,14 @@ export async function POST(request: NextRequest) {
       .single();
     
     if (assetError || !asset) {
-      console.error('❌ Asset not found:', assetError);
+      logError('❌ Asset not found:', assetError);
       return NextResponse.json(
         { error: 'Asset not found' },
         { status: 404 }
       );
     }
     
-    console.log('💰 Asset price:', asset.price_usd, 'USD');
+    logInfo('💰 Asset price:', asset.price_usd, 'USD');
     
     // 2. Fetch downloads contract address from artists table
     const { data: artistData, error: artistError } = await supabase
@@ -275,18 +298,18 @@ export async function POST(request: NextRequest) {
       .single();
     
     if (artistError || !artistData?.download_address) {
-      console.error('❌ Downloads contract not found:', artistError);
+      logError('❌ Downloads contract not found:', artistError);
       return NextResponse.json(
         { error: 'Downloads contract not found for this artist' },
         { status: 404 }
       );
     }
     
-    console.log('📝 Downloads contract:', artistData.download_address);
+    logInfo('📝 Downloads contract:', artistData.download_address);
     
     // 3. Enforce free mint caps if price is 0
     if (asset.price_usd === 0) {
-      console.log('🎁 Free download - checking caps...');
+      logInfo('🎁 Free download - checking caps...');
       try {
         await enforceFreeMintsystemCaps(userAddress, artistId);
       } catch (capError: any) {
@@ -308,7 +331,7 @@ export async function POST(request: NextRequest) {
       const priceWeiNumber = Math.floor(priceETH * 1e18);
       priceWei = BigInt(priceWeiNumber);
       
-      console.log(`💱 Price conversion: $${asset.price_usd} → ${priceETH.toFixed(8)} ETH → ${priceWei.toString()} wei`);
+      logInfo(`💱 Price conversion: $${asset.price_usd} → ${priceETH.toFixed(8)} ETH → ${priceWei.toString()} wei`);
     }
     
     // Generate request hash for idempotency
@@ -318,7 +341,7 @@ export async function POST(request: NextRequest) {
     // Check for duplicate purchase
     const duplicateCheck = await checkDuplicatePurchase(requestHash);
     if (duplicateCheck.exists) {
-      console.log('🔄 Duplicate purchase detected, returning existing tx:', duplicateCheck.txHash);
+      logInfo('🔄 Duplicate purchase detected, returning existing tx:', duplicateCheck.txHash);
       return NextResponse.json({
         success: true,
         txHash: duplicateCheck.txHash,
@@ -328,21 +351,30 @@ export async function POST(request: NextRequest) {
       });
     }
     
-    // 5. Set up blockchain provider and signer
-    const rpcUrl = process.env.BASE_SEPOLIA_RPC_URL || 'https://sepolia.base.org';
-    const provider = new ethers.JsonRpcProvider(rpcUrl);
-    
+    // 5. Set up guarded blockchain signer (enforces Base Sepolia network)
+    const rpcUrl = process.env.SERVER_BASE_SEPOLIA_RPC_URL;
     const serverPrivateKey = process.env.MINTER_PRIVATE_KEY;
+    
     if (!serverPrivateKey) {
-      console.error('❌ MINTER_PRIVATE_KEY not configured');
+      logError('❌ MINTER_PRIVATE_KEY not configured');
       return NextResponse.json(
         { error: 'Server configuration error' },
         { status: 500 }
       );
     }
     
-    const signer = new ethers.Wallet(serverPrivateKey, provider);
-    console.log('🔑 Server signer:', signer.address);
+    if (!rpcUrl) {
+      logError('❌ SERVER_BASE_SEPOLIA_RPC_URL not configured');
+      return NextResponse.json(
+        { error: 'Server configuration error: RPC URL missing' },
+        { status: 500 }
+      );
+    }
+    
+    // Create guarded signer (verifies network is Base Sepolia before proceeding)
+    const signer = await createGuardedSigner(serverPrivateKey, rpcUrl);
+    
+    logInfo('🔑 Server signer:', signer.address);
     
     // 6. Create contract instance
     const downloadsContract = new ethers.Contract(
@@ -352,11 +384,11 @@ export async function POST(request: NextRequest) {
     );
     
     // 7. Call buyFor() - server pays gas, artist receives payment
-    console.log('⛽ Calling buyFor() - server sponsors gas...');
-    console.log(`   Recipient: ${userAddress}`);
-    console.log(`   Token ID: ${assetNumber}`);
-    console.log(`   Quantity: ${quantity}`);
-    console.log(`   Payment: ${ethers.formatEther(priceWei)} ETH`);
+    logInfo('⛽ Calling buyFor() - server sponsors gas...');
+    logInfo(`   Recipient: ${userAddress}`);
+    logInfo(`   Token ID: ${assetNumber}`);
+    logInfo(`   Quantity: ${quantity}`);
+    logInfo(`   Payment: ${ethers.formatEther(priceWei)} ETH`);
     
     const tx = await downloadsContract.buyFor(
       userAddress,
@@ -368,22 +400,22 @@ export async function POST(request: NextRequest) {
       }
     );
     
-    console.log('📡 Transaction sent:', tx.hash);
-    console.log('⏳ Waiting for confirmation...');
+    logInfo('📡 Transaction sent:', tx.hash);
+    logInfo('⏳ Waiting for confirmation...');
     
     const receipt = await tx.wait();
     
     if (!receipt || receipt.status !== 1) {
-      console.error('❌ Transaction failed:', receipt);
+      logError('❌ Transaction failed:', receipt);
       return NextResponse.json(
         { error: 'Transaction failed on-chain' },
         { status: 500 }
       );
     }
     
-    console.log('✅ Transaction confirmed!');
-    console.log(`   Gas used: ${receipt.gasUsed.toString()}`);
-    console.log(`   Block: ${receipt.blockNumber}`);
+    logInfo('✅ Transaction confirmed!');
+    logInfo(`   Gas used: ${receipt.gasUsed.toString()}`);
+    logInfo(`   Block: ${receipt.blockNumber}`);
     
     // 8. Log purchase and gas sponsorship
     const gasCostWei = receipt.gasUsed * (receipt.gasPrice || 0n);
@@ -407,12 +439,12 @@ export async function POST(request: NextRequest) {
     // 9. Verify NFT was minted (optional sanity check)
     try {
       const balance = await downloadsContract.balanceOf(userAddress, assetNumber);
-      console.log(`✅ User balance of token #${assetNumber}: ${balance.toString()}`);
+      logInfo(`✅ User balance of token #${assetNumber}: ${balance.toString()}`);
     } catch (e) {
-      console.warn('⚠️  Could not verify balance:', e);
+      logError('⚠️  Could not verify balance:', e);
     }
     
-    console.log('🎉 Purchase complete!\n');
+    logInfo('🎉 Purchase complete!\n');
     
     // Return success
     return NextResponse.json({
@@ -426,7 +458,7 @@ export async function POST(request: NextRequest) {
     });
     
   } catch (error: any) {
-    console.error('❌ Purchase failed:', error);
+    logError('❌ Purchase failed:', error);
     
     // Handle structured errors
     let errorMessage = 'Purchase failed';
