@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { ethers } from 'ethers';
+import { requireSecret, rateLimit } from '@/app/utils/apiGuard';
+import { createGuardedProvider, createGuardedSigner } from '@/app/utils/guardedSigner';
 
 // Use service role key to bypass RLS
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
@@ -35,6 +37,13 @@ export async function GET() {
 }
 
 export async function POST(request: NextRequest) {
+  // Security guards: secret header + rate limit (stricter for withdrawals)
+  const secretCheck = requireSecret(request);
+  if (secretCheck) return secretCheck;
+  
+  const rl = rateLimit(request, 'lp-withdraw', 5, 60_000); // 5/min per IP (stricter)
+  if (rl) return rl;
+  
   try {
     const { artistId, percent = 100 }: WithdrawRequest = await request.json();
     
@@ -98,9 +107,19 @@ export async function POST(request: NextRequest) {
     const tokenAddress = registry.token;
     console.log('🪙 Token for withdrawal:', tokenAddress.slice(0, 8) + '...');
 
-    // Setup provider and contracts
-    const provider = new ethers.JsonRpcProvider(process.env.BASE_SEPOLIA_RPC_URL);
-    const custodyWallet = new ethers.Wallet(process.env.MINTER_PRIVATE_KEY!, provider);
+    // Setup guarded provider and signer (enforces Base Sepolia network)
+    const rpcUrl = process.env.SERVER_BASE_SEPOLIA_RPC_URL;
+    const serverPrivateKey = process.env.MINTER_PRIVATE_KEY;
+    
+    if (!rpcUrl || !serverPrivateKey) {
+      return NextResponse.json(
+        { error: 'Server configuration error: SERVER_BASE_SEPOLIA_RPC_URL or MINTER_PRIVATE_KEY missing' },
+        { status: 500 }
+      );
+    }
+    
+    const provider = await createGuardedProvider(rpcUrl);
+    const custodyWallet = await createGuardedSigner(serverPrivateKey, rpcUrl);
     const swapContract = new ethers.Contract(SWAP_CONTRACT_ADDRESS, SWAP_ABI, custodyWallet);
 
     console.log('🔑 Using custody wallet:', custodyWallet.address.slice(0, 8) + '...');

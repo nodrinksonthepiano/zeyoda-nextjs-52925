@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { ethers } from 'ethers';
+import { requireSecret, rateLimit } from '@/app/utils/apiGuard';
+import { createGuardedSigner } from '@/app/utils/guardedSigner';
 
 // Use service role key to bypass RLS
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
@@ -18,6 +20,13 @@ export async function GET() {
 }
 
 export async function POST(request: NextRequest) {
+  // Security guards: secret header + rate limit
+  const secretCheck = requireSecret(request);
+  if (secretCheck) return secretCheck;
+  
+  const rl = rateLimit(request, 'mint-collectible', 10, 60_000); // 10/min per IP
+  if (rl) return rl;
+  
   try {
     const { userAddress, artistId, assetNumber } = await request.json();
     console.log('🎨 Minting collectible via API:', { artistId, assetNumber, userAddress: userAddress?.slice(0, 8) + '...' });
@@ -70,10 +79,18 @@ export async function POST(request: NextRequest) {
     
     console.log('✅ Gas budget approved, remaining:', budgetResult.remaining_budget);
     
-    // Setup provider and gas wallet (using existing MINTER_PRIVATE_KEY)
-    const provider = new ethers.JsonRpcProvider(process.env.BASE_SEPOLIA_RPC_URL);
-    const gasWallet = new ethers.Wallet(process.env.MINTER_PRIVATE_KEY!, provider);
+    // Setup guarded signer (enforces Base Sepolia network)
+    const serverPrivateKey = process.env.MINTER_PRIVATE_KEY;
+    const rpcUrl = process.env.SERVER_BASE_SEPOLIA_RPC_URL;
     
+    if (!serverPrivateKey || !rpcUrl) {
+      return NextResponse.json(
+        { error: 'Server configuration error: MINTER_PRIVATE_KEY or SERVER_BASE_SEPOLIA_RPC_URL missing' },
+        { status: 500 }
+      );
+    }
+    
+    const gasWallet = await createGuardedSigner(serverPrivateKey, rpcUrl);
     console.log('🔑 Using gas wallet:', gasWallet.address);
     
     // Contract ABI for ArtistDownloads (ERC-1155)

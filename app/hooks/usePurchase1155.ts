@@ -32,7 +32,7 @@ export function usePurchase1155() {
     setIsLoading(true);
     
     try {
-      const response = await fetch('/api/purchase/1155', {
+      const response = await fetch('/api/public/purchase1155', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -85,6 +85,7 @@ export function usePurchase1155() {
 
   return { purchaseAsset, isLoading };
 }
+
 
 
 

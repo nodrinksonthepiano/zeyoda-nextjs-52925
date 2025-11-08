@@ -119,7 +119,7 @@ const PurchaseFlow: React.FC<PurchaseFlowProps> = ({
         
         console.log('🔍 DEBUG: Purchasing download:', { artistId, user: userAddress, urlPath });
         
-        const mintResponse = await fetch('/api/purchase/1155', {
+        const mintResponse = await fetch('/api/public/purchase1155', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',

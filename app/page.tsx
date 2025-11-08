@@ -678,7 +678,7 @@ const ArtistPageContent: React.FC<{
           formData.append('description', artistData.description || 'First featured asset');
           formData.append('userAddress', artistWallet);
           
-          const uploadResponse = await fetch('/api/uploadAsset', {
+          const uploadResponse = await fetch('/api/public/uploadAsset', {
             method: 'POST',
             body: formData
           });
@@ -1024,7 +1024,7 @@ const ArtistPageContent: React.FC<{
       formData.append('description', assetData.description || '');
       formData.append('userAddress', user);
 
-      const response = await fetch('/api/uploadAsset', {
+      const response = await fetch('/api/public/uploadAsset', {
         method: 'POST',
         body: formData,
       });
@@ -1314,7 +1314,7 @@ const ArtistPageContent: React.FC<{
         showToast("Minting your collectible...", "info");
 
         // 3) Mint the collectible (gas-sponsored)
-        const mintResponse = await fetch('/api/mint-collectible', {
+        const mintResponse = await fetch('/api/public/mintCollectible', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({

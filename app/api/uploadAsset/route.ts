@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { v4 as uuidv4 } from 'uuid';
+import { requireSecret, rateLimit } from '@/app/utils/apiGuard';
+import { createGuardedSigner } from '@/app/utils/guardedSigner';
 
 // Use service role for server-side uploads
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
@@ -8,6 +10,13 @@ const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
 export async function POST(request: NextRequest) {
+  // Security guards: secret header + rate limit
+  const secretCheck = requireSecret(request);
+  if (secretCheck) return secretCheck;
+  
+  const rl = rateLimit(request, 'upload-asset', 10, 60_000); // 10/min per IP
+  if (rl) return rl;
+  
   console.log('📤 Asset upload API called...');
   
   try {
@@ -114,9 +123,9 @@ export async function POST(request: NextRequest) {
       const { ethers } = require('ethers');
       const ArtistDownloadsArtifact = require('../../../artifacts/contracts/ArtistDownloads.sol/ArtistDownloads.json');
       
-      // Get minter wallet for minting
+      // Get minter wallet for minting (using guarded signer)
       const minterPrivateKey = process.env.MINTER_PRIVATE_KEY;
-      const rpcUrl = process.env.BASE_SEPOLIA_RPC_URL;
+      const rpcUrl = process.env.SERVER_BASE_SEPOLIA_RPC_URL;
       
       if (!minterPrivateKey || !rpcUrl) {
         console.warn('⚠️ Missing deployer key or RPC URL - skipping minting');
@@ -151,9 +160,8 @@ export async function POST(request: NextRequest) {
         }, { status: 400 });
       }
       
-      // Setup provider and contract
-      const provider = new ethers.JsonRpcProvider(rpcUrl);
-      const wallet = new ethers.Wallet(minterPrivateKey, provider);
+      // Setup guarded signer (enforces Base Sepolia network)
+      const wallet = await createGuardedSigner(minterPrivateKey, rpcUrl);
       const contract = new ethers.Contract(artistData.download_address, ArtistDownloadsArtifact.abi, wallet);
       
       // Check if already minted (idempotency)

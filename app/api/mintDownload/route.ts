@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { ethers } from 'ethers';
 import { getArtistContracts } from '../../utils/addressRegistryFallback';
+import { requireSecret, rateLimit } from '@/app/utils/apiGuard';
+import { createGuardedProvider, createGuardedSigner } from '@/app/utils/guardedSigner';
 
 // ERC-1155 ABI for minting download tokens
 const DOWNLOAD_CONTRACT_ABI = [
@@ -8,13 +10,6 @@ const DOWNLOAD_CONTRACT_ABI = [
   "function balanceOf(address owner, uint256 id) view returns (uint256)",
   "function owner() view returns (address)"
 ];
-
-// RPC provider for contract calls
-const provider = new ethers.JsonRpcProvider(process.env.NEXT_PUBLIC_RPC, {
-  chainId: 84532,
-  name: "base-sepolia",
-  ensAddress: null // Disable ENS
-});
 
 interface MintRequest {
   artistId: string;
@@ -25,7 +20,25 @@ interface MintRequest {
 }
 
 export async function POST(request: NextRequest) {
+  // Security guards: secret header + rate limit
+  const secretCheck = requireSecret(request);
+  if (secretCheck) return secretCheck;
+  
+  const rl = rateLimit(request, 'mint-download', 10, 60_000); // 10/min per IP
+  if (rl) return rl;
+  
   console.log('📨 Mint API called - starting request processing...');
+  
+  // Create guarded provider for read operations (enforces Base Sepolia)
+  const rpcUrl = process.env.SERVER_BASE_SEPOLIA_RPC_URL;
+  if (!rpcUrl) {
+    return NextResponse.json(
+      { error: 'Server configuration error: SERVER_BASE_SEPOLIA_RPC_URL missing' },
+      { status: 500 }
+    );
+  }
+  
+  const provider = await createGuardedProvider(rpcUrl);
   
   try {
     const body: MintRequest = await request.json();
@@ -97,7 +110,7 @@ export async function POST(request: NextRequest) {
         console.log(`🔍 Transaction lookup attempt ${verificationAttempts + 1}:`, {
           found: !!tx,
           txHash,
-          network: process.env.NEXT_PUBLIC_RPC
+          network: 'Base Sepolia (guarded)'
         });
         
         if (!tx) {
@@ -246,8 +259,8 @@ export async function POST(request: NextRequest) {
     
     console.log('🔑 Environment configured, creating signer...');
     
-    // 4. Create signer and contract instance
-    const ownerWallet = new ethers.Wallet(ownerPrivateKey, provider);
+    // 4. Create guarded signer and contract instance (enforces Base Sepolia)
+    const ownerWallet = await createGuardedSigner(ownerPrivateKey, rpcUrl);
     const downloadContract = new ethers.Contract(
       artistContracts.downloads,
       DOWNLOAD_CONTRACT_ABI,
@@ -429,6 +442,16 @@ export async function GET(request: NextRequest) {
   }
   
   try {
+    // Create guarded provider for read operations (enforces Base Sepolia)
+    const rpcUrl = process.env.SERVER_BASE_SEPOLIA_RPC_URL;
+    if (!rpcUrl) {
+      return NextResponse.json(
+        { error: 'Server configuration error: SERVER_BASE_SEPOLIA_RPC_URL missing' },
+        { status: 500 }
+      );
+    }
+    
+    const provider = await createGuardedProvider(rpcUrl);
     const downloadContract = new ethers.Contract(
       artistContracts.downloads,
       DOWNLOAD_CONTRACT_ABI,

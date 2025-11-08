@@ -252,7 +252,7 @@ const Wallet: React.FC<WalletProps> = ({
       console.log('💎 Starting LP withdrawal:', { artistId: ownedArtistId, percent: lpPct });
       showToast(`Withdrawing ${lpPct}% of LP position...`, 'info');
 
-      const response = await fetch('/api/lp/withdraw', {
+      const response = await fetch('/api/public/lpWithdraw', {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',
