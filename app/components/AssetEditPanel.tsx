@@ -13,9 +13,10 @@ interface AssetEditPanelProps {
   };
   onSave: (data: { title: string; description: string; price: number }) => void;
   onCancel: () => void;
+  shakeActive?: boolean;
 }
 
-export default function AssetEditPanel({ asset, onSave, onCancel }: AssetEditPanelProps) {
+export default function AssetEditPanel({ asset, onSave, onCancel, shakeActive = false }: AssetEditPanelProps) {
   const [formData, setFormData] = useState({
     title: asset.title || asset.metadata?.title || '',
     description: asset.metadata?.description || asset.metadata?.desc || '',
@@ -32,7 +33,7 @@ export default function AssetEditPanel({ asset, onSave, onCancel }: AssetEditPan
 
   return (
     <div 
-      className="onboarding-panel bg-gray-800 bg-opacity-90 rounded-lg p-6 mt-8 max-w-xl mx-auto backdrop-blur-sm border border-gray-600" 
+      className={`onboarding-panel bg-gray-800 bg-opacity-90 rounded-lg p-6 mt-8 max-w-xl mx-auto backdrop-blur-sm border border-gray-600 ${shakeActive ? 'shake' : ''}`}
       style={{
         background: 'linear-gradient(135deg, rgba(30, 41, 59, 0.95) 0%, rgba(51, 65, 85, 0.95) 100%)',
         boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.8)'
@@ -51,7 +52,7 @@ export default function AssetEditPanel({ asset, onSave, onCancel }: AssetEditPan
           color: '#F9FAFB',
           margin: 0
         }}>
-          Edit Asset #{asset.assetNumber}
+          Edit Asset
         </h2>
         <button
           onClick={onCancel}

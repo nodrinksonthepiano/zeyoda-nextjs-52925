@@ -2,11 +2,16 @@ import { ArtistConfig } from '../../types/artist-types';
 
 /**
  * Get the download price for an artist's featured asset
- * @param artistConfig - The artist configuration object
- * @returns The download price in USD (defaults to $1)
+ * @param featuredAsset - The featured asset object with price_usd property
+ * @returns The download price in USD (defaults to $5)
  */
-export const getDownloadPrice = (artistConfig: ArtistConfig | null): number => {
-  return 1; // TODO: Add downloadPrice to ArtistConfig type
+export const getDownloadPrice = (featuredAsset?: any): number => {
+  // Ensure price_usd is a number, default to 5 if missing/null/undefined
+  const price = featuredAsset?.price_usd;
+  if (typeof price === 'number' && price >= 0) {
+    return price;
+  }
+  return 5; // Default to $5 instead of $1
 };
 
 /**
@@ -26,11 +31,11 @@ export const isDownloadAvailable = (
 
 /**
  * Format download price for display
- * @param artistConfig - The artist configuration object
- * @returns Formatted price string (e.g., "$1")
+ * @param featuredAsset - The featured asset object with price_usd property
+ * @returns Formatted price string (e.g., "$5.00")
  */
-export const formatDownloadPrice = (artistConfig: ArtistConfig | null): string => {
-  return `$${getDownloadPrice(artistConfig)}`;
+export const formatDownloadPrice = (featuredAsset?: any): string => {
+  return `$${getDownloadPrice(featuredAsset).toFixed(2)}`;
 };
 
 /**

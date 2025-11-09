@@ -226,7 +226,7 @@ const ArtistPageContent: React.FC<{
   const featuredForPurchaseFlow = React.useMemo(() => {
     if (selectedAsset) {
       return {
-        price_usd: selectedAsset.priceUSD ?? 1,
+        price_usd: selectedAsset.priceUSD ?? 5,
         file_url: selectedAsset.url,
         file_type: selectedAsset.type === 'video' ? 'video/mp4' : 'image/jpeg',
         asset_number: selectedAsset.assetNumber
@@ -264,6 +264,7 @@ const ArtistPageContent: React.FC<{
 
   const [isMuted, setIsMuted] = useState(true);
   const [shakeActive, setShakeActive] = useState(false);
+  const [editPanelShakeActive, setEditPanelShakeActive] = useState(false);
   const [showPurchaseModal, setShowPurchaseModal] = useState(false);
   const [userTokenBalances, setUserTokenBalances] = useState<UserTokenBalances>({});
   const [hasPurchasedDownload, setHasPurchasedDownload] = useState<boolean>(false);
@@ -305,6 +306,7 @@ const ArtistPageContent: React.FC<{
 
   const videoContainerRef = useRef<HTMLDivElement>(null);
   const isOrbitAnimationPaused = useRef(false);
+  const lastShakeRequestRef = useRef<number>(0);
 
   // File upload handlers
   const [filePreviewUrl, setFilePreviewUrl] = useState<string | null>(null);
@@ -1225,7 +1227,7 @@ const ArtistPageContent: React.FC<{
     
     // Only add download cost if checkbox is checked and not already purchased
     if (includeDownload && !hasPurchasedDownload) {
-      const downloadPrice = featuredAsset?.price_usd || 1;
+      const downloadPrice = featuredAsset?.price_usd || 5;
       calculatedTotal += downloadPrice;
     }
     
@@ -1980,6 +1982,16 @@ const ArtistPageContent: React.FC<{
                               setEditingAsset(asset);
                               setAppMode('edit-asset');
                             }}
+                            disabled={appMode === 'edit-asset'}
+                            onShakeRequest={() => {
+                              const now = Date.now();
+                              // Debounce: only shake if last shake was more than 1500ms ago (reduced frequency)
+                              if (now - lastShakeRequestRef.current > 1500) {
+                                lastShakeRequestRef.current = now;
+                                setEditPanelShakeActive(true);
+                                setTimeout(() => setEditPanelShakeActive(false), 500);
+                              }
+                            }}
                           />
                           <ThemeOrbitRenderer
                             artistConfig={artistConfig}
@@ -2172,6 +2184,7 @@ const ArtistPageContent: React.FC<{
                 setAppMode('normal');
                 setEditingAsset(null);
               }}
+              shakeActive={editPanelShakeActive}
             />
           )}
 

@@ -15,6 +15,8 @@ type Props = {
   treasuryWallet?: string | null;
   currentUser?: string | null;
   onEditAsset?: (asset: ArtistAsset) => void;
+  disabled?: boolean;
+  onShakeRequest?: () => void;
 };
 
 const THRESHOLD_PX = 80;           // drag distance to reach full progress
@@ -48,7 +50,7 @@ function softCapProgress(raw: number): number {
   return sign * eased;
 }
 
-export const OrbitPeekCarousel: React.FC<Props> = ({ items, index, onIndexChange, containerRef, peekPercent = 10, theme, artistId, treasuryWallet, currentUser, onEditAsset }) => {
+export const OrbitPeekCarousel: React.FC<Props> = ({ items, index, onIndexChange, containerRef, peekPercent = 10, theme, artistId, treasuryWallet, currentUser, onEditAsset, disabled = false, onShakeRequest }) => {
   // Attach the provided containerRef so ThemeOrbitRenderer can measure the same element
   const internalRootRef = useRef<HTMLDivElement | null>(null);
   const rootRef = (containerRef as any) || internalRootRef;
@@ -492,6 +494,10 @@ export const OrbitPeekCarousel: React.FC<Props> = ({ items, index, onIndexChange
   }, []);
 
   const onTouchStart = useCallback((e: TouchEvent) => {
+    if (disabled) {
+      if (onShakeRequest) onShakeRequest();
+      return;
+    }
     if (controlOwnerRef.current) return; // a control owns the gesture
     if (snappingRef.current || count <= 1) return;
     // Defer capturing until movement proves intent (prevents page-scroll from updating progress)
@@ -508,9 +514,12 @@ export const OrbitPeekCarousel: React.FC<Props> = ({ items, index, onIndexChange
     intentDirRef.current = 0;
     lockBodyScroll();
     dirtyRef.current = true; startLoop();
-  }, [startLoop]);
+  }, [disabled, onShakeRequest, startLoop]);
 
   const onTouchMove = useCallback((e: TouchEvent) => {
+    if (disabled) {
+      return; // Don't trigger shake on move, only on start
+    }
     if (controlOwnerRef.current) return; // ignore while interacting with controls
     if (count <= 1) return;
     if (snappingRef.current || snapLockRef.current || stabilizingRef.current || !isVisibleRef.current) return;
@@ -554,7 +563,7 @@ export const OrbitPeekCarousel: React.FC<Props> = ({ items, index, onIndexChange
     progressRef.current = nextP; dirtyRef.current = true; startLoop();
     // reset idle snap fallback while moving
     if (idleSnapTimerRef.current) { window.clearTimeout(idleSnapTimerRef.current); idleSnapTimerRef.current = null; }
-  }, [startLoop]);
+  }, [disabled, onShakeRequest, startLoop]);
 
   const endDrag = useCallback(async (allowFlip: boolean) => {
     if (count <= 1) { progressRef.current = 0; dirtyRef.current = true; startLoop(); return; }
@@ -650,6 +659,12 @@ export const OrbitPeekCarousel: React.FC<Props> = ({ items, index, onIndexChange
   }, [count, onIndexChange, startLoop, waitForItemReady]);
 
   const onWheel = useCallback((e: WheelEvent) => {
+    if (disabled) {
+      if (onShakeRequest) onShakeRequest();
+      e.preventDefault();
+      e.stopPropagation();
+      return;
+    }
     if (controlOwnerRef.current) return; // ignore while interacting with description or controls
     if (count <= 1) { e.preventDefault(); return; }
     if (snappingRef.current || snapLockRef.current || stabilizingRef.current || !isVisibleRef.current) { e.preventDefault(); e.stopPropagation(); return; }
@@ -686,7 +701,7 @@ export const OrbitPeekCarousel: React.FC<Props> = ({ items, index, onIndexChange
       }
       wheelDragActiveRef.current = false; unlockBodyScroll();
     }, 100) as unknown as number;
-  }, [endDrag, startLoop]);
+  }, [disabled, onShakeRequest, endDrag, startLoop]);
 
   useEffect(() => {
     const root = (rootRef as React.RefObject<HTMLDivElement>).current;
@@ -1348,7 +1363,7 @@ export const OrbitPeekCarousel: React.FC<Props> = ({ items, index, onIndexChange
   }), []);
 
   return (
-    <div ref={rootRef as any} aria-roledescription="carousel" aria-label="Artist content" style={containerStyle}
+    <div ref={rootRef as any} aria-roledescription="carousel" aria-label="Artist content" aria-disabled={disabled} style={containerStyle}
       onMouseEnter={(e) => { setShowHeroOverlay(true); if (overlayHideTimerRef.current) window.clearTimeout(overlayHideTimerRef.current); overlayHideTimerRef.current = window.setTimeout(()=>setShowHeroOverlay(false), 4000) as unknown as number; }}
       onMouseLeave={() => { if (overlayHideTimerRef.current) window.clearTimeout(overlayHideTimerRef.current); setShowHeroOverlay(false); }}
       onTouchStart={() => { setShowHeroOverlay(true); if (overlayHideTimerRef.current) window.clearTimeout(overlayHideTimerRef.current); }}

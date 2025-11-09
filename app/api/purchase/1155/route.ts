@@ -171,6 +171,55 @@ async function logGasSponsorship(
 }
 
 /**
+ * Record sale to artist_earnings table (for wallet display)
+ */
+async function recordSale(
+  artistId: string,
+  userAddress: string,
+  assetId: number,
+  priceUSD: number,
+  externalId: string,
+  txHash: string
+): Promise<void> {
+  try {
+    const protocolFee = priceUSD * 0.003; // 0.3% protocol fee
+    
+    // Get client IP for rate limiting (use a default since we don't have request here)
+    const ipHash = 'purchase1155-api'; // Simplified for this context
+    
+    // Call record_artist_sale RPC function
+    const { error: saleError } = await supabase.rpc('record_artist_sale', {
+      p_artist_id: artistId,
+      p_buyer_address: userAddress.toLowerCase(),
+      p_asset_id: assetId,
+      p_gross_amount: priceUSD,
+      p_protocol_fee: protocolFee,
+      p_payment_method: 'eth_balance',
+      p_processor_fee: 0,
+      p_source: 'eth',
+      p_external_id: externalId,
+      p_ip_hash: ipHash
+    });
+    
+    if (saleError) {
+      // Handle duplicate external_id (idempotency - don't fail purchase)
+      if (saleError.code === '23505' || saleError.message?.includes('duplicate')) {
+        logInfo('⚠️ Duplicate sale detected (idempotency):', externalId);
+        return; // Don't throw - sale already recorded
+      }
+      
+      logError('❌ Failed to record sale:', saleError);
+      // Don't throw - sale recording failure shouldn't fail purchase
+    } else {
+      logInfo('✅ Sale recorded to artist_earnings:', { artistId, priceUSD, txHash });
+    }
+  } catch (error: any) {
+    logError('❌ Error recording sale:', error);
+    // Don't throw - sale recording failure shouldn't fail purchase
+  }
+}
+
+/**
  * Log purchase to artist_purchases table (idempotency + history)
  */
 async function logPurchase(
@@ -275,7 +324,7 @@ export async function POST(request: NextRequest) {
     // 1. Fetch asset price from database
     const { data: asset, error: assetError } = await supabase
       .from('artist_assets')
-      .select('price_usd, artist_id, metadata')
+      .select('id, price_usd, artist_id, metadata')
       .eq('artist_id', artistId)
       .eq('asset_number', assetNumber)
       .single();
@@ -420,6 +469,9 @@ export async function POST(request: NextRequest) {
     // 8. Log purchase and gas sponsorship
     const gasCostWei = receipt.gasUsed * (receipt.gasPrice || 0n);
     
+    // Generate external ID for sale recording (idempotency)
+    const externalId = `purchase1155-${artistId}-${assetNumber}-${userAddress.toLowerCase()}-${receipt.hash}`;
+    
     await Promise.all([
       logPurchase(
         requestHash,
@@ -433,7 +485,8 @@ export async function POST(request: NextRequest) {
         receipt.blockNumber,
         gasCostWei
       ),
-      logGasSponsorship(receipt, artistId, userAddress, priceWei, assetNumber)
+      logGasSponsorship(receipt, artistId, userAddress, priceWei, assetNumber),
+      recordSale(artistId, userAddress, asset.id, asset.price_usd, externalId, receipt.hash)
     ]);
     
     // 9. Verify NFT was minted (optional sanity check)

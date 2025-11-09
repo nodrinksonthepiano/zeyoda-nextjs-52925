@@ -8,6 +8,7 @@ import { useWallet } from './MagicProvider';
 import { useDownloadAccess } from '../hooks/useDownloadAccess';
 import { useUsdBalance } from '../contexts/UsdBalanceContext';
 import { getArtistContracts } from '../utils/addressRegistryFallback';
+import { getDownloadPrice } from '../utils/downloadUtils';
 
 // ERC-1155 ABI for minting download tokens
 const DOWNLOAD_CONTRACT_ABI = [
@@ -177,13 +178,14 @@ const PurchaseFlow: React.FC<PurchaseFlowProps> = ({
 
         setIsSwapping(true); // ← Immediate loading state
         try {
-            console.log('💰 Download-only purchase: $1.00');
+            const downloadPrice = getDownloadPrice(featuredAsset);
+            console.log(`💰 Download-only purchase: $${downloadPrice.toFixed(2)}`);
             
             // Mint the download token
             const downloadTxHash = await mintDownloadToken(user);
             
             // Success feedback
-            const successMessage = `🎉 DOWNLOAD PURCHASED!\n\n✅ Payment: $1.00\n🎵 Download Token Minted!\n\nMint Transaction: ${downloadTxHash.substring(0, 10)}...\n\nYour download access is now available in your wallet!`;
+            const successMessage = `🎉 DOWNLOAD PURCHASED!\n\n✅ Payment: $${downloadPrice.toFixed(2)}\n🎵 Download Token Minted!\n\nMint Transaction: ${downloadTxHash.substring(0, 10)}...\n\nYour download access is now available in your wallet!`;
             alert(successMessage);
             
             // Refresh wallet after delay
@@ -216,7 +218,7 @@ const PurchaseFlow: React.FC<PurchaseFlowProps> = ({
             
             // Calculate total USD amount including download fee
             const baseUsdAmount = parseFloat(swapFromAmount);
-            const downloadFee = includeDownload ? 1.0 : 0.0;
+            const downloadFee = includeDownload ? getDownloadPrice(featuredAsset) : 0.0;
             const totalUsdAmount = baseUsdAmount + downloadFee;
             
             console.log('💰 Purchase breakdown:', {
@@ -420,7 +422,8 @@ const PurchaseFlow: React.FC<PurchaseFlowProps> = ({
                 
                 // If only download (no swap)
                 if (downloadTxHash && !transactionHash) {
-                    successMessage = `🎉 DOWNLOAD PURCHASED!\n\n✅ Payment: $1.00\n🎵 Download Token Minted!\n\nMint Transaction: ${downloadTxHash.substring(0, 10)}...\n\nYour download access is now available in your wallet!`;
+                    const downloadPrice = getDownloadPrice(featuredAsset);
+                    successMessage = `🎉 DOWNLOAD PURCHASED!\n\n✅ Payment: $${downloadPrice.toFixed(2)}\n🎵 Download Token Minted!\n\nMint Transaction: ${downloadTxHash.substring(0, 10)}...\n\nYour download access is now available in your wallet!`;
                 } 
                 // If both swap + download
                 else if (transactionHash && downloadTxHash) {
@@ -430,7 +433,8 @@ const PurchaseFlow: React.FC<PurchaseFlowProps> = ({
                 else if (transactionHash) {
                     successMessage = `🎉 PURCHASE SUCCESSFUL!\n\n${swapType}\n\nSwap Transaction: ${transactionHash.substring(0, 10)}...`;
                     if (includeDownload) {
-                        successMessage += `\n\n💡 Download processing: Your payment included $1 for download access. Download tokens are being credited to your wallet.`;
+                        const downloadPrice = getDownloadPrice(featuredAsset);
+                        successMessage += `\n\n💡 Download processing: Your payment included $${downloadPrice.toFixed(2)} for download access. Download tokens are being credited to your wallet.`;
                     }
                 }
                 
@@ -568,7 +572,7 @@ const PurchaseFlow: React.FC<PurchaseFlowProps> = ({
                     ${!user ? 'bg-blue-600 hover:bg-blue-700' : 'bg-green-500 hover:bg-green-600'} text-white`}
                 >
                     {isSwapping ? 'Processing...' : 
-                    !user ? '$1.00 INCLUDES PERMANENT ACCESS (SIGN IN TO SELECT)' : `GET DOWNLOAD ($${(1).toFixed(2)})`}
+                    !user ? `$${getDownloadPrice(featuredAsset).toFixed(2)} INCLUDES PERMANENT ACCESS (SIGN IN TO SELECT)` : `GET DOWNLOAD ($${getDownloadPrice(featuredAsset).toFixed(2)})`}
                 </button>
                 </div>
             )}
@@ -797,7 +801,7 @@ const PurchaseFlow: React.FC<PurchaseFlowProps> = ({
                         className="h-4 w-4 rounded border-gray-300 text-accentColor focus:ring-accentColor"
                     />
                     <label htmlFor="includeDownload" className="ml-2 block text-sm text-gray-200">
-                        Include Featured Download (${featuredAsset?.price_usd || 1}.00)
+                        {`Include Featured Download ($${getDownloadPrice(featuredAsset).toFixed(2)})`}
                     </label>
                     </div>
                 </div>
@@ -823,7 +827,7 @@ const PurchaseFlow: React.FC<PurchaseFlowProps> = ({
                             </span>
                         ) : swapFromAsset === "USD" ? (
                             includeDownload 
-                                ? `🔄 GET DOWNLOAD + ${Math.floor(parseFloat(swapToAmount || artistocksInput || '0')).toLocaleString()} ARTISTOCKS ($${(parseFloat(swapFromAmount || '0') + (featuredAsset?.price_usd || 1)).toFixed(2)})`
+                                ? `🔄 GET DOWNLOAD + ${Math.floor(parseFloat(swapToAmount || artistocksInput || '0')).toLocaleString()} ARTISTOCKS ($${(parseFloat(swapFromAmount || '0') + getDownloadPrice(featuredAsset)).toFixed(2)})`
                                 : `🔄 GET ${Math.floor(parseFloat(swapToAmount || artistocksInput || '0')).toLocaleString()} ARTISTOCKS ($${swapFromAmount || '0'})`
                         ) : (
                             // Check if swapping TO USD (cash-out)
