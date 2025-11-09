@@ -916,7 +916,7 @@ export const OrbitPeekCarousel: React.FC<Props> = ({ items, index, onIndexChange
                 {/* Title with clickable description */}
                 {(() => {
                   const desc = (asset as any).metadata?.description ?? (asset as any).metadata?.desc ?? '';
-                  const hasDescription = desc && desc !== `${asset.title} - uploaded via Zeyoda`;
+                  const hasDescription = !!desc; // Show dropdown for ANY description (default or custom)
                   
                   return (
                     <>
@@ -926,7 +926,7 @@ export const OrbitPeekCarousel: React.FC<Props> = ({ items, index, onIndexChange
                         onClick={(e) => {
                           e.preventDefault();
                           e.stopPropagation();
-                          if (hasDescription) {
+                          if (desc) {
                             setShowTitleDescription(!showTitleDescription);
                             setShowHeroOverlay(true);
                             if (overlayHideTimerRef.current) window.clearTimeout(overlayHideTimerRef.current);
@@ -935,14 +935,14 @@ export const OrbitPeekCarousel: React.FC<Props> = ({ items, index, onIndexChange
                         onTouchEnd={(e) => {
                           e.preventDefault();
                           e.stopPropagation();
-                          if (hasDescription) {
+                          if (desc) {
                             setShowTitleDescription(!showTitleDescription);
                             setShowHeroOverlay(true);
                             if (overlayHideTimerRef.current) window.clearTimeout(overlayHideTimerRef.current);
                           }
                         }}
                         onMouseEnter={() => {
-                          if (hasDescription) {
+                          if (desc) {
                             setShowHeroOverlay(true);
                             if (overlayHideTimerRef.current) window.clearTimeout(overlayHideTimerRef.current);
                           }
@@ -959,13 +959,10 @@ export const OrbitPeekCarousel: React.FC<Props> = ({ items, index, onIndexChange
                           fontSize:11, 
                           lineHeight:1.2, 
                           pointerEvents: 'auto',
-                          opacity: hasDescription ? 1 : (showHeroOverlay ? 1 : 0), 
+                          opacity: showHeroOverlay ? 1 : 0, 
                           transition:'opacity .15s ease', 
-                          whiteSpace:'nowrap', 
-                          overflow:'hidden', 
-                          textOverflow:'ellipsis',
-                          cursor: hasDescription ? 'pointer' : 'default',
-                          border: hasDescription ? '1px solid rgba(255,255,255,0.5)' : 'none',
+                          cursor: desc ? 'pointer' : 'default',
+                          border: desc ? '1px solid rgba(255,255,255,0.5)' : 'none',
                           touchAction: 'manipulation',
                           zIndex: 100
                         }} 
@@ -987,7 +984,8 @@ export const OrbitPeekCarousel: React.FC<Props> = ({ items, index, onIndexChange
                               fontSize: 10,
                               lineHeight: 1,
                               color: 'inherit',
-                              transition: 'background 0.2s ease'
+                              transition: 'background 0.2s ease',
+                              flexShrink: 0
                             }}
                             onMouseEnter={(e) => {
                               e.currentTarget.style.background = 'rgba(255,255,255,0.4)';
@@ -1000,13 +998,13 @@ export const OrbitPeekCarousel: React.FC<Props> = ({ items, index, onIndexChange
                             ✏️
                           </button>
                         )}
-                        <span style={{ fontWeight:600 }}>{asset.title || 'Untitled'}</span>
-                        {hasDescription && <span style={{ fontSize:10 }}>{showTitleDescription ? '▼' : '▲'}</span>}
+                        <span style={{ fontWeight:600, whiteSpace:'normal', display:'-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient:'vertical', overflow:'hidden', textOverflow:'ellipsis', lineHeight: 1.2, maxHeight: '2.4em', flex: 1, minWidth: 0 }}>{asset.title || 'Untitled'}</span>
+                        {desc && <span style={{ fontSize:10, flexShrink: 0 }}>{showTitleDescription ? '▼' : '▲'}</span>}
                         </button>
                       </div>
                       
                       {/* Description panel - responsive sizing, drops DOWN from title */}
-                      {showTitleDescription && hasDescription && (
+                      {showTitleDescription && desc && (
                         <div 
                           className="description-scroll-panel"
                           style={{ 
@@ -1126,7 +1124,12 @@ export const OrbitPeekCarousel: React.FC<Props> = ({ items, index, onIndexChange
       );
     }
     return (
-      <div ref={typeof itemIdx === 'number' ? setMediaWrapRef(itemIdx) : undefined} style={{ position:'relative', width:'100%', height:'100%' }}>
+      <div ref={typeof itemIdx === 'number' ? setMediaWrapRef(itemIdx) : undefined} style={{ position:'relative', width:'100%', height:'100%' }}
+        onMouseEnter={() => { setShowHeroOverlay(true); if (overlayHideTimerRef.current) window.clearTimeout(overlayHideTimerRef.current); }}
+        onMouseLeave={() => { if (overlayHideTimerRef.current) window.clearTimeout(overlayHideTimerRef.current); overlayHideTimerRef.current = window.setTimeout(()=>setShowHeroOverlay(false), 4000) as unknown as number; }}
+        onTouchStart={(e) => { setShowHeroOverlay(true); if (overlayHideTimerRef.current) window.clearTimeout(overlayHideTimerRef.current); }}
+        onTouchEnd={(e) => { if (overlayHideTimerRef.current) window.clearTimeout(overlayHideTimerRef.current); overlayHideTimerRef.current = window.setTimeout(()=>setShowHeroOverlay(false), 4000) as unknown as number; }}
+      >
         <img
           src={asset.url}
           alt={asset.title || 'Artwork'}
@@ -1142,16 +1145,181 @@ export const OrbitPeekCarousel: React.FC<Props> = ({ items, index, onIndexChange
           }}
           style={base as any}
         />
-        {isHero && (
-          <div style={{ position:'absolute', left:'var(--pad-x, 0px)', top:'calc(var(--pad-y, 0px) + var(--content-h, 100%) - 0px)', transform:'translateY(-12px)', pointerEvents:'none', transformOrigin:'left bottom' }}>
-            <div
-              style={{ position:'relative', left:12, bottom:12, display:'flex', alignItems:'center', gap:8, padding:'6px 10px', borderRadius:8, background: (theme?.primaryColor || 'rgba(0,0,0,0.6)'), color:(theme?.accentColor || '#ffffff'), fontFamily:(theme?.fontFamily || 'inherit'), fontSize:12, lineHeight:1.2, pointerEvents:'none', opacity:(showHeroOverlay ? 1 : 0), transition:'opacity .15s ease', maxWidth:'70%', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}
-              className="carousel-media-overlay"
-            >
-              <span style={{ fontWeight:600 }}>{asset.title || 'Untitled'}</span>
+        {/* Overlay box aligned to the inner picture using wrapper CSS vars */}
+        {isHero && (() => {
+          const overlayBoxStyle: React.CSSProperties = { position:'absolute', left:'var(--pad-x, 0px)', top:'var(--pad-y, 0px)', width: 'var(--content-w, 100%)', height: 'var(--content-h, 100%)', pointerEvents:'none', transform:'translateZ(1px)' };
+          return (
+            <div style={overlayBoxStyle}>
+              {/* Title with clickable description */}
+              {(() => {
+                const desc = (asset as any).metadata?.description ?? (asset as any).metadata?.desc ?? '';
+                const hasDescription = !!desc; // Show dropdown for ANY description (default or custom)
+                
+                return (
+                  <>
+                    {/* Title button - stays in same position */}
+                    <div style={{ position:'absolute', left:6, bottom:12, maxWidth:'50%', zIndex:10 }}>
+                      <button
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        if (desc) {
+                          setShowTitleDescription(!showTitleDescription);
+                          setShowHeroOverlay(true);
+                          if (overlayHideTimerRef.current) window.clearTimeout(overlayHideTimerRef.current);
+                        }
+                      }}
+                      onTouchEnd={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        if (desc) {
+                          setShowTitleDescription(!showTitleDescription);
+                          setShowHeroOverlay(true);
+                          if (overlayHideTimerRef.current) window.clearTimeout(overlayHideTimerRef.current);
+                        }
+                      }}
+                      onMouseEnter={() => {
+                        if (desc) {
+                          setShowHeroOverlay(true);
+                          if (overlayHideTimerRef.current) window.clearTimeout(overlayHideTimerRef.current);
+                        }
+                      }}
+                      style={{ 
+                        display:'flex', 
+                        alignItems:'center', 
+                        gap:4, 
+                        padding:'5px 8px', 
+                        borderRadius:6, 
+                        background: overlayBg, 
+                        color: overlayFg, 
+                        fontFamily: overlayFont, 
+                        fontSize:11, 
+                        lineHeight:1.2, 
+                        pointerEvents: 'auto',
+                        opacity: showHeroOverlay ? 1 : 0, 
+                        transition:'opacity .15s ease', 
+                        cursor: desc ? 'pointer' : 'default',
+                        border: desc ? '1px solid rgba(255,255,255,0.5)' : 'none',
+                        touchAction: 'manipulation',
+                        zIndex: 100
+                      }} 
+                      className="carousel-media-overlay"
+                    >
+                      {isOwner && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (onEditAsset) onEditAsset(asset);
+                          }}
+                          style={{
+                            marginRight: 6,
+                            padding: '2px 4px',
+                            background: 'rgba(255,255,255,0.2)',
+                            border: '1px solid rgba(255,255,255,0.4)',
+                            borderRadius: 4,
+                            cursor: 'pointer',
+                            fontSize: 10,
+                            lineHeight: 1,
+                            color: 'inherit',
+                            transition: 'background 0.2s ease',
+                            flexShrink: 0
+                          }}
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.background = 'rgba(255,255,255,0.4)';
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.background = 'rgba(255,255,255,0.2)';
+                          }}
+                          title="Edit asset"
+                        >
+                          ✏️
+                        </button>
+                      )}
+                      <span style={{ fontWeight:600, whiteSpace:'normal', display:'-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient:'vertical', overflow:'hidden', textOverflow:'ellipsis', lineHeight: 1.2, maxHeight: '2.4em', flex: 1, minWidth: 0 }}>{asset.title || 'Untitled'}</span>
+                      {desc && <span style={{ fontSize:10, flexShrink: 0 }}>{showTitleDescription ? '▼' : '▲'}</span>}
+                      </button>
+                    </div>
+                    
+                    {/* Description panel - responsive sizing, drops DOWN from title */}
+                    {showTitleDescription && desc && (
+                      <div 
+                        className="description-scroll-panel"
+                        style={{ 
+                          position:'absolute',
+                          left:6,
+                          bottom:-68,
+                          padding:'8px 12px', 
+                          borderRadius:8, 
+                          background: overlayBg,
+                          color: overlayFg,
+                          fontFamily: overlayFont,
+                          fontSize:'clamp(10px, 1.5vw, 12px)',
+                          lineHeight:1.4,
+                          width:'clamp(180px, 25vw, 320px)',
+                          height:'clamp(60px, 10vh, 120px)',
+                          overflowY:'auto',
+                          overflowX:'hidden',
+                          whiteSpace:'pre-wrap',
+                          wordBreak:'break-word',
+                          pointerEvents:'auto',
+                          opacity: 1,
+                          transition:'all .2s ease',
+                          border: '1px solid rgba(255,255,255,0.5)',
+                          boxShadow: '0 4px 8px rgba(0,0,0,0.4)',
+                          zIndex: 9999,
+                          WebkitOverflowScrolling: 'touch',
+                          touchAction: 'pan-y'
+                        }}
+                        onClick={(e) => e.stopPropagation()}
+                        onMouseEnter={() => {
+                          controlOwnerRef.current = 'description';
+                        }}
+                        onMouseLeave={() => {
+                          controlOwnerRef.current = null;
+                        }}
+                        onPointerDown={(e) => {
+                          e.stopPropagation();
+                          try { (e.currentTarget as any).setPointerCapture?.(e.pointerId); } catch {}
+                          controlOwnerRef.current = 'description';
+                        }}
+                        onPointerMove={(e) => {
+                          e.stopPropagation();
+                        }}
+                        onPointerUp={(e) => {
+                          e.stopPropagation();
+                          try { (e.currentTarget as any).releasePointerCapture?.(e.pointerId); } catch {}
+                          controlOwnerRef.current = null;
+                        }}
+                        onPointerCancel={(e) => {
+                          e.stopPropagation();
+                          try { (e.currentTarget as any).releasePointerCapture?.(e.pointerId); } catch {}
+                          controlOwnerRef.current = null;
+                        }}
+                        onTouchStart={(e) => {
+                          e.stopPropagation();
+                          controlOwnerRef.current = 'description';
+                        }}
+                        onTouchMove={(e) => {
+                          e.stopPropagation();
+                        }}
+                        onTouchEnd={(e) => {
+                          e.stopPropagation();
+                          controlOwnerRef.current = null;
+                        }}
+                        onWheel={(e) => {
+                          e.stopPropagation();
+                          // Don't preventDefault - allow natural scroll inside panel
+                        }}
+                      >
+                        {desc}
+                      </div>
+                    )}
+                  </>
+                );
+              })()}
             </div>
-          </div>
-        )}
+          );
+        })()}
       </div>
     );
   };
