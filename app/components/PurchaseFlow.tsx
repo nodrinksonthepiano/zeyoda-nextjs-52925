@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { ethers } from 'ethers';
 import { ArtistConfig, UserTokenBalances } from '../../types/artist-types';
 // SwapService removed - using direct AMM helper functions instead
@@ -70,10 +70,17 @@ const PurchaseFlow: React.FC<PurchaseFlowProps> = ({
   swapToAmount
 }) => {
     const { magic } = useWallet();
-    const { setUsdBalance } = useUsdBalance();
-    const [swapQuote, setSwapQuote] = useState<SwapQuote | null>(null);
+    const { setUsdBalance, usdBalance, isLoading: usdBalanceLoading } = useUsdBalance();
     const [isSwapping, setIsSwapping] = useState(false);
     const [downloadingAssets, setDownloadingAssets] = useState<Set<number>>(new Set());
+    const [confirmationMode, setConfirmationMode] = useState<'config' | 'confirm'>('config');
+    const [confirmationSnapshot, setConfirmationSnapshot] = useState<{
+        amount: number;
+        artistocks: number;
+        includeDownload: boolean;
+        downloadPrice: number;
+        total: number;
+    } | null>(null);
     
     // Check download access for current artist
     const { hasAccessToAsset, hasAnyAccess, downloadAccess, isLoading: checkingAccess, refreshDownloadAccess } = useDownloadAccess(
@@ -92,6 +99,47 @@ const PurchaseFlow: React.FC<PurchaseFlowProps> = ({
         const usdString = e.target.value;
         handleSwapFromAmountChange({ target: { value: usdString } } as React.ChangeEvent<HTMLInputElement>);
     };
+
+    // Capture snapshot for confirmation view
+    const captureSnapshot = () => {
+        const amount = parseFloat(swapFromAmount || '0');
+        const artistocks = Math.floor(parseFloat(swapToAmount || artistocksInput || '0'));
+        const downloadPrice = getDownloadPrice(featuredAsset);
+        const total = amount + (includeDownload ? downloadPrice : 0);
+        
+        return {
+            amount,
+            artistocks,
+            includeDownload,
+            downloadPrice,
+            total
+        };
+    };
+
+    // Calculate ETH balance in USD (same as wallet chip uses)
+    const ethBalance = userTokenBalances['ETH'] || BigInt(0);
+    const ethBalanceUsd = parseFloat(ethers.formatEther(ethBalance)) * 2500;
+
+    // Helper: Check if balance is insufficient (only when both are numbers)
+    const isInsufficient = typeof ethBalanceUsd === 'number' && 
+                           typeof confirmationSnapshot?.total === 'number' && 
+                           ethBalanceUsd < confirmationSnapshot.total;
+
+    // Auto-reset confirmation mode when swap inputs change
+    useEffect(() => {
+        if (confirmationMode === 'confirm' && confirmationSnapshot) {
+            const currentSnapshot = captureSnapshot();
+            // If any purchase details changed, reset to config mode
+            if (
+                currentSnapshot.amount !== confirmationSnapshot.amount ||
+                currentSnapshot.includeDownload !== confirmationSnapshot.includeDownload ||
+                currentSnapshot.downloadPrice !== confirmationSnapshot.downloadPrice
+            ) {
+                setConfirmationMode('config');
+                setConfirmationSnapshot(null);
+            }
+        }
+    }, [swapFromAmount, includeDownload, swapToAmount, artistocksInput, confirmationMode, confirmationSnapshot]);
 
     // 🎯 HELPER: Mint download token (extracted for reuse)
     const mintDownloadToken = async (userAddress: string): Promise<string> => {
@@ -579,7 +627,9 @@ const PurchaseFlow: React.FC<PurchaseFlowProps> = ({
 
             {user && globalSafewordVerified && !purchaseConfirmationData && (
                 <div className="purchase-slider-section mock-ui-section p-4 md:p-6 bg-gray-800 bg-opacity-70 shadow-xl rounded-lg border border-gray-700 backdrop-blur-md mb-8 max-w-2xl mx-auto">
-                <h3 className="text-xl font-semibold mb-3 text-center text-white">Purchase Options</h3>
+                <h3 className="text-xl font-semibold mb-3 text-center text-white">
+                    Purchase Options
+                </h3>
                 
                 {/* Universal Amount Slider - Always visible for all swaps */}
                 <div className="mb-6">
@@ -806,13 +856,75 @@ const PurchaseFlow: React.FC<PurchaseFlowProps> = ({
                     </div>
                 </div>
 
-                {/* Main Swap Button */}
+                {/* Payment Method Pills - Only shown in confirm mode */}
+                {confirmationMode === 'confirm' && confirmationSnapshot && (
+                    <div className="mb-4">
+                        <div className="grid grid-cols-2 gap-2">
+                            {/* Wallet Balance - Active */}
+                            <button
+                                className="p-2 bg-blue-600 text-white rounded text-xs font-medium border-2 border-blue-500 flex items-center justify-center gap-1"
+                                disabled
+                            >
+                                <span className="text-xs">💰</span>
+                                <span className="text-xs">Wallet</span>
+                                <span className="text-xs font-semibold">
+                                    {ethBalanceUsd > 0 ? `$${ethBalanceUsd.toFixed(2)}` : '$0.00'}
+                                </span>
+                            </button>
+                            
+                            {/* Coming Soon Options - Subtle */}
+                            <button className="p-2 bg-gray-700 text-gray-400 rounded text-xs border border-gray-600 flex items-center justify-center gap-1" disabled>
+                                <span className="text-xs opacity-50">Venmo</span>
+                                <span className="text-[10px] opacity-50">soon</span>
+                            </button>
+                            <button className="p-2 bg-gray-700 text-gray-400 rounded text-xs border border-gray-600 flex items-center justify-center gap-1" disabled>
+                                <span className="text-xs opacity-50">PayPal</span>
+                                <span className="text-[10px] opacity-50">soon</span>
+                            </button>
+                            <button className="p-2 bg-gray-700 text-gray-400 rounded text-xs border border-gray-600 flex items-center justify-center gap-1" disabled>
+                                <span className="text-xs opacity-50">Card</span>
+                                <span className="text-[10px] opacity-50">soon</span>
+                            </button>
+                        </div>
+                    </div>
+                )}
+
+                {/* Insufficient Balance Warning - Only show when we have actual numbers */}
+                {confirmationMode === 'confirm' && isInsufficient && (
+                    <div className="mb-4 p-3 bg-red-900 bg-opacity-30 border border-red-600 rounded-lg">
+                        <p className="text-sm text-red-400">
+                            Insufficient funds. Add ${(confirmationSnapshot!.total - ethBalanceUsd).toFixed(2)} to continue.
+                        </p>
+                    </div>
+                )}
+
+                {/* Main Swap Button - Reused for both modes */}
                 <div className="text-center">
                     <button
-                        onClick={handleRealSwap}
-                        disabled={isSwapping || (!includeDownload && (!swapFromAmount || parseFloat(swapFromAmount) <= 0))}
+                        onClick={confirmationMode === 'config' 
+                            ? () => {
+                                const snapshot = captureSnapshot();
+                                setConfirmationSnapshot(snapshot);
+                                setConfirmationMode('confirm');
+                            }
+                            : async () => {
+                                setIsSwapping(true);
+                                try {
+                                    await handleRealSwap();
+                                    setConfirmationMode('config');
+                                    setConfirmationSnapshot(null);
+                                } catch (error) {
+                                    // Stay in confirm mode on error, existing error handling will show message
+                                } finally {
+                                    setIsSwapping(false);
+                                }
+                            }
+                        }
+                        disabled={isSwapping || 
+                                  (!includeDownload && (!swapFromAmount || parseFloat(swapFromAmount) <= 0)) ||
+                                  (confirmationMode === 'confirm' && isInsufficient)}
                         className={`w-full py-4 px-6 rounded-lg font-bold text-lg transition-all duration-200 ${
-                            isSwapping 
+                            isSwapping || (confirmationMode === 'confirm' && isInsufficient)
                                 ? 'bg-gray-600 cursor-not-allowed' 
                                 : 'bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 transform hover:scale-105 shadow-lg'
                         } text-white`}
@@ -825,15 +937,26 @@ const PurchaseFlow: React.FC<PurchaseFlowProps> = ({
                                 </svg>
                                 Processing Transaction...
                             </span>
-                        ) : swapFromAsset === "USD" ? (
-                            includeDownload 
-                                ? `🔄 GET DOWNLOAD + ${Math.floor(parseFloat(swapToAmount || artistocksInput || '0')).toLocaleString()} ARTISTOCKS ($${(parseFloat(swapFromAmount || '0') + getDownloadPrice(featuredAsset)).toFixed(2)})`
-                                : `🔄 GET ${Math.floor(parseFloat(swapToAmount || artistocksInput || '0')).toLocaleString()} ARTISTOCKS ($${swapFromAmount || '0'})`
+                        ) : confirmationMode === 'confirm' && confirmationSnapshot ? (
+                            swapFromAsset === "USD" ? (
+                                confirmationSnapshot.includeDownload 
+                                    ? `🔄 GET DOWNLOAD + ${confirmationSnapshot.artistocks.toLocaleString()} ARTISTOCKS ($${confirmationSnapshot.total.toFixed(2)})`
+                                    : `🔄 GET ${confirmationSnapshot.artistocks.toLocaleString()} ARTISTOCKS ($${confirmationSnapshot.amount.toFixed(2)})`
+                            ) : (
+                                swapToAsset === "USD" ? 
+                                    `🔄 Cash Out ${swapFromAmount || '0'} ${swapFromAsset} for $${parseFloat(swapToAmount || '0').toFixed(2)} USD` :
+                                    `🔄 Swap ${swapFromAmount || '0'} ${swapFromAsset} for ${confirmationSnapshot.artistocks.toLocaleString()} ${swapToAsset || artistConfig.tokenName}`
+                            )
                         ) : (
-                            // Check if swapping TO USD (cash-out)
-                            swapToAsset === "USD" ? 
-                                `🔄 Cash Out ${swapFromAmount || '0'} ${swapFromAsset} for $${parseFloat(swapToAmount || '0').toFixed(2)} USD` :
-                                `🔄 Swap ${swapFromAmount || '0'} ${swapFromAsset} for ${Math.floor(parseFloat(swapToAmount || artistocksInput || '0')).toLocaleString()} ${swapToAsset || artistConfig.tokenName}`
+                            swapFromAsset === "USD" ? (
+                                includeDownload 
+                                    ? `🔄 GET DOWNLOAD + ${Math.floor(parseFloat(swapToAmount || artistocksInput || '0')).toLocaleString()} ARTISTOCKS ($${(parseFloat(swapFromAmount || '0') + getDownloadPrice(featuredAsset)).toFixed(2)})`
+                                    : `🔄 GET ${Math.floor(parseFloat(swapToAmount || artistocksInput || '0')).toLocaleString()} ARTISTOCKS ($${swapFromAmount || '0'})`
+                            ) : (
+                                swapToAsset === "USD" ? 
+                                    `🔄 Cash Out ${swapFromAmount || '0'} ${swapFromAsset} for $${parseFloat(swapToAmount || '0').toFixed(2)} USD` :
+                                    `🔄 Swap ${swapFromAmount || '0'} ${swapFromAsset} for ${Math.floor(parseFloat(swapToAmount || artistocksInput || '0')).toLocaleString()} ${swapToAsset || artistConfig.tokenName}`
+                            )
                         )}
                     </button>
                     
@@ -845,8 +968,6 @@ const PurchaseFlow: React.FC<PurchaseFlowProps> = ({
                             <p>💡 Transaction will be confirmed in your wallet</p>
                         )}
                     </div>
-                    
-
                 </div>
                 </div>
             )}
