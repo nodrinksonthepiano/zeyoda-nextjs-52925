@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 
 interface OnboardingPanelProps {
   artistName: string;
@@ -123,6 +123,10 @@ const OnboardingPanel: React.FC<OnboardingPanelProps> = ({
     artworkyear: '2025',
     downloadPrice: 1.00, // Price for ERC-1155 featured content downloads
     description: '', // Description for the asset
+    logo_url: null as string | null,
+    background_image_url: null as string | null,
+    logo_use_background: false,
+    background_use_image: false,
     theme: {
       fontFamily: 'Bungee, cursive',
       primaryColor: '#FAF0E6',
@@ -132,6 +136,17 @@ const OnboardingPanel: React.FC<OnboardingPanelProps> = ({
       gradientEnd: '#F5F5DC'
     }
   });
+
+  // Logo and background file state (for upload after artist creation)
+  const [logoFile, setLogoFile] = useState<File | null>(null);
+  const [backgroundFile, setBackgroundFile] = useState<File | null>(null);
+  const [logoPreview, setLogoPreview] = useState<string | null>(null);
+  const [backgroundPreview, setBackgroundPreview] = useState<string | null>(null);
+
+  // Initialize halo with current primary color
+  useEffect(() => {
+    window.dispatchEvent(new CustomEvent('primaryColorChange', { detail: { color: formData.theme.primaryColor } }));
+  }, []);
 
   const handleFieldChange = useCallback((field: string, value: any) => {
     // Handle artist name change separately to avoid React render error
@@ -152,7 +167,13 @@ const OnboardingPanel: React.FC<OnboardingPanelProps> = ({
         
         // Apply live preview
         if (themeField === 'primaryColor') {
-          document.body.style.background = value;
+          // Apply primary color only if no background image/logo is active
+          if (!formData.background_use_image && !formData.logo_use_background) {
+            document.body.style.background = value;
+            document.body.style.backgroundImage = 'none';
+          }
+          // Dispatch event to update halo
+          window.dispatchEvent(new CustomEvent('primaryColorChange', { detail: { color: value } }));
         } else if (themeField === 'accentColor') {
           document.documentElement.style.setProperty('--accent-color', value);
           const headerElement = document.querySelector('h1');
@@ -166,13 +187,62 @@ const OnboardingPanel: React.FC<OnboardingPanelProps> = ({
             headerElement.style.fontFamily = value;
           }
         }
+      } else if (field === 'logo_use_background' || field === 'background_use_image') {
+        // Handle logo/background checkboxes with mutual exclusivity
+        const newValue = value as boolean;
+        const otherFieldValue = field === 'background_use_image' 
+          ? formData.logo_use_background 
+          : formData.background_use_image;
+        
+        if (field === 'logo_use_background') {
+          updated.logo_use_background = newValue;
+          updated.background_use_image = newValue ? false : formData.background_use_image;
+        } else {
+          updated.background_use_image = newValue;
+          updated.logo_use_background = newValue ? false : formData.logo_use_background;
+        }
+        
+        // Apply live preview with precedence
+        setTimeout(() => {
+          if (field === 'background_use_image') {
+            if (newValue && backgroundPreview) {
+              document.body.style.backgroundImage = `url(${backgroundPreview})`;
+              document.body.style.backgroundSize = 'cover';
+              document.body.style.backgroundPosition = 'center';
+              document.body.style.backgroundRepeat = 'no-repeat';
+            } else if (otherFieldValue && logoPreview) {
+              document.body.style.backgroundImage = `url(${logoPreview})`;
+              document.body.style.backgroundSize = 'cover';
+              document.body.style.backgroundPosition = 'center';
+              document.body.style.backgroundRepeat = 'no-repeat';
+            } else {
+              document.body.style.backgroundImage = 'none';
+              document.body.style.background = updated.theme.primaryColor;
+            }
+          } else if (field === 'logo_use_background') {
+            if (otherFieldValue && backgroundPreview) {
+              document.body.style.backgroundImage = `url(${backgroundPreview})`;
+              document.body.style.backgroundSize = 'cover';
+              document.body.style.backgroundPosition = 'center';
+              document.body.style.backgroundRepeat = 'no-repeat';
+            } else if (newValue && logoPreview) {
+              document.body.style.backgroundImage = `url(${logoPreview})`;
+              document.body.style.backgroundSize = 'cover';
+              document.body.style.backgroundPosition = 'center';
+              document.body.style.backgroundRepeat = 'no-repeat';
+            } else {
+              document.body.style.backgroundImage = 'none';
+              document.body.style.background = updated.theme.primaryColor;
+            }
+          }
+        }, 0);
       } else {
         (updated as any)[field] = value;
       }
       
       return updated;
     });
-  }, [onArtistNameChange]);
+  }, [onArtistNameChange, formData.background_use_image, formData.logo_use_background, backgroundPreview, logoPreview]);
 
   const applyPrimaryPreset = useCallback((presetKey: string) => {
     const preset = COLOR_PRESETS[presetKey as keyof typeof COLOR_PRESETS];
@@ -199,6 +269,9 @@ const OnboardingPanel: React.FC<OnboardingPanelProps> = ({
       videosrc: 'assets/placeholder.mp4', // Will be updated with actual upload
       orbitaltokens: [],
       paused: false,
+      // Logo/background files (will be uploaded after artist creation)
+      logoFile: logoFile,
+      backgroundFile: backgroundFile,
       // Auto-generate missing fields
       contract: null, // Will be set after deployment
       swap_address: null, // Will be set after deployment  
@@ -207,7 +280,7 @@ const OnboardingPanel: React.FC<OnboardingPanelProps> = ({
     
     console.log('Complete artist data for deployment:', completeData);
     onSave(completeData);
-  }, [formData, onSave]);
+  }, [formData, logoFile, backgroundFile, onSave]);
 
   return (
     <div className="onboarding-panel bg-gray-800 bg-opacity-90 rounded-lg p-6 mt-8 max-w-2xl mx-auto backdrop-blur-sm border border-gray-600" style={{
@@ -384,6 +457,266 @@ const OnboardingPanel: React.FC<OnboardingPanelProps> = ({
             placeholder="#RRGGBB"
           />
         </div>
+      </div>
+      )}
+
+      {/* Logo Upload Section - Only show for new artists */}
+      {mode === 'onboarding' && (
+      <div className="mb-6">
+        <h3 className="text-lg font-semibold text-white mb-3">Logo Upload</h3>
+        
+        {/* Current logo preview */}
+        {logoPreview && (
+          <div className="mb-3 relative">
+            <button
+              onClick={() => {
+                if (logoPreview.startsWith('blob:')) {
+                  URL.revokeObjectURL(logoPreview);
+                }
+                setLogoPreview(null);
+                setLogoFile(null);
+                setFormData(prev => ({
+                  ...prev,
+                  logo_url: null,
+                  logo_use_background: false
+                }));
+                // Revert background
+                setTimeout(() => {
+                  if (formData.background_use_image && backgroundPreview) {
+                    document.body.style.backgroundImage = `url(${backgroundPreview})`;
+                  } else {
+                    document.body.style.backgroundImage = 'none';
+                    document.body.style.background = formData.theme.primaryColor;
+                  }
+                  document.body.style.backgroundSize = 'cover';
+                  document.body.style.backgroundPosition = 'center';
+                  document.body.style.backgroundRepeat = 'no-repeat';
+                }, 0);
+              }}
+              className="absolute top-2 right-2 bg-red-600 hover:bg-red-700 text-white rounded-full w-8 h-8 flex items-center justify-center text-lg font-bold transition-colors shadow-lg z-10"
+              title="Remove logo"
+            >
+              ×
+            </button>
+            <img 
+              src={logoPreview} 
+              alt="Logo preview" 
+              className="w-full h-64 object-contain rounded border border-gray-600 bg-gray-800"
+            />
+          </div>
+        )}
+        
+        {/* File input */}
+        <input
+          type="file"
+          accept="image/*"
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            if (!file) return;
+            
+            // Validate file type
+            if (!file.type.startsWith('image/')) {
+              alert('Please upload an image file (JPG, PNG, SVG, or WebP)');
+              return;
+            }
+            
+            // Validate file size (5MB max)
+            if (file.size > 5 * 1024 * 1024) {
+              alert('File size must be less than 5MB');
+              return;
+            }
+            
+            setLogoFile(file);
+            // Revoke old preview URL
+            if (logoPreview && logoPreview.startsWith('blob:')) {
+              URL.revokeObjectURL(logoPreview);
+            }
+            const preview = URL.createObjectURL(file);
+            setLogoPreview(preview);
+            setFormData(prev => ({ ...prev, logo_url: preview }));
+            
+            // Apply if checkbox is checked
+            if (formData.logo_use_background) {
+              setTimeout(() => {
+                document.body.style.backgroundImage = `url(${preview})`;
+                document.body.style.backgroundSize = 'cover';
+                document.body.style.backgroundPosition = 'center';
+                document.body.style.backgroundRepeat = 'no-repeat';
+              }, 0);
+            }
+          }}
+          className="w-full p-3 bg-gray-700 text-white rounded-lg border border-gray-600 mb-3 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-yellow-500 file:text-white hover:file:bg-yellow-600"
+        />
+        
+        {/* Checkbox - Use logo as background */}
+        <label className="flex items-center text-white cursor-pointer">
+          <input
+            type="checkbox"
+            checked={formData.logo_use_background}
+            onChange={(e) => {
+              const checked = e.target.checked;
+              setFormData(prev => {
+                const updated = {
+                  ...prev,
+                  logo_use_background: checked,
+                  background_use_image: checked ? false : prev.background_use_image
+                };
+                // Apply live preview
+                setTimeout(() => {
+                  if (checked && logoPreview) {
+                    document.body.style.backgroundImage = `url(${logoPreview})`;
+                    document.body.style.backgroundSize = 'cover';
+                    document.body.style.backgroundPosition = 'center';
+                    document.body.style.backgroundRepeat = 'no-repeat';
+                  } else if (!checked && updated.background_use_image && backgroundPreview) {
+                    document.body.style.backgroundImage = `url(${backgroundPreview})`;
+                    document.body.style.backgroundSize = 'cover';
+                    document.body.style.backgroundPosition = 'center';
+                    document.body.style.backgroundRepeat = 'no-repeat';
+                  } else {
+                    document.body.style.backgroundImage = 'none';
+                    document.body.style.background = updated.theme.primaryColor;
+                  }
+                }, 0);
+                return updated;
+              });
+            }}
+            className="mr-2 w-4 h-4"
+            disabled={!logoPreview}
+          />
+          <span className={logoPreview ? '' : 'text-gray-500'}>
+            Use logo as page background
+          </span>
+        </label>
+      </div>
+      )}
+
+      {/* Background Image Section - Only show for new artists */}
+      {mode === 'onboarding' && (
+      <div className="mb-6">
+        <h3 className="text-lg font-semibold text-white mb-3">Background Image</h3>
+        
+        {/* Current background preview */}
+        {backgroundPreview && (
+          <div className="mb-3 relative">
+            <button
+              onClick={() => {
+                if (backgroundPreview.startsWith('blob:')) {
+                  URL.revokeObjectURL(backgroundPreview);
+                }
+                setBackgroundPreview(null);
+                setBackgroundFile(null);
+                setFormData(prev => ({
+                  ...prev,
+                  background_image_url: null,
+                  background_use_image: false
+                }));
+                // Revert background
+                setTimeout(() => {
+                  if (formData.logo_use_background && logoPreview) {
+                    document.body.style.backgroundImage = `url(${logoPreview})`;
+                  } else {
+                    document.body.style.backgroundImage = 'none';
+                    document.body.style.background = formData.theme.primaryColor;
+                  }
+                  document.body.style.backgroundSize = 'cover';
+                  document.body.style.backgroundPosition = 'center';
+                  document.body.style.backgroundRepeat = 'no-repeat';
+                }, 0);
+              }}
+              className="absolute top-2 right-2 bg-red-600 hover:bg-red-700 text-white rounded-full w-8 h-8 flex items-center justify-center text-lg font-bold transition-colors shadow-lg z-10"
+              title="Remove background image"
+            >
+              ×
+            </button>
+            <img 
+              src={backgroundPreview} 
+              alt="Background preview" 
+              className="w-full h-64 object-contain rounded border border-gray-600 bg-gray-800"
+            />
+          </div>
+        )}
+        
+        {/* File input */}
+        <input
+          type="file"
+          accept="image/*"
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            if (!file) return;
+            
+            // Same validation as logo
+            if (!file.type.startsWith('image/')) {
+              alert('Please upload an image file (JPG, PNG, SVG, or WebP)');
+              return;
+            }
+            if (file.size > 5 * 1024 * 1024) {
+              alert('File size must be less than 5MB');
+              return;
+            }
+            
+            setBackgroundFile(file);
+            // Revoke old preview URL
+            if (backgroundPreview && backgroundPreview.startsWith('blob:')) {
+              URL.revokeObjectURL(backgroundPreview);
+            }
+            const preview = URL.createObjectURL(file);
+            setBackgroundPreview(preview);
+            setFormData(prev => ({ ...prev, background_image_url: preview }));
+            
+            // Apply if checkbox is checked
+            if (formData.background_use_image) {
+              setTimeout(() => {
+                document.body.style.backgroundImage = `url(${preview})`;
+                document.body.style.backgroundSize = 'cover';
+                document.body.style.backgroundPosition = 'center';
+                document.body.style.backgroundRepeat = 'no-repeat';
+              }, 0);
+            }
+          }}
+          className="w-full p-3 bg-gray-700 text-white rounded-lg border border-gray-600 mb-3 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-yellow-500 file:text-white hover:file:bg-yellow-600"
+        />
+        
+        {/* Checkbox - Use background image */}
+        <label className="flex items-center text-white cursor-pointer">
+          <input
+            type="checkbox"
+            checked={formData.background_use_image}
+            onChange={(e) => {
+              const checked = e.target.checked;
+              setFormData(prev => {
+                const updated = {
+                  ...prev,
+                  background_use_image: checked,
+                  logo_use_background: checked ? false : prev.logo_use_background
+                };
+                // Apply live preview
+                setTimeout(() => {
+                  if (checked && backgroundPreview) {
+                    document.body.style.backgroundImage = `url(${backgroundPreview})`;
+                    document.body.style.backgroundSize = 'cover';
+                    document.body.style.backgroundPosition = 'center';
+                    document.body.style.backgroundRepeat = 'no-repeat';
+                  } else if (!checked && updated.logo_use_background && logoPreview) {
+                    document.body.style.backgroundImage = `url(${logoPreview})`;
+                    document.body.style.backgroundSize = 'cover';
+                    document.body.style.backgroundPosition = 'center';
+                    document.body.style.backgroundRepeat = 'no-repeat';
+                  } else {
+                    document.body.style.backgroundImage = 'none';
+                    document.body.style.background = updated.theme.primaryColor;
+                  }
+                }, 0);
+                return updated;
+              });
+            }}
+            className="mr-2 w-4 h-4"
+            disabled={!backgroundPreview}
+          />
+          <span className={backgroundPreview ? '' : 'text-gray-500'}>
+            Use background image
+          </span>
+        </label>
       </div>
       )}
 

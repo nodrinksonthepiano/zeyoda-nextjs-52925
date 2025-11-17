@@ -104,6 +104,8 @@ const ProfileEditPanel: React.FC<ProfileEditPanelProps> = ({
       logo_use_background: artistConfig?.logo_use_background || false,
       background_use_image: artistConfig?.background_use_image || false
     });
+    // Initialize halo with current primary color
+    window.dispatchEvent(new CustomEvent('primaryColorChange', { detail: { color: formData.primary_color } }));
   }, []);
   
   // Apply background precedence rule
@@ -234,6 +236,8 @@ const ProfileEditPanel: React.FC<ProfileEditPanelProps> = ({
         document.body.style.background = value as string;
         document.body.style.backgroundImage = 'none';
       }
+      // Dispatch event to update halo
+      window.dispatchEvent(new CustomEvent('primaryColorChange', { detail: { color: value as string } }));
     } else if (field === 'accent_color') {
       document.documentElement.style.setProperty('--accent-color', value as string);
       const headerElement = document.querySelector('h1');
@@ -502,7 +506,7 @@ const ProfileEditPanel: React.FC<ProfileEditPanelProps> = ({
         
         {/* Current logo preview */}
         {logoPreview && (
-          <div className="mb-3 relative inline-block">
+          <div className="mb-3 relative">
             <button
               onClick={async () => {
                 if (confirm('Are you sure you want to remove the logo?')) {
@@ -562,7 +566,7 @@ const ProfileEditPanel: React.FC<ProfileEditPanelProps> = ({
             <img 
               src={logoPreview} 
               alt="Logo preview" 
-              className="w-48 h-48 object-contain rounded border border-gray-600 bg-gray-800 mx-auto"
+              className="w-full h-64 object-contain rounded border border-gray-600 bg-gray-800"
             />
           </div>
         )}
@@ -713,7 +717,7 @@ const ProfileEditPanel: React.FC<ProfileEditPanelProps> = ({
             <img 
               src={backgroundPreview} 
               alt="Background preview" 
-              className="w-full h-64 object-cover rounded border border-gray-600"
+              className="w-full h-64 object-contain rounded border border-gray-600 bg-gray-800"
             />
           </div>
         )}

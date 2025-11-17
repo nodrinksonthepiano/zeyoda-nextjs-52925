@@ -80,6 +80,7 @@ const ArtistPageContent: React.FC<{
   const [appMode, setAppMode] = useState<'normal' | 'onboarding' | 'upload-asset' | 'profile-edit' | 'edit-asset'>('normal');
   const [onboardingArtistName, setOnboardingArtistName] = useState('WELCOME, ARTIST!');
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
+  const [onboardingAspectRatio, setOnboardingAspectRatio] = useState<number | null>(null);
   const [onboardingData, setOnboardingData] = useState<any>({});
   const [editingAsset, setEditingAsset] = useState<any | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -107,6 +108,32 @@ const ArtistPageContent: React.FC<{
   useEffect(() => {
     setArtistConfig(initialArtistConfig);
   }, [initialArtistConfig]);
+
+  // Live primary color for halo updates during editing
+  const [livePrimaryColor, setLivePrimaryColor] = useState<string | null>(null);
+  
+  // Listen for primary color changes from ProfileEditPanel
+  useEffect(() => {
+    const handlePrimaryColorChange = (e: CustomEvent) => {
+      setLivePrimaryColor(e.detail.color);
+    };
+    
+    window.addEventListener('primaryColorChange' as any, handlePrimaryColorChange as EventListener);
+    
+    return () => {
+      window.removeEventListener('primaryColorChange' as any, handlePrimaryColorChange as EventListener);
+    };
+  }, []);
+  
+  // Reset live color when exiting edit mode
+  useEffect(() => {
+    if (appMode !== 'profile-edit' && appMode !== 'onboarding') {
+      setLivePrimaryColor(null);
+    }
+  }, [appMode]);
+  
+  // Get the current primary color (live during editing, or from config)
+  const currentPrimaryColor = livePrimaryColor || artistConfig?.theme?.primaryColor || '#0a1a3b';
 
   const artistIdFromUrl = (searchParams.get('artist') ?? 'gosheesh') as string;
   const assetNumberFromUrl = searchParams.get('asset');
@@ -305,6 +332,7 @@ const ArtistPageContent: React.FC<{
   );
 
   const videoContainerRef = useRef<HTMLDivElement>(null);
+  const onboardingContainerRef = useRef<HTMLDivElement>(null);
   const isOrbitAnimationPaused = useRef(false);
   const lastShakeRequestRef = useRef<number>(0);
 
@@ -667,6 +695,81 @@ const ArtistPageContent: React.FC<{
         contentUrl: contentUrl,
         treasuryWallet: artistWallet
       });
+      
+      // Upload logo and background images (if provided)
+      if (artistData.logoFile) {
+        try {
+          console.log('📤 Uploading logo...');
+          const logoFormData = new FormData();
+          logoFormData.append('file', artistData.logoFile);
+          logoFormData.append('artistId', artistId);
+          
+          const logoResponse = await fetch('/api/uploadLogo', {
+            method: 'POST',
+            headers: {
+              'x-wallet-address': artistWallet.toLowerCase()
+            },
+            body: logoFormData
+          });
+          
+          if (logoResponse.ok) {
+            const logoResult = await logoResponse.json();
+            // Update artist with logo URL
+            await fetch('/api/artist/profile', {
+              method: 'PATCH',
+              headers: {
+                'Content-Type': 'application/json',
+                'x-wallet-address': artistWallet.toLowerCase()
+              },
+              body: JSON.stringify({
+                artistId: artistId,
+                logo_url: logoResult.logoUrl,
+                logo_use_background: artistData.logo_use_background || false
+              })
+            });
+            console.log('✅ Logo uploaded');
+          }
+        } catch (logoError) {
+          console.warn('⚠️ Logo upload failed (non-critical):', logoError);
+        }
+      }
+      
+      if (artistData.backgroundFile) {
+        try {
+          console.log('📤 Uploading background image...');
+          const bgFormData = new FormData();
+          bgFormData.append('file', artistData.backgroundFile);
+          bgFormData.append('artistId', artistId);
+          
+          const bgResponse = await fetch('/api/uploadBackground', {
+            method: 'POST',
+            headers: {
+              'x-wallet-address': artistWallet.toLowerCase()
+            },
+            body: bgFormData
+          });
+          
+          if (bgResponse.ok) {
+            const bgResult = await bgResponse.json();
+            // Update artist with background URL
+            await fetch('/api/artist/profile', {
+              method: 'PATCH',
+              headers: {
+                'Content-Type': 'application/json',
+                'x-wallet-address': artistWallet.toLowerCase()
+              },
+              body: JSON.stringify({
+                artistId: artistId,
+                background_image_url: bgResult.backgroundImageUrl,
+                background_use_image: artistData.background_use_image || false
+              })
+            });
+            console.log('✅ Background image uploaded');
+          }
+        } catch (bgError) {
+          console.warn('⚠️ Background upload failed (non-critical):', bgError);
+        }
+      }
       
       // Mint first asset as ERC-1155 (if file was uploaded)
       if (uploadedFile) {
@@ -1894,76 +1997,125 @@ const ArtistPageContent: React.FC<{
                         className="hidden"
                       />
                       <div 
-                        className="w-full aspect-video bg-white bg-opacity-20 rounded-lg border-2 border-dashed border-yellow-600 flex flex-col items-center justify-center p-8 hover:bg-opacity-30 transition-all duration-200 cursor-pointer"
+                        ref={onboardingContainerRef}
+                        className="relative"
+                        style={{
+                          height: 'clamp(280px, 50vh, 720px)',
+                          width: 'auto',
+                          maxWidth: 'min(92vw, 1000px)',
+                          aspectRatio: onboardingAspectRatio || 16/9,
+                          margin: '0 auto 16px auto',
+                          overflow: 'visible',
+                          cursor: uploadedFile ? 'default' : 'pointer'
+                        }}
                         onDragOver={handleDragOver}
                         onDrop={handleDrop}
-                        onClick={handleUploadClick}
+                        onClick={!uploadedFile ? handleUploadClick : undefined}
                       >
-                        {uploadedFile ? (
-                          // Show uploaded file with preview
-                          <>
-                            {/* File preview */}
-                            <div className="mb-4">
+                        {/* Halo for onboarding - behind content */}
+                        {appMode === 'onboarding' && (
+                          <OvalGlowBackdrop
+                            containerRef={onboardingContainerRef}
+                            primaryColor={currentPrimaryColor}
+                            intensity={0.95}
+                            zIndex={-1}
+                          />
+                        )}
+                        {/* Content wrapper - in front of halo */}
+                        <div style={{ position: 'absolute', inset: 0, zIndex: 10, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                          {uploadedFile ? (
+                            // Show uploaded file exactly like carousel
+                            <>
                               {filePreviewUrl && uploadedFile.type.startsWith('image/') ? (
                                 <img 
                                   src={filePreviewUrl} 
                                   alt={uploadedFile.name}
-                                  className="max-w-full max-h-48 rounded-lg object-cover"
+                                  style={{ width: '100%', height: '100%', objectFit: 'contain', borderRadius: 14, background: 'transparent' }}
+                                  onLoad={(e) => {
+                                    const img = e.currentTarget as HTMLImageElement;
+                                    if (img.naturalWidth && img.naturalHeight) {
+                                      setOnboardingAspectRatio(img.naturalWidth / img.naturalHeight);
+                                    }
+                                  }}
                                 />
                               ) : filePreviewUrl && uploadedFile.type.startsWith('video/') ? (
                                 <video 
                                   src={filePreviewUrl} 
-                                  className="max-w-full max-h-48 rounded-lg object-cover"
+                                  style={{ width: '100%', height: '100%', objectFit: 'contain', borderRadius: 14, background: 'transparent' }}
                                   controls
                                   muted
                                   preload="metadata"
+                                  onLoadedMetadata={(e) => {
+                                    const v = e.currentTarget as HTMLVideoElement;
+                                    if (v.videoWidth && v.videoHeight) {
+                                      setOnboardingAspectRatio(v.videoWidth / v.videoHeight);
+                                    }
+                                  }}
                                 />
                               ) : (
-                                <div className="text-6xl mb-2">
-                                  {uploadedFile.type.startsWith('audio/') ? '🎵' : '📁'}
+                                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', width: '100%', height: '100%' }}>
+                                  <div style={{ fontSize: '4rem', marginBottom: '1rem' }}>
+                                    {uploadedFile.type.startsWith('audio/') ? '🎵' : '📁'}
+                                  </div>
+                                  <div style={{ fontSize: '1rem', color: '#B8860B', fontFamily: 'Bungee, cursive' }}>
+                                    {uploadedFile.name}
+                                  </div>
                                 </div>
                               )}
+                              {/* X button to remove file - positioned like carousel controls */}
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  if (filePreviewUrl) {
+                                    URL.revokeObjectURL(filePreviewUrl);
+                                  }
+                                  setFilePreviewUrl(null);
+                                  setUploadedFile(null);
+                                  setOnboardingAspectRatio(null);
+                                }}
+                                style={{
+                                  position: 'absolute',
+                                  right: 12,
+                                  top: 12,
+                                  background: 'rgba(0,0,0,0.4)',
+                                  color: '#fff',
+                                  border: '1px solid rgba(255,255,255,0.6)',
+                                  borderRadius: 8,
+                                  padding: '6px 8px',
+                                  fontSize: 12,
+                                  cursor: 'pointer',
+                                  height: 28,
+                                  lineHeight: 1,
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  width: 28,
+                                  zIndex: 100
+                                }}
+                                aria-label="Remove file"
+                              >
+                                ✕
+                              </button>
+                            </>
+                          ) : (
+                            // Show upload prompt - centered over halo
+                            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center', padding: '2rem' }}>
+                              <div style={{ fontSize: '4rem', marginBottom: '1rem' }}>📁</div>
+                              <div style={{ fontSize: '1.25rem', fontWeight: 'bold', marginBottom: '0.5rem', color: '#B8860B', fontFamily: 'Bungee, cursive' }}>
+                                DROP YOUR CONTENT HERE
+                              </div>
+                              <div style={{ fontSize: '0.875rem', marginBottom: '1rem', opacity: 0.8, color: '#B8860B' }}>
+                                Audio, video, images, text - any format
+                              </div>
+                              <button 
+                                className="px-6 py-3 bg-yellow-600 text-white rounded-lg font-medium hover:bg-yellow-700 transition-colors"
+                                style={{ backgroundColor: '#B8860B' }}
+                              >
+                                Or Click to Upload
+                              </button>
                             </div>
-                            
-                            <div className="text-lg font-bold mb-2" style={{ color: '#B8860B', fontFamily: 'Bungee, cursive' }}>
-                              {uploadedFile.name}
-                            </div>
-                            <div className="text-sm mb-2" style={{ color: '#B8860B' }}>
-                              {(uploadedFile.size / 1024 / 1024).toFixed(1)} MB • {uploadedFile.type || 'Unknown type'}
-                            </div>
-                            <button 
-                              className="mt-4 px-4 py-2 bg-yellow-600 text-white rounded-lg font-medium hover:bg-yellow-700 transition-colors text-sm"
-                              style={{ backgroundColor: '#B8860B' }}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                if (filePreviewUrl) {
-                                  URL.revokeObjectURL(filePreviewUrl);
-                                }
-                                setFilePreviewUrl(null);
-                                setUploadedFile(null);
-                              }}
-                            >
-                              Change File
-                            </button>
-                          </>
-                        ) : (
-                          // Show upload prompt
-                          <>
-                            <div className="text-6xl mb-4">📁</div>
-                            <div className="text-xl font-bold mb-2" style={{ color: '#B8860B', fontFamily: 'Bungee, cursive' }}>
-                              DROP YOUR CONTENT HERE
-                            </div>
-                            <div className="text-sm mb-4 opacity-80" style={{ color: '#B8860B' }}>
-                              Audio, video, images, text - any format
-                            </div>
-                            <button 
-                              className="px-6 py-3 bg-yellow-600 text-white rounded-lg font-medium hover:bg-yellow-700 transition-colors"
-                              style={{ backgroundColor: '#B8860B' }}
-                            >
-                              Or Click to Upload
-                            </button>
-                          </>
-                        )}
+                          )}
+                        </div>
                       </div>
                     </>
                   ) : (
@@ -1973,7 +2125,7 @@ const ArtistPageContent: React.FC<{
                         <>
                           <OvalGlowBackdrop
                             containerRef={videoContainerRef}
-                            primaryColor={artistConfig?.theme?.primaryColor || '#0a1a3b'}
+                            primaryColor={currentPrimaryColor}
                             intensity={0.95}
                             zIndex={1}
                           />
