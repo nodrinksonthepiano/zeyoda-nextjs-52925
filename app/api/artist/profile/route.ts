@@ -22,6 +22,10 @@ interface ProfileUpdateRequest {
   font_family?: string;
   gradient_start?: string;
   gradient_end?: string;
+  logo_url?: string;
+  background_image_url?: string;
+  logo_use_background?: boolean;
+  background_use_image?: boolean;
 }
 
 export async function GET() {
@@ -133,16 +137,41 @@ export async function PATCH(request: NextRequest) {
 
     // Check if theme has changes
     const hasThemeChanges = JSON.stringify(newTheme) !== JSON.stringify(currentTheme);
-    if (!hasThemeChanges) {
+    
+    // Prepare updates for JSONB theme column and logo fields
+    const updates: any = { theme: newTheme };
+    
+    // Handle logo fields (store directly in artists table, not in theme JSONB)
+    if (updateData.logo_url !== undefined) {
+      updates.logo_url = updateData.logo_url;
+    }
+    if (updateData.background_image_url !== undefined) {
+      updates.background_image_url = updateData.background_image_url;
+    }
+    if (updateData.logo_use_background !== undefined) {
+      updates.logo_use_background = updateData.logo_use_background;
+    }
+    if (updateData.background_use_image !== undefined) {
+      updates.background_use_image = updateData.background_use_image;
+    }
+    
+    // Check if there are any changes (theme or logo fields)
+    const hasLogoChanges = updateData.logo_url !== undefined || 
+                          updateData.background_image_url !== undefined ||
+                          updateData.logo_use_background !== undefined ||
+                          updateData.background_use_image !== undefined;
+    
+    if (!hasThemeChanges && !hasLogoChanges) {
       return NextResponse.json({ 
         error: 'No valid fields to update' 
       }, { status: 400 });
     }
 
-    // Prepare updates for JSONB theme column
-    const updates = { theme: newTheme };
-
-    console.log('💾 Updating artist profile:', { artistId: updateData.artistId, themeChanges: Object.keys(newTheme) });
+    console.log('💾 Updating artist profile:', { 
+      artistId: updateData.artistId, 
+      themeChanges: hasThemeChanges ? Object.keys(newTheme) : [],
+      logoChanges: hasLogoChanges ? ['logo_url', 'background_image_url', 'logo_use_background', 'background_use_image'].filter(f => updateData[f as keyof ProfileUpdateRequest] !== undefined) : []
+    });
 
     // Update artist profile
     const { data: updateResult, error: updateError } = await supabaseAdmin
@@ -169,7 +198,11 @@ export async function PATCH(request: NextRequest) {
         accent_color: updateResult.accent_color,
         font_family: updateResult.font_family,
         gradient_start: updateResult.gradient_start,
-        gradient_end: updateResult.gradient_end
+        gradient_end: updateResult.gradient_end,
+        logo_url: updateResult.logo_url,
+        background_image_url: updateResult.background_image_url,
+        logo_use_background: updateResult.logo_use_background,
+        background_use_image: updateResult.background_use_image
       }
     });
 

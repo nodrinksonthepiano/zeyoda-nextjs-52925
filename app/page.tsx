@@ -1209,9 +1209,25 @@ const ArtistPageContent: React.FC<{
       document.documentElement.style.setProperty('--gradient-end', theme.gradientEnd || '#999999');
       document.body.style.fontFamily = theme.fontFamily || 'Geist Sans, sans-serif';
       
-      // Apply primary color to body background - NO MORE BLACK!
-      document.body.style.background = theme.primaryColor || '#000000';
-      console.log('🎨 Applied artist background color:', theme.primaryColor);
+      // Apply background precedence rule: background_image > logo_background > primary_color
+      if (artistConfig?.background_image_url && artistConfig?.background_use_image) {
+        document.body.style.backgroundImage = `url(${artistConfig.background_image_url})`;
+        document.body.style.backgroundSize = 'cover';
+        document.body.style.backgroundPosition = 'center';
+        document.body.style.backgroundRepeat = 'no-repeat';
+        console.log('🎨 Applied background image:', artistConfig.background_image_url);
+      } else if (artistConfig?.logo_url && artistConfig?.logo_use_background) {
+        document.body.style.backgroundImage = `url(${artistConfig.logo_url})`;
+        document.body.style.backgroundSize = 'cover';
+        document.body.style.backgroundPosition = 'center';
+        document.body.style.backgroundRepeat = 'no-repeat';
+        console.log('🎨 Applied logo as background:', artistConfig.logo_url);
+      } else {
+        // Fall back to primary color
+        document.body.style.backgroundImage = 'none';
+        document.body.style.background = theme.primaryColor || '#000000';
+        console.log('🎨 Applied artist background color:', theme.primaryColor);
+      }
     }
   }, [artistConfig, appMode]);
 

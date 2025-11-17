@@ -73,20 +73,155 @@ const ProfileEditPanel: React.FC<ProfileEditPanelProps> = ({
     accent_color: artistConfig?.theme?.accentColor || '#B8860B',
     font_family: artistConfig?.theme?.fontFamily || 'Bungee, cursive',
     gradient_start: artistConfig?.theme?.gradientStart || '#FFD700',
-    gradient_end: artistConfig?.theme?.gradientEnd || '#B8860B'
+    gradient_end: artistConfig?.theme?.gradientEnd || '#B8860B',
+    logo_url: artistConfig?.logo_url || null,
+    background_image_url: artistConfig?.background_image_url || null,
+    logo_use_background: artistConfig?.logo_use_background || false,
+    background_use_image: artistConfig?.background_use_image || false
   });
 
   const [originalTheme, setOriginalTheme] = useState(formData);
   const [isSaving, setIsSaving] = useState(false);
   const [showFontDropdown, setShowFontDropdown] = useState(false);
   const [fontSearch, setFontSearch] = useState('');
+  
+  // Logo and background file state (separate from formData)
+  const [logoFile, setLogoFile] = useState<File | null>(null);
+  const [backgroundFile, setBackgroundFile] = useState<File | null>(null);
+  const [logoPreview, setLogoPreview] = useState<string | null>(
+    artistConfig?.logo_url || null
+  );
+  const [backgroundPreview, setBackgroundPreview] = useState<string | null>(
+    artistConfig?.background_image_url || null
+  );
 
   // Store original theme on mount
   useEffect(() => {
-    setOriginalTheme(formData);
+    setOriginalTheme({
+      ...formData,
+      logo_url: artistConfig?.logo_url || null,
+      background_image_url: artistConfig?.background_image_url || null,
+      logo_use_background: artistConfig?.logo_use_background || false,
+      background_use_image: artistConfig?.background_use_image || false
+    });
   }, []);
+  
+  // Apply background precedence rule
+  const applyBackgroundPrecedence = useCallback(() => {
+    // Rule: background_image > logo_background > primary_color
+    if (formData.background_use_image && backgroundPreview) {
+      document.body.style.backgroundImage = `url(${backgroundPreview})`;
+      document.body.style.backgroundSize = 'cover';
+      document.body.style.backgroundPosition = 'center';
+      document.body.style.backgroundRepeat = 'no-repeat';
+    } else if (formData.logo_use_background && logoPreview) {
+      document.body.style.backgroundImage = `url(${logoPreview})`;
+      document.body.style.backgroundSize = 'cover';
+      document.body.style.backgroundPosition = 'center';
+      document.body.style.backgroundRepeat = 'no-repeat';
+    } else {
+      document.body.style.backgroundImage = 'none';
+      document.body.style.background = formData.primary_color;
+    }
+  }, [formData.background_use_image, formData.logo_use_background, formData.primary_color, backgroundPreview, logoPreview]);
+  
+  // Upload logo file to server
+  const uploadLogoFile = async (file: File, artistId: string) => {
+    try {
+      const uploadFormData = new FormData();
+      uploadFormData.append('file', file);
+      uploadFormData.append('artistId', artistId);
+      
+      const response = await fetch('/api/uploadLogo', {
+        method: 'POST',
+        headers: {
+          'x-wallet-address': userAddress.toLowerCase()
+        },
+        body: uploadFormData
+      });
+      
+      const result = await response.json();
+      
+      if (response.ok) {
+        // Update formData with new logo URL
+        setFormData(prev => {
+          const updated = { ...prev, logo_url: result.logoUrl };
+          setLogoPreview(result.logoUrl);
+          
+          // Apply background if checkbox is checked (respect precedence)
+          setTimeout(() => {
+            if (updated.background_use_image && backgroundPreview) {
+              // Background image takes precedence
+              document.body.style.backgroundImage = `url(${backgroundPreview})`;
+            } else if (updated.logo_use_background && result.logoUrl) {
+              // Use logo as background
+              document.body.style.backgroundImage = `url(${result.logoUrl})`;
+            } else {
+              // Fall back to primary color
+              document.body.style.backgroundImage = 'none';
+              document.body.style.background = updated.primary_color;
+            }
+            document.body.style.backgroundSize = 'cover';
+            document.body.style.backgroundPosition = 'center';
+            document.body.style.backgroundRepeat = 'no-repeat';
+          }, 0);
+          
+          return updated;
+        });
+      } else {
+        alert(result.error || 'Failed to upload logo');
+      }
+    } catch (error) {
+      console.error('Logo upload error:', error);
+      alert('Failed to upload logo');
+    }
+  };
+  
+  // Upload background file to server
+  const uploadBackgroundFile = async (file: File, artistId: string) => {
+    try {
+      const uploadFormData = new FormData();
+      uploadFormData.append('file', file);
+      uploadFormData.append('artistId', artistId);
+      
+      const response = await fetch('/api/uploadBackground', {
+        method: 'POST',
+        headers: {
+          'x-wallet-address': userAddress.toLowerCase()
+        },
+        body: uploadFormData
+      });
+      
+      const result = await response.json();
+      
+      if (response.ok) {
+        // Update formData with new background URL
+        setFormData(prev => {
+          const updated = { ...prev, background_image_url: result.backgroundImageUrl };
+          setBackgroundPreview(result.backgroundImageUrl);
+          
+          // Apply background if checkbox is checked (background takes precedence)
+          if (updated.background_use_image) {
+            setTimeout(() => {
+              document.body.style.backgroundImage = `url(${result.backgroundImageUrl})`;
+              document.body.style.backgroundSize = 'cover';
+              document.body.style.backgroundPosition = 'center';
+              document.body.style.backgroundRepeat = 'no-repeat';
+            }, 0);
+          }
+          
+          return updated;
+        });
+      } else {
+        alert(result.error || 'Failed to upload background image');
+      }
+    } catch (error) {
+      console.error('Background upload error:', error);
+      alert('Failed to upload background image');
+    }
+  };
 
-  const handleFieldChange = useCallback((field: string, value: string) => {
+  const handleFieldChange = useCallback((field: string, value: string | boolean) => {
     setFormData(prev => ({
       ...prev,
       [field]: value
@@ -94,21 +229,77 @@ const ProfileEditPanel: React.FC<ProfileEditPanelProps> = ({
 
     // Apply live preview exactly like OnboardingPanel
     if (field === 'primary_color') {
-      document.body.style.background = value;
+      // Apply primary color only if no background image/logo is active
+      if (!formData.background_use_image && !formData.logo_use_background) {
+        document.body.style.background = value as string;
+        document.body.style.backgroundImage = 'none';
+      }
     } else if (field === 'accent_color') {
-      document.documentElement.style.setProperty('--accent-color', value);
+      document.documentElement.style.setProperty('--accent-color', value as string);
       const headerElement = document.querySelector('h1');
       if (headerElement) {
-        headerElement.style.color = value;
+        headerElement.style.color = value as string;
       }
     } else if (field === 'font_family') {
-      document.body.style.fontFamily = value;
+      document.body.style.fontFamily = value as string;
       const headerElement = document.querySelector('h1');
       if (headerElement) {
-        headerElement.style.fontFamily = value;
+        headerElement.style.fontFamily = value as string;
       }
     }
-  }, []);
+    // NEW: Background precedence handling
+    else if (field === 'background_use_image' || field === 'logo_use_background') {
+      // Apply precedence rule immediately with updated value
+      const newValue = value as boolean;
+      // Get the OTHER field's current state (the one not being changed)
+      const otherFieldValue = field === 'background_use_image' 
+        ? formData.logo_use_background 
+        : formData.background_use_image;
+      
+      setTimeout(() => {
+        // Apply precedence: background_image > logo_background > primary_color
+        if (field === 'background_use_image') {
+          // Background image checkbox changed
+          if (newValue && backgroundPreview) {
+            // Background image takes precedence
+            document.body.style.backgroundImage = `url(${backgroundPreview})`;
+            document.body.style.backgroundSize = 'cover';
+            document.body.style.backgroundPosition = 'center';
+            document.body.style.backgroundRepeat = 'no-repeat';
+          } else if (otherFieldValue && logoPreview) {
+            // Background unchecked, fall back to logo if enabled
+            document.body.style.backgroundImage = `url(${logoPreview})`;
+            document.body.style.backgroundSize = 'cover';
+            document.body.style.backgroundPosition = 'center';
+            document.body.style.backgroundRepeat = 'no-repeat';
+          } else {
+            // Both unchecked, fall back to primary color
+            document.body.style.backgroundImage = 'none';
+            document.body.style.background = formData.primary_color;
+          }
+        } else if (field === 'logo_use_background') {
+          // Logo checkbox changed
+          if (otherFieldValue && backgroundPreview) {
+            // Background image takes precedence (don't change)
+            document.body.style.backgroundImage = `url(${backgroundPreview})`;
+            document.body.style.backgroundSize = 'cover';
+            document.body.style.backgroundPosition = 'center';
+            document.body.style.backgroundRepeat = 'no-repeat';
+          } else if (newValue && logoPreview) {
+            // Logo checked and no background, use logo
+            document.body.style.backgroundImage = `url(${logoPreview})`;
+            document.body.style.backgroundSize = 'cover';
+            document.body.style.backgroundPosition = 'center';
+            document.body.style.backgroundRepeat = 'no-repeat';
+          } else {
+            // Logo unchecked and no background, fall back to primary color
+            document.body.style.backgroundImage = 'none';
+            document.body.style.background = formData.primary_color;
+          }
+        }
+      }, 0);
+    }
+  }, [formData.background_use_image, formData.logo_use_background, formData.primary_color, backgroundPreview, logoPreview]);
 
   const applyPrimaryPreset = useCallback((presetKey: string) => {
     const preset = COLOR_PRESETS[presetKey as keyof typeof COLOR_PRESETS];
@@ -135,10 +326,15 @@ const ProfileEditPanel: React.FC<ProfileEditPanelProps> = ({
           'Content-Type': 'application/json',
           'x-wallet-address': userAddress.toLowerCase()
         },
-        body: JSON.stringify({
-          artistId: artistConfig.id || artistConfig.name.toLowerCase(),
-          ...formData
-        })
+      body: JSON.stringify({
+        artistId: artistConfig.id || artistConfig.name.toLowerCase(),
+        ...formData,
+        // Include logo fields
+        logo_url: formData.logo_url,
+        background_image_url: formData.background_image_url,
+        logo_use_background: formData.logo_use_background,
+        background_use_image: formData.background_use_image
+      })
       });
 
       const result = await response.json();
@@ -160,10 +356,28 @@ const ProfileEditPanel: React.FC<ProfileEditPanelProps> = ({
   }, [artistConfig, userAddress, formData, onSave, onClose]);
 
   const handleCancel = useCallback(() => {
-    // Restore original theme exactly like OnboardingPanel would
-    if (originalTheme.primary_color) {
+    // Revert logo/background state
+    setLogoPreview(originalTheme.logo_url);
+    setBackgroundPreview(originalTheme.background_image_url);
+    setFormData(originalTheme);
+    
+    // Apply precedence rule with original values
+    if (originalTheme.background_use_image && originalTheme.background_image_url) {
+      document.body.style.backgroundImage = `url(${originalTheme.background_image_url})`;
+      document.body.style.backgroundSize = 'cover';
+      document.body.style.backgroundPosition = 'center';
+      document.body.style.backgroundRepeat = 'no-repeat';
+    } else if (originalTheme.logo_use_background && originalTheme.logo_url) {
+      document.body.style.backgroundImage = `url(${originalTheme.logo_url})`;
+      document.body.style.backgroundSize = 'cover';
+      document.body.style.backgroundPosition = 'center';
+      document.body.style.backgroundRepeat = 'no-repeat';
+    } else {
+      document.body.style.backgroundImage = 'none';
       document.body.style.background = originalTheme.primary_color;
     }
+    
+    // Revert accent color
     if (originalTheme.accent_color) {
       document.documentElement.style.setProperty('--accent-color', originalTheme.accent_color);
       const headerElement = document.querySelector('h1');
@@ -171,6 +385,8 @@ const ProfileEditPanel: React.FC<ProfileEditPanelProps> = ({
         headerElement.style.color = originalTheme.accent_color;
       }
     }
+    
+    // Revert font
     if (originalTheme.font_family) {
       document.body.style.fontFamily = originalTheme.font_family;
       const headerElement = document.querySelector('h1');
@@ -280,6 +496,306 @@ const ProfileEditPanel: React.FC<ProfileEditPanelProps> = ({
         </div>
       </div>
 
+      {/* Logo Upload Section */}
+      <div className="mb-6">
+        <h3 className="text-lg font-semibold text-white mb-3">Logo Upload</h3>
+        
+        {/* Current logo preview */}
+        {logoPreview && (
+          <div className="mb-3 relative inline-block">
+            <button
+              onClick={async () => {
+                if (confirm('Are you sure you want to remove the logo?')) {
+                  try {
+                    // Delete from server
+                    const response = await fetch('/api/deleteLogo', {
+                      method: 'DELETE',
+                      headers: {
+                        'Content-Type': 'application/json',
+                        'x-wallet-address': userAddress.toLowerCase()
+                      },
+                      body: JSON.stringify({
+                        artistId: artistConfig.id || artistConfig.name.toLowerCase()
+                      })
+                    });
+
+                    if (response.ok) {
+                      // Clear preview and state
+                      if (logoPreview.startsWith('blob:')) {
+                        URL.revokeObjectURL(logoPreview);
+                      }
+                      setLogoPreview(null);
+                      setLogoFile(null);
+                      setFormData(prev => ({
+                        ...prev,
+                        logo_url: null,
+                        logo_use_background: false
+                      }));
+                      
+                      // Revert background if logo was being used
+                      setTimeout(() => {
+                        if (formData.background_use_image && backgroundPreview) {
+                          document.body.style.backgroundImage = `url(${backgroundPreview})`;
+                        } else {
+                          document.body.style.backgroundImage = 'none';
+                          document.body.style.background = formData.primary_color;
+                        }
+                        document.body.style.backgroundSize = 'cover';
+                        document.body.style.backgroundPosition = 'center';
+                        document.body.style.backgroundRepeat = 'no-repeat';
+                      }, 0);
+                    } else {
+                      const result = await response.json();
+                      alert(result.error || 'Failed to delete logo');
+                    }
+                  } catch (error) {
+                    console.error('Logo delete error:', error);
+                    alert('Failed to delete logo');
+                  }
+                }
+              }}
+              className="absolute top-2 right-2 bg-red-600 hover:bg-red-700 text-white rounded-full w-8 h-8 flex items-center justify-center text-lg font-bold transition-colors shadow-lg z-10"
+              title="Remove logo"
+            >
+              ×
+            </button>
+            <img 
+              src={logoPreview} 
+              alt="Logo preview" 
+              className="w-48 h-48 object-contain rounded border border-gray-600 bg-gray-800 mx-auto"
+            />
+          </div>
+        )}
+        
+        {/* File input */}
+        <input
+          type="file"
+          accept="image/*"
+          onChange={async (e) => {
+            const file = e.target.files?.[0];
+            if (!file) return;
+            
+            // Validate file type
+            if (!file.type.startsWith('image/')) {
+              alert('Please upload an image file (JPG, PNG, SVG, or WebP)');
+              return;
+            }
+            
+            // Validate file size (5MB max)
+            if (file.size > 5 * 1024 * 1024) {
+              alert('File size must be less than 5MB');
+              return;
+            }
+            
+            setLogoFile(file);
+            // Revoke old preview URL to prevent memory leaks
+            if (logoPreview && logoPreview.startsWith('blob:')) {
+              URL.revokeObjectURL(logoPreview);
+            }
+            const preview = URL.createObjectURL(file);
+            setLogoPreview(preview);
+            
+            // Upload to server (but don't apply yet - wait for checkbox)
+            await uploadLogoFile(file, artistConfig.id || artistConfig.name.toLowerCase());
+          }}
+          className="w-full p-3 bg-gray-700 text-white rounded-lg border border-gray-600 mb-3 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-yellow-500 file:text-white hover:file:bg-yellow-600"
+        />
+        
+        {/* Checkbox - Use logo as background */}
+        <label className="flex items-center text-white cursor-pointer">
+          <input
+            type="checkbox"
+            checked={formData.logo_use_background}
+            onChange={(e) => {
+              const checked = e.target.checked;
+              // Update both fields atomically: if checking logo, uncheck background
+              setFormData(prev => {
+                const updated = {
+                  ...prev,
+                  logo_use_background: checked,
+                  background_use_image: checked ? false : prev.background_use_image
+                };
+                // Apply live preview with updated values
+                setTimeout(() => {
+                  if (checked && logoPreview) {
+                    // Logo checked - use logo as background
+                    document.body.style.backgroundImage = `url(${logoPreview})`;
+                    document.body.style.backgroundSize = 'cover';
+                    document.body.style.backgroundPosition = 'center';
+                    document.body.style.backgroundRepeat = 'no-repeat';
+                  } else if (!checked && updated.background_use_image && backgroundPreview) {
+                    // Logo unchecked, but background is checked - use background
+                    document.body.style.backgroundImage = `url(${backgroundPreview})`;
+                    document.body.style.backgroundSize = 'cover';
+                    document.body.style.backgroundPosition = 'center';
+                    document.body.style.backgroundRepeat = 'no-repeat';
+                  } else {
+                    // Both unchecked - use primary color
+                    document.body.style.backgroundImage = 'none';
+                    document.body.style.background = updated.primary_color;
+                  }
+                }, 0);
+                return updated;
+              });
+            }}
+            className="mr-2 w-4 h-4"
+            disabled={!logoPreview}
+          />
+          <span className={logoPreview ? '' : 'text-gray-500'}>
+            Use logo as page background
+          </span>
+        </label>
+      </div>
+
+      {/* Background Image Section (separate from logo) */}
+      <div className="mb-6">
+        <h3 className="text-lg font-semibold text-white mb-3">Background Image</h3>
+        
+        {/* Current background preview */}
+        {backgroundPreview && (
+          <div className="mb-3 relative">
+            <button
+              onClick={async () => {
+                if (confirm('Are you sure you want to remove the background image?')) {
+                  try {
+                    // Delete from server
+                    const response = await fetch('/api/deleteBackground', {
+                      method: 'DELETE',
+                      headers: {
+                        'Content-Type': 'application/json',
+                        'x-wallet-address': userAddress.toLowerCase()
+                      },
+                      body: JSON.stringify({
+                        artistId: artistConfig.id || artistConfig.name.toLowerCase()
+                      })
+                    });
+
+                    if (response.ok) {
+                      // Clear preview and state
+                      if (backgroundPreview.startsWith('blob:')) {
+                        URL.revokeObjectURL(backgroundPreview);
+                      }
+                      setBackgroundPreview(null);
+                      setBackgroundFile(null);
+                      setFormData(prev => ({
+                        ...prev,
+                        background_image_url: null,
+                        background_use_image: false
+                      }));
+                      
+                      // Revert background if it was being used
+                      setTimeout(() => {
+                        if (formData.logo_use_background && logoPreview) {
+                          document.body.style.backgroundImage = `url(${logoPreview})`;
+                        } else {
+                          document.body.style.backgroundImage = 'none';
+                          document.body.style.background = formData.primary_color;
+                        }
+                        document.body.style.backgroundSize = 'cover';
+                        document.body.style.backgroundPosition = 'center';
+                        document.body.style.backgroundRepeat = 'no-repeat';
+                      }, 0);
+                    } else {
+                      const result = await response.json();
+                      alert(result.error || 'Failed to delete background image');
+                    }
+                  } catch (error) {
+                    console.error('Background delete error:', error);
+                    alert('Failed to delete background image');
+                  }
+                }
+              }}
+              className="absolute top-2 right-2 bg-red-600 hover:bg-red-700 text-white rounded-full w-8 h-8 flex items-center justify-center text-lg font-bold transition-colors shadow-lg z-10"
+              title="Remove background image"
+            >
+              ×
+            </button>
+            <img 
+              src={backgroundPreview} 
+              alt="Background preview" 
+              className="w-full h-64 object-cover rounded border border-gray-600"
+            />
+          </div>
+        )}
+        
+        {/* File input */}
+        <input
+          type="file"
+          accept="image/*"
+          onChange={async (e) => {
+            const file = e.target.files?.[0];
+            if (!file) return;
+            
+            // Same validation as logo
+            if (!file.type.startsWith('image/')) {
+              alert('Please upload an image file (JPG, PNG, SVG, or WebP)');
+              return;
+            }
+            if (file.size > 5 * 1024 * 1024) {
+              alert('File size must be less than 5MB');
+              return;
+            }
+            
+            setBackgroundFile(file);
+            // Revoke old preview URL to prevent memory leaks
+            if (backgroundPreview && backgroundPreview.startsWith('blob:')) {
+              URL.revokeObjectURL(backgroundPreview);
+            }
+            const preview = URL.createObjectURL(file);
+            setBackgroundPreview(preview);
+            
+            // Upload to server
+            await uploadBackgroundFile(file, artistConfig.id || artistConfig.name.toLowerCase());
+          }}
+          className="w-full p-3 bg-gray-700 text-white rounded-lg border border-gray-600 mb-3 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-yellow-500 file:text-white hover:file:bg-yellow-600"
+        />
+        
+        {/* Checkbox - Use background image */}
+        <label className="flex items-center text-white cursor-pointer">
+          <input
+            type="checkbox"
+            checked={formData.background_use_image}
+            onChange={(e) => {
+              const checked = e.target.checked;
+              // Update both fields atomically: if checking background, uncheck logo
+              setFormData(prev => {
+                const updated = {
+                  ...prev,
+                  background_use_image: checked,
+                  logo_use_background: checked ? false : prev.logo_use_background
+                };
+                // Apply live preview with updated values
+                setTimeout(() => {
+                  if (checked && backgroundPreview) {
+                    // Background checked - use background image (takes precedence)
+                    document.body.style.backgroundImage = `url(${backgroundPreview})`;
+                    document.body.style.backgroundSize = 'cover';
+                    document.body.style.backgroundPosition = 'center';
+                    document.body.style.backgroundRepeat = 'no-repeat';
+                  } else if (!checked && updated.logo_use_background && logoPreview) {
+                    // Background unchecked, but logo is checked - use logo
+                    document.body.style.backgroundImage = `url(${logoPreview})`;
+                    document.body.style.backgroundSize = 'cover';
+                    document.body.style.backgroundPosition = 'center';
+                    document.body.style.backgroundRepeat = 'no-repeat';
+                  } else {
+                    // Both unchecked - use primary color
+                    document.body.style.backgroundImage = 'none';
+                    document.body.style.background = updated.primary_color;
+                  }
+                }, 0);
+                return updated;
+              });
+            }}
+            className="mr-2 w-4 h-4"
+            disabled={!backgroundPreview}
+          />
+          <span className={backgroundPreview ? '' : 'text-gray-500'}>
+            Use background image
+          </span>
+        </label>
+      </div>
+
       {/* Typography Section */}
       <div className="mb-6">
         <h3 className="text-lg font-semibold text-white mb-3">Typography</h3>
@@ -370,3 +886,4 @@ const ProfileEditPanel: React.FC<ProfileEditPanelProps> = ({
 };
 
 export default ProfileEditPanel;
+
