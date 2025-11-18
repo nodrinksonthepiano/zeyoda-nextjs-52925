@@ -29,6 +29,7 @@ import {
   RenderableToken,
   UserTokenBalances
 } from '../types/artist-types';
+import { applyArtistBackground } from './utils/themeBackground';
 import { useCommandSystem } from './hooks/useCommandSystem';
 import { ArtistFactoryABI } from './utils/abis/ArtistFactoryABI';
 import { clearAllSafewordStorage } from './utils/safewordStorage';
@@ -105,9 +106,56 @@ const ArtistPageContent: React.FC<{
   
   // Use state to manage artistConfig within this component to respond to prop changes
   const [artistConfig, setArtistConfig] = useState(initialArtistConfig);
+  const lastSaveTimeRef = useRef<number>(0); // Track when Save happened to prevent overwrite
+  
   useEffect(() => {
-    setArtistConfig(initialArtistConfig);
-  }, [initialArtistConfig]);
+    // Don't overwrite if user is actively editing profile (preserve live preview state)
+    if (appMode === 'profile-edit') {
+      console.log('[page.tsx] ⏭️ Skipping artistConfig sync - profile-edit mode active');
+      return;
+    }
+    
+    // CRITICAL: Don't overwrite if we just saved (within last 2 seconds)
+    // This prevents the hook refresh from overwriting our updated state
+    const timeSinceSave = Date.now() - lastSaveTimeRef.current;
+    if (timeSinceSave < 2000) {
+      console.log('[page.tsx] ⏭️ Skipping artistConfig sync - recent save detected', {
+        timeSinceSave,
+        preservingLogoFields: {
+          logo_url: artistConfig?.logo_url,
+          logo_use_background: artistConfig?.logo_use_background
+        }
+      });
+      return;
+    }
+    
+    // Only sync if initialArtistConfig actually changed (logo fields OR theme fields)
+    // This prevents overwriting with stale data that's missing logo/theme fields
+    const hasLogoChanges = initialArtistConfig && (
+      initialArtistConfig.logo_url !== artistConfig?.logo_url ||
+      initialArtistConfig.logo_use_background !== artistConfig?.logo_use_background ||
+      initialArtistConfig.background_image_url !== artistConfig?.background_image_url ||
+      initialArtistConfig.background_use_image !== artistConfig?.background_use_image
+    );
+    
+    const hasThemeChanges = initialArtistConfig && (
+      initialArtistConfig.theme?.primaryColor !== artistConfig?.theme?.primaryColor ||
+      initialArtistConfig.theme?.accentColor !== artistConfig?.theme?.accentColor ||
+      initialArtistConfig.theme?.fontFamily !== artistConfig?.theme?.fontFamily
+    );
+    
+    if (initialArtistConfig && (hasLogoChanges || hasThemeChanges)) {
+      console.log('[page.tsx] 🔄 Syncing artistConfig from hook:', {
+        logo_url: initialArtistConfig.logo_url,
+        logo_use_background: initialArtistConfig.logo_use_background,
+        background_image_url: initialArtistConfig.background_image_url,
+        background_use_image: initialArtistConfig.background_use_image,
+        primaryColor: initialArtistConfig.theme?.primaryColor,
+        accentColor: initialArtistConfig.theme?.accentColor
+      });
+      setArtistConfig(initialArtistConfig);
+    }
+  }, [initialArtistConfig, appMode, artistConfig]);
 
   // Live primary color for halo updates during editing
   const [livePrimaryColor, setLivePrimaryColor] = useState<string | null>(null);
@@ -1268,6 +1316,13 @@ const ArtistPageContent: React.FC<{
 
   // Initialize onboarding theme once when entering onboarding mode (NEW ARTISTS ONLY)
   useEffect(() => {
+    // CRITICAL: Never run onboarding cleanup during profile-edit mode
+    // ProfileEditPanel handles its own background during editing
+    if (appMode === 'profile-edit') {
+      console.log('[page.tsx] 🚫 Skipping onboarding cleanup - profile-edit mode active');
+      return;
+    }
+    
     if (appMode === 'onboarding') {
       // Set global flag to suspend auto-refreshes
       (window as any).onboardingMode = true;
@@ -1280,58 +1335,42 @@ const ArtistPageContent: React.FC<{
       document.documentElement.style.setProperty('--gradient-end', '#F5F5DC');
       document.body.style.background = 'linear-gradient(135deg, #FAF0E6 0%, #FDF5E6 50%, #F5F5DC 100%)';
       document.body.style.fontFamily = 'Bungee, cursive';
-      console.log('🎨 Applied onboarding linen canvas background');
+      console.log('[page.tsx] 🎨 Applied onboarding linen canvas background');
     } else {
       // Clear onboarding flag when exiting onboarding mode
       (window as any).onboardingMode = false;
+      
+      // CRITICAL: Don't clear background here - let theme effect handle it
+      // Clearing here can cause tan flash if ProfileEditPanel just applied logo
+      console.log('[page.tsx] 🧹 Onboarding mode exited, theme effect will restore correct background');
+      // DO NOT clear background styles here - let the theme effect do it atomically
     }
-  }, [appMode]); // ONLY depend on appMode, not artistConfig
+  }, [appMode]); // ONLY depend on appMode - never run during profile-edit
   
-  // Separate useEffect for normal theme application - NEVER runs during onboarding
+  // Separate useEffect for normal theme application - NEVER runs during onboarding or profile-edit
   useEffect(() => {
     // COMPLETELY SKIP if in onboarding mode (new artists get tan canvas)
-    // BUT allow theme for upload-asset mode (existing artists keep their colors)
     if (appMode === 'onboarding') {
-      console.log('🚫 Skipping theme application - onboarding mode active');
+      console.log('[page.tsx] 🚫 Skipping theme application - onboarding mode active');
       return;
     }
     
-    // Normal mode: use artist theme
-    const { theme } = artistConfig || {};
-    if (theme) {
-      document.documentElement.style.setProperty('--primary-color', theme.primaryColor || '#000000');
-      if (theme.accentColor) {
-        document.documentElement.style.setProperty('--accent-color', theme.accentColor);
-        document.documentElement.style.setProperty(
-          '--accent-color-rgb',
-          theme.accentColor.match(/\d+/g)?.join(', ') ?? '0,0,0'
-        );
-      }
-      document.documentElement.style.setProperty('--gradient-start', theme.gradientStart || '#ffffff');
-      document.documentElement.style.setProperty('--gradient-middle', theme.gradientMiddle || '#cccccc');
-      document.documentElement.style.setProperty('--gradient-end', theme.gradientEnd || '#999999');
-      document.body.style.fontFamily = theme.fontFamily || 'Geist Sans, sans-serif';
-      
-      // Apply background precedence rule: background_image > logo_background > primary_color
-      if (artistConfig?.background_image_url && artistConfig?.background_use_image) {
-        document.body.style.backgroundImage = `url(${artistConfig.background_image_url})`;
-        document.body.style.backgroundSize = 'cover';
-        document.body.style.backgroundPosition = 'center';
-        document.body.style.backgroundRepeat = 'no-repeat';
-        console.log('🎨 Applied background image:', artistConfig.background_image_url);
-      } else if (artistConfig?.logo_url && artistConfig?.logo_use_background) {
-        document.body.style.backgroundImage = `url(${artistConfig.logo_url})`;
-        document.body.style.backgroundSize = 'cover';
-        document.body.style.backgroundPosition = 'center';
-        document.body.style.backgroundRepeat = 'no-repeat';
-        console.log('🎨 Applied logo as background:', artistConfig.logo_url);
-      } else {
-        // Fall back to primary color
-        document.body.style.backgroundImage = 'none';
-        document.body.style.background = theme.primaryColor || '#000000';
-        console.log('🎨 Applied artist background color:', theme.primaryColor);
-      }
+    // SKIP if in profile-edit mode (ProfileEditPanel handles live preview)
+    if (appMode === 'profile-edit') {
+      console.log('[page.tsx] 🚫 Skipping theme application - profile-edit mode active (handled by panel)');
+      return;
     }
+    
+    // Normal mode: use artist theme via single decider function
+    console.log('[page.tsx] 🎨 Theme effect: Applying background with config:', {
+      logo_url: artistConfig?.logo_url,
+      logo_use_background: artistConfig?.logo_use_background,
+      background_image_url: artistConfig?.background_image_url,
+      background_use_image: artistConfig?.background_use_image,
+      primaryColor: artistConfig?.theme?.primaryColor,
+      appMode
+    });
+    applyArtistBackground(artistConfig);
   }, [artistConfig, appMode]);
 
   useEffect(() => {
@@ -2363,12 +2402,54 @@ const ArtistPageContent: React.FC<{
               userAddress={user}
               onClose={() => setAppMode('normal')}
               onSave={(updates) => {
-                console.log('✅ Profile updates applied:', updates);
+                console.log('[page.tsx] ✅ Profile updates received:', {
+                  logo_url: updates.logo_url,
+                  logo_use_background: updates.logo_use_background,
+                  background_image_url: updates.background_image_url,
+                  background_use_image: updates.background_use_image,
+                  hasThemeUpdates: !!(updates.primary_color || updates.accent_color || updates.font_family)
+                });
+                
+                // Record save time to prevent state sync overwrite
+                lastSaveTimeRef.current = Date.now();
+                
+                // Merge updates into artistConfig state IMMEDIATELY
+                setArtistConfig(prev => {
+                  if (!prev) return prev;
+                  
+                  const updated = {
+                    ...prev,
+                    theme: updates.primary_color || updates.accent_color || updates.font_family || updates.gradient_start || updates.gradient_end ? {
+                      ...prev.theme,
+                      primaryColor: updates.primary_color ?? prev.theme?.primaryColor,
+                      accentColor: updates.accent_color ?? prev.theme?.accentColor,
+                      gradientStart: updates.gradient_start ?? prev.theme?.gradientStart,
+                      gradientEnd: updates.gradient_end ?? prev.theme?.gradientEnd,
+                      fontFamily: updates.font_family ?? prev.theme?.fontFamily,
+                    } : prev.theme,
+                    logo_url: updates.logo_url !== undefined ? updates.logo_url : prev.logo_url,
+                    background_image_url: updates.background_image_url !== undefined ? updates.background_image_url : prev.background_image_url,
+                    logo_use_background: updates.logo_use_background !== undefined ? Boolean(updates.logo_use_background) : prev.logo_use_background,
+                    background_use_image: updates.background_use_image !== undefined ? Boolean(updates.background_use_image) : prev.background_use_image,
+                  };
+                  
+                  console.log('[page.tsx] ✅ Merged state update:', {
+                    logo_url: updated.logo_url,
+                    logo_use_background: updated.logo_use_background,
+                    background_image_url: updated.background_image_url,
+                    background_use_image: updated.background_use_image,
+                    primaryColor: updated.theme?.primaryColor
+                  });
+                  
+                  // Apply background immediately with updated config
+                  applyArtistBackground(updated);
+                  
+                  return updated;
+                });
+                
                 showToast('Profile saved successfully!', 'success');
-                // Trigger config refresh to update theme
-                window.dispatchEvent(new CustomEvent('themeUpdate'));
-                // Return to normal mode (swap slider)
-                setAppMode('normal');
+                // Note: appMode change happens via ProfileEditPanel's onClose() call
+                // The theme effect will run when appMode changes to 'normal'
               }}
             />
           )}

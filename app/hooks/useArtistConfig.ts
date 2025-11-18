@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { useArtistRegistryContext } from '../contexts/ArtistRegistryContext';
 import { getArtistContracts as getFallbackArtistContracts } from '../utils/addressRegistryFallback';
@@ -15,6 +15,7 @@ interface UseArtistConfigReturn {
   isLoading: boolean;
   error: string | null;
   refreshPrices: () => Promise<void>;
+  refreshConfig: () => Promise<void>;
 }
 
 const useArtistConfig = (): UseArtistConfigReturn => {
@@ -145,100 +146,138 @@ const useArtistConfig = (): UseArtistConfigReturn => {
     }
   };
 
-  useEffect(() => {
-    const fetchConfig = async () => {
-      if (isRegistryLoading) {
-        // Wait until the registry is loaded, errored, or has a fallback
-        return;
+  // Extract fetch logic into reusable function (memoized to avoid stale closures)
+  const fetchConfig = useCallback(async () => {
+    if (isRegistryLoading) {
+      // Wait until the registry is loaded, errored, or has a fallback
+      return;
+    }
+    
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      // Fetch base artist data from the artists table
+      const { data: artistsData, error: dbError } = await supabase
+        .from('artists')
+        .select('*');
+      
+      if (dbError) throw dbError;
+
+      // The registry from context is the primary source of truth for contract addresses
+      const currentRegistry = registry;
+      if (!currentRegistry) {
+        throw new Error("Artist registry is not available, and fallback failed.");
+      }
+
+      const combinedConfigs: {[key: string]: ArtistConfig} = {};
+
+      for (const artistData of artistsData as ArtistDatabaseEntry[]) {
+        const contracts = currentRegistry[artistData.id] || getFallbackArtistContracts(artistData.id);
+        
+        // Debug registry data
+        console.debug('[ArtistConfig] registry for', artistData.id, ':', contracts);
+        
+        if (contracts) {
+          // Extract theme data with better fallbacks
+          const themeData = artistData.theme as any || {};
+          
+          combinedConfigs[artistData.id] = {
+            name: artistData.name,
+            displayName: artistData.displayname,
+            tokenName: artistData.tokenName,
+            artworkTitle: artistData.artworktitle,
+            artworkYear: artistData.artworkyear,
+            tokenPrice: artistData.tokenprice,
+            videoSrc: artistData.videosrc,
+            contract: contracts.token,
+            swap: contracts.swap || artistData.swap_address || undefined,
+            downloads: contracts.downloads || artistData.download_address || undefined,
+            treasury_wallet: artistData.treasury_wallet || contracts.treasury_wallet || undefined,
+            theme: {
+              primaryColor: themeData.primaryColor || artistData.primary_color || '#000000',
+              accentColor: themeData.accentColor || artistData.accent_color || '#4073ff',
+              gradientStart: themeData.gradientStart || themeData.accentColor || artistData.gradient_start || '#FFD700',
+              gradientMiddle: themeData.gradientMiddle || themeData.accentColor || artistData.gradient_middle || '#FFD700',
+              gradientEnd: themeData.gradientEnd || themeData.accentColor || artistData.gradient_end || '#FFD700',
+              fontFamily: themeData.fontFamily || artistData.font_family || 'Geist',
+            },
+            orbitalTokens: artistData.orbital_tokens,
+            // Logo and background image fields
+            logo_url: artistData.logo_url || null,
+            background_image_url: artistData.background_image_url || null,
+            logo_use_background: Boolean(artistData.logo_use_background),
+            background_use_image: Boolean(artistData.background_use_image),
+          };
+          
+          // Debug log logo fields loading
+          console.log(`[useArtistConfig] ✅ Loaded config for ${artistData.id}:`, {
+            logo_url: combinedConfigs[artistData.id].logo_url,
+            logo_use_background: combinedConfigs[artistData.id].logo_use_background,
+            background_image_url: combinedConfigs[artistData.id].background_image_url,
+            background_use_image: combinedConfigs[artistData.id].background_use_image,
+            primaryColor: combinedConfigs[artistData.id].theme.primaryColor
+          });
+          
+          // Debug logging for treasury_wallet loading
+          console.debug('[ArtistConfig] loaded', { 
+            id: artistData.id, 
+            treasury_wallet: artistData.treasury_wallet || contracts.treasury_wallet || 'undefined'
+          });
+          
+          // Debug log the theme extraction
+          console.log(`🎨 Theme extracted for ${artistData.id}:`, {
+            primary: combinedConfigs[artistData.id].theme.primaryColor,
+            accent: combinedConfigs[artistData.id].theme.accentColor,
+            source: themeData.primaryColor ? 'theme object' : 'fallback'
+          });
+        }
       }
       
-      setIsLoading(true);
-      setError(null);
+      // Fetch real-time prices
+      const configsWithPrices = await fetchRealTimePrices(combinedConfigs);
+      setAllArtistsConfig(configsWithPrices);
 
-      try {
-        // Fetch base artist data from the artists table
-        const { data: artistsData, error: dbError } = await supabase
-          .from('artists')
-          .select('*');
-        
-        if (dbError) throw dbError;
-
-        // The registry from context is the primary source of truth for contract addresses
-        const currentRegistry = registry;
-        if (!currentRegistry) {
-          throw new Error("Artist registry is not available, and fallback failed.");
-        }
-
-        const combinedConfigs: {[key: string]: ArtistConfig} = {};
-
-        for (const artistData of artistsData as ArtistDatabaseEntry[]) {
-          const contracts = currentRegistry[artistData.id] || getFallbackArtistContracts(artistData.id);
-          
-          // Debug registry data
-          console.debug('[ArtistConfig] registry for', artistData.id, ':', contracts);
-          
-          if (contracts) {
-            // Extract theme data with better fallbacks
-            const themeData = artistData.theme as any || {};
-            
-            combinedConfigs[artistData.id] = {
-              name: artistData.name,
-              displayName: artistData.displayname,
-              tokenName: artistData.tokenName,
-              artworkTitle: artistData.artworktitle,
-              artworkYear: artistData.artworkyear,
-              tokenPrice: artistData.tokenprice,
-              videoSrc: artistData.videosrc,
-              contract: contracts.token,
-              swap: contracts.swap || artistData.swap_address || undefined,
-              downloads: contracts.downloads || artistData.download_address || undefined,
-              treasury_wallet: artistData.treasury_wallet || contracts.treasury_wallet || undefined,
-              theme: {
-                primaryColor: themeData.primaryColor || artistData.primary_color || '#000000',
-                accentColor: themeData.accentColor || artistData.accent_color || '#4073ff',
-                gradientStart: themeData.gradientStart || themeData.accentColor || artistData.gradient_start || '#FFD700',
-                gradientMiddle: themeData.gradientMiddle || themeData.accentColor || artistData.gradient_middle || '#FFD700',
-                gradientEnd: themeData.gradientEnd || themeData.accentColor || artistData.gradient_end || '#FFD700',
-                fontFamily: themeData.fontFamily || artistData.font_family || 'Geist',
-              },
-              orbitalTokens: artistData.orbital_tokens,
-            };
-            
-            // Debug logging for treasury_wallet loading
-            console.debug('[ArtistConfig] loaded', { 
-              id: artistData.id, 
-              treasury_wallet: artistData.treasury_wallet || contracts.treasury_wallet || 'undefined'
-            });
-            
-            // Debug log the theme extraction
-            console.log(`🎨 Theme extracted for ${artistData.id}:`, {
-              primary: combinedConfigs[artistData.id].theme.primaryColor,
-              accent: combinedConfigs[artistData.id].theme.accentColor,
-              source: themeData.primaryColor ? 'theme object' : 'fallback'
-            });
-          }
-        }
-        
-        // Fetch real-time prices
-        const configsWithPrices = await fetchRealTimePrices(combinedConfigs);
-        setAllArtistsConfig(configsWithPrices);
-
-        if (artistId && configsWithPrices[artistId]) {
-          setArtistConfig(configsWithPrices[artistId]);
-        } else if (artistId) {
-          setError(`Configuration for artist "${artistId}" not found.`);
-        }
-
-      } catch (e: any) {
-        console.error("Failed to fetch artist configurations:", e);
-        setError(e.message);
-      } finally {
-        setIsLoading(false);
+      if (artistId && configsWithPrices[artistId]) {
+        setArtistConfig(configsWithPrices[artistId]);
+      } else if (artistId) {
+        setError(`Configuration for artist "${artistId}" not found.`);
       }
+
+    } catch (e: any) {
+      console.error("Failed to fetch artist configurations:", e);
+      setError(e.message);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [artistId, isRegistryLoading, registry]);
+
+  useEffect(() => {
+    fetchConfig();
+  }, [fetchConfig]); // fetchConfig is memoized with correct dependencies
+
+  // Listen for logo/background deletion events to trigger refresh
+  useEffect(() => {
+    const handleLogoDeleted = () => {
+      // Small delay to ensure database update completes
+      console.log('[useArtistConfig] 🔄 Refreshing config after logo/background deletion (delayed 500ms)');
+      setTimeout(() => {
+        fetchConfig();
+      }, 500);
     };
 
-    fetchConfig();
-  }, [artistId, isRegistryLoading, registry]); // Rerun when artist changes or registry loads
+    window.addEventListener('logoDeleted', handleLogoDeleted);
+    window.addEventListener('backgroundDeleted', handleLogoDeleted);
+    return () => {
+      window.removeEventListener('logoDeleted', handleLogoDeleted);
+      window.removeEventListener('backgroundDeleted', handleLogoDeleted);
+    };
+  }, [fetchConfig]); // fetchConfig is memoized, so this is stable
+
+  const refreshConfig = async () => {
+    console.log('[useArtistConfig] 🔄 Manual config refresh triggered');
+    await fetchConfig();
+  };
 
   // DISABLED: Auto-refresh to prevent page remounts  
   // Price refresh moved to SWR-based system for stability
@@ -251,7 +290,7 @@ const useArtistConfig = (): UseArtistConfigReturn => {
   //   return () => clearInterval(interval);
   // }, [allArtistsConfig, artistId]);
 
-  return { artistConfig, allArtistsConfig, isLoading: isLoading || isRegistryLoading, error, refreshPrices };
+  return { artistConfig, allArtistsConfig, isLoading: isLoading || isRegistryLoading, error, refreshPrices, refreshConfig };
 };
 
 export default useArtistConfig; 

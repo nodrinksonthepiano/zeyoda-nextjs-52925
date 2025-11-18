@@ -47,6 +47,7 @@ export async function DELETE(request: NextRequest) {
     }
 
     // Delete all background files for this artist
+    let storageDeleted = false;
     try {
       const { data: files } = await supabase.storage
         .from('artist-assets')
@@ -65,21 +66,52 @@ export async function DELETE(request: NextRequest) {
             .remove(backgroundFiles);
           
           if (deleteError) {
-            console.error('❌ Failed to delete background files:', deleteError);
-            return NextResponse.json({ error: 'Failed to delete background files' }, { status: 500 });
+            console.warn('⚠️ Failed to delete background files from storage:', deleteError);
+            // Don't fail - continue to database update
+          } else {
+            console.log('✅ Deleted background files from storage:', backgroundFiles);
+            storageDeleted = true;
           }
-          
-          console.log('✅ Deleted background files:', backgroundFiles);
         }
+      } else {
+        console.log('ℹ️ No background files found in storage (may already be deleted)');
       }
     } catch (error) {
-      console.error('❌ Error deleting background files:', error);
-      return NextResponse.json({ error: 'Failed to delete background files' }, { status: 500 });
+      console.warn('⚠️ Error deleting background files from storage:', error);
+      // Don't fail - continue to database update
     }
+
+    // CRITICAL: Update database fields to null/false (LAYER 1: Database)
+    console.log('🔄 Updating database fields: background_image_url=null, background_use_image=false');
+    const { error: updateError } = await supabase
+      .from('artists')
+      .update({ 
+        background_image_url: null, 
+        background_use_image: false 
+      })
+      .eq('id', artistId);
+
+    if (updateError) {
+      console.error('❌ Failed to update database fields:', updateError);
+      return NextResponse.json({ 
+        error: 'Failed to update database fields',
+        details: updateError.message 
+      }, { status: 500 });
+    }
+
+    console.log('✅ Background deletion complete:', {
+      artistId,
+      storageDeleted,
+      databaseUpdated: true,
+      background_image_url: null,
+      background_use_image: false
+    });
 
     return NextResponse.json({
       success: true,
-      message: 'Background image deleted successfully'
+      message: 'Background image deleted successfully',
+      storageDeleted,
+      databaseUpdated: true
     });
 
   } catch (error: any) {

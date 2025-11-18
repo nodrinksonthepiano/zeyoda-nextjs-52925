@@ -1,4 +1,6 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
+import { applyArtistBackground } from '../utils/themeBackground';
+import { ArtistConfig } from '../../types/artist-types';
 
 interface ProfileEditPanelProps {
   artistConfig: any;
@@ -94,6 +96,19 @@ const ProfileEditPanel: React.FC<ProfileEditPanelProps> = ({
   const [backgroundPreview, setBackgroundPreview] = useState<string | null>(
     artistConfig?.background_image_url || null
   );
+  
+  // Refs to track latest preview URLs (avoid stale closures)
+  const logoPreviewRef = useRef<string | null>(artistConfig?.logo_url || null);
+  const backgroundPreviewRef = useRef<string | null>(artistConfig?.background_image_url || null);
+  
+  // Sync refs when state changes
+  useEffect(() => {
+    logoPreviewRef.current = logoPreview;
+  }, [logoPreview]);
+  
+  useEffect(() => {
+    backgroundPreviewRef.current = backgroundPreview;
+  }, [backgroundPreview]);
 
   // Store original theme on mount
   useEffect(() => {
@@ -108,24 +123,26 @@ const ProfileEditPanel: React.FC<ProfileEditPanelProps> = ({
     window.dispatchEvent(new CustomEvent('primaryColorChange', { detail: { color: formData.primary_color } }));
   }, []);
   
-  // Apply background precedence rule
-  const applyBackgroundPrecedence = useCallback(() => {
-    // Rule: background_image > logo_background > primary_color
-    if (formData.background_use_image && backgroundPreview) {
-      document.body.style.backgroundImage = `url(${backgroundPreview})`;
-      document.body.style.backgroundSize = 'cover';
-      document.body.style.backgroundPosition = 'center';
-      document.body.style.backgroundRepeat = 'no-repeat';
-    } else if (formData.logo_use_background && logoPreview) {
-      document.body.style.backgroundImage = `url(${logoPreview})`;
-      document.body.style.backgroundSize = 'cover';
-      document.body.style.backgroundPosition = 'center';
-      document.body.style.backgroundRepeat = 'no-repeat';
-    } else {
-      document.body.style.backgroundImage = 'none';
-      document.body.style.background = formData.primary_color;
-    }
-  }, [formData.background_use_image, formData.logo_use_background, formData.primary_color, backgroundPreview, logoPreview]);
+  // Build preview config from current form state for live preview
+  const buildPreviewConfig = useCallback((): ArtistConfig | null => {
+    if (!artistConfig) return null;
+    
+    return {
+      ...artistConfig,
+      theme: {
+        ...artistConfig.theme,
+        primaryColor: formData.primary_color,
+        accentColor: formData.accent_color,
+        gradientStart: formData.gradient_start,
+        gradientEnd: formData.gradient_end,
+        fontFamily: formData.font_family,
+      },
+      logo_url: logoPreview || formData.logo_url || null,
+      background_image_url: backgroundPreview || formData.background_image_url || null,
+      logo_use_background: formData.logo_use_background,
+      background_use_image: formData.background_use_image,
+    };
+  }, [artistConfig, formData, logoPreview, backgroundPreview]);
   
   // Upload logo file to server
   const uploadLogoFile = async (file: File, artistId: string) => {
@@ -149,24 +166,33 @@ const ProfileEditPanel: React.FC<ProfileEditPanelProps> = ({
         setFormData(prev => {
           const updated = { ...prev, logo_url: result.logoUrl };
           setLogoPreview(result.logoUrl);
+          logoPreviewRef.current = result.logoUrl; // Update ref immediately
           
-          // Apply background if checkbox is checked (respect precedence)
-          setTimeout(() => {
-            if (updated.background_use_image && backgroundPreview) {
-              // Background image takes precedence
-              document.body.style.backgroundImage = `url(${backgroundPreview})`;
-            } else if (updated.logo_use_background && result.logoUrl) {
-              // Use logo as background
-              document.body.style.backgroundImage = `url(${result.logoUrl})`;
-            } else {
-              // Fall back to primary color
-              document.body.style.backgroundImage = 'none';
-              document.body.style.background = updated.primary_color;
-            }
-            document.body.style.backgroundSize = 'cover';
-            document.body.style.backgroundPosition = 'center';
-            document.body.style.backgroundRepeat = 'no-repeat';
-          }, 0);
+          // Build preview config and apply via decider
+          // CRITICAL: Use formData.logo_use_background (current checkbox state)
+          const previewConfig = {
+            ...artistConfig,
+            theme: {
+              ...artistConfig?.theme,
+              primaryColor: updated.primary_color,
+              accentColor: updated.accent_color,
+              gradientStart: updated.gradient_start,
+              gradientEnd: updated.gradient_end,
+              fontFamily: updated.font_family,
+            },
+            logo_url: result.logoUrl,
+            background_image_url: backgroundPreviewRef.current || updated.background_image_url || null,
+            logo_use_background: updated.logo_use_background, // Use current checkbox state
+            background_use_image: updated.background_use_image,
+          };
+          
+          console.log('[ProfileEditPanel] Logo uploaded, applying background:', {
+            logo_url: result.logoUrl,
+            logo_use_background: updated.logo_use_background,
+            willApplyLogo: !!(result.logoUrl && updated.logo_use_background)
+          });
+          
+          applyArtistBackground(previewConfig as ArtistConfig);
           
           return updated;
         });
@@ -201,16 +227,26 @@ const ProfileEditPanel: React.FC<ProfileEditPanelProps> = ({
         setFormData(prev => {
           const updated = { ...prev, background_image_url: result.backgroundImageUrl };
           setBackgroundPreview(result.backgroundImageUrl);
+          backgroundPreviewRef.current = result.backgroundImageUrl; // Update ref immediately
           
-          // Apply background if checkbox is checked (background takes precedence)
-          if (updated.background_use_image) {
-            setTimeout(() => {
-              document.body.style.backgroundImage = `url(${result.backgroundImageUrl})`;
-              document.body.style.backgroundSize = 'cover';
-              document.body.style.backgroundPosition = 'center';
-              document.body.style.backgroundRepeat = 'no-repeat';
-            }, 0);
-          }
+          // Build preview config and apply via decider (no setTimeout)
+          const previewConfig = {
+            ...artistConfig,
+            theme: {
+              ...artistConfig?.theme,
+              primaryColor: updated.primary_color,
+              accentColor: updated.accent_color,
+              gradientStart: updated.gradient_start,
+              gradientEnd: updated.gradient_end,
+              fontFamily: updated.font_family,
+            },
+            logo_url: logoPreviewRef.current || updated.logo_url || null,
+            background_image_url: result.backgroundImageUrl,
+            logo_use_background: updated.logo_use_background,
+            background_use_image: updated.background_use_image,
+          };
+          
+          applyArtistBackground(previewConfig as ArtistConfig);
           
           return updated;
         });
@@ -224,21 +260,39 @@ const ProfileEditPanel: React.FC<ProfileEditPanelProps> = ({
   };
 
   const handleFieldChange = useCallback((field: string, value: string | boolean) => {
-    setFormData(prev => ({
-      ...prev,
-      [field]: value
-    }));
-
-    // Apply live preview exactly like OnboardingPanel
-    if (field === 'primary_color') {
-      // Apply primary color only if no background image/logo is active
-      if (!formData.background_use_image && !formData.logo_use_background) {
-        document.body.style.background = value as string;
-        document.body.style.backgroundImage = 'none';
+    setFormData(prev => {
+      const updated = { ...prev, [field]: value };
+      
+      // Build preview config and apply via decider for consistency
+      if (field === 'primary_color' || field === 'accent_color' || field === 'font_family' || field === 'gradient_start' || field === 'gradient_end') {
+        const previewConfig = {
+          ...artistConfig,
+          theme: {
+            ...artistConfig?.theme,
+            primaryColor: field === 'primary_color' ? (value as string) : updated.primary_color,
+            accentColor: field === 'accent_color' ? (value as string) : updated.accent_color,
+            gradientStart: field === 'gradient_start' ? (value as string) : updated.gradient_start,
+            gradientEnd: field === 'gradient_end' ? (value as string) : updated.gradient_end,
+            fontFamily: field === 'font_family' ? (value as string) : updated.font_family,
+          },
+          logo_url: logoPreview || updated.logo_url || null,
+          background_image_url: backgroundPreview || updated.background_image_url || null,
+          logo_use_background: updated.logo_use_background,
+          background_use_image: updated.background_use_image,
+        };
+        applyArtistBackground(previewConfig as ArtistConfig);
+        
+        // Dispatch event to update halo for primary color
+        if (field === 'primary_color') {
+          window.dispatchEvent(new CustomEvent('primaryColorChange', { detail: { color: value as string } }));
+        }
       }
-      // Dispatch event to update halo
-      window.dispatchEvent(new CustomEvent('primaryColorChange', { detail: { color: value as string } }));
-    } else if (field === 'accent_color') {
+      
+      return updated;
+    });
+
+    // Apply live preview for other fields
+    if (field === 'accent_color') {
       document.documentElement.style.setProperty('--accent-color', value as string);
       const headerElement = document.querySelector('h1');
       if (headerElement) {
@@ -251,59 +305,7 @@ const ProfileEditPanel: React.FC<ProfileEditPanelProps> = ({
         headerElement.style.fontFamily = value as string;
       }
     }
-    // NEW: Background precedence handling
-    else if (field === 'background_use_image' || field === 'logo_use_background') {
-      // Apply precedence rule immediately with updated value
-      const newValue = value as boolean;
-      // Get the OTHER field's current state (the one not being changed)
-      const otherFieldValue = field === 'background_use_image' 
-        ? formData.logo_use_background 
-        : formData.background_use_image;
-      
-      setTimeout(() => {
-        // Apply precedence: background_image > logo_background > primary_color
-        if (field === 'background_use_image') {
-          // Background image checkbox changed
-          if (newValue && backgroundPreview) {
-            // Background image takes precedence
-            document.body.style.backgroundImage = `url(${backgroundPreview})`;
-            document.body.style.backgroundSize = 'cover';
-            document.body.style.backgroundPosition = 'center';
-            document.body.style.backgroundRepeat = 'no-repeat';
-          } else if (otherFieldValue && logoPreview) {
-            // Background unchecked, fall back to logo if enabled
-            document.body.style.backgroundImage = `url(${logoPreview})`;
-            document.body.style.backgroundSize = 'cover';
-            document.body.style.backgroundPosition = 'center';
-            document.body.style.backgroundRepeat = 'no-repeat';
-          } else {
-            // Both unchecked, fall back to primary color
-            document.body.style.backgroundImage = 'none';
-            document.body.style.background = formData.primary_color;
-          }
-        } else if (field === 'logo_use_background') {
-          // Logo checkbox changed
-          if (otherFieldValue && backgroundPreview) {
-            // Background image takes precedence (don't change)
-            document.body.style.backgroundImage = `url(${backgroundPreview})`;
-            document.body.style.backgroundSize = 'cover';
-            document.body.style.backgroundPosition = 'center';
-            document.body.style.backgroundRepeat = 'no-repeat';
-          } else if (newValue && logoPreview) {
-            // Logo checked and no background, use logo
-            document.body.style.backgroundImage = `url(${logoPreview})`;
-            document.body.style.backgroundSize = 'cover';
-            document.body.style.backgroundPosition = 'center';
-            document.body.style.backgroundRepeat = 'no-repeat';
-          } else {
-            // Logo unchecked and no background, fall back to primary color
-            document.body.style.backgroundImage = 'none';
-            document.body.style.background = formData.primary_color;
-          }
-        }
-      }, 0);
-    }
-  }, [formData.background_use_image, formData.logo_use_background, formData.primary_color, backgroundPreview, logoPreview]);
+  }, [artistConfig, logoPreview, backgroundPreview]);
 
   const applyPrimaryPreset = useCallback((presetKey: string) => {
     const preset = COLOR_PRESETS[presetKey as keyof typeof COLOR_PRESETS];
@@ -363,23 +365,28 @@ const ProfileEditPanel: React.FC<ProfileEditPanelProps> = ({
     // Revert logo/background state
     setLogoPreview(originalTheme.logo_url);
     setBackgroundPreview(originalTheme.background_image_url);
+    logoPreviewRef.current = originalTheme.logo_url;
+    backgroundPreviewRef.current = originalTheme.background_image_url;
     setFormData(originalTheme);
     
-    // Apply precedence rule with original values
-    if (originalTheme.background_use_image && originalTheme.background_image_url) {
-      document.body.style.backgroundImage = `url(${originalTheme.background_image_url})`;
-      document.body.style.backgroundSize = 'cover';
-      document.body.style.backgroundPosition = 'center';
-      document.body.style.backgroundRepeat = 'no-repeat';
-    } else if (originalTheme.logo_use_background && originalTheme.logo_url) {
-      document.body.style.backgroundImage = `url(${originalTheme.logo_url})`;
-      document.body.style.backgroundSize = 'cover';
-      document.body.style.backgroundPosition = 'center';
-      document.body.style.backgroundRepeat = 'no-repeat';
-    } else {
-      document.body.style.backgroundImage = 'none';
-      document.body.style.background = originalTheme.primary_color;
-    }
+    // Build revert config and apply via decider
+    const revertConfig = {
+      ...artistConfig,
+      theme: {
+        ...artistConfig?.theme,
+        primaryColor: originalTheme.primary_color,
+        accentColor: originalTheme.accent_color,
+        gradientStart: originalTheme.gradient_start,
+        gradientEnd: originalTheme.gradient_end,
+        fontFamily: originalTheme.font_family,
+      },
+      logo_url: originalTheme.logo_url || null,
+      background_image_url: originalTheme.background_image_url || null,
+      logo_use_background: originalTheme.logo_use_background,
+      background_use_image: originalTheme.background_use_image,
+    };
+    
+    applyArtistBackground(revertConfig as ArtistConfig);
     
     // Revert accent color
     if (originalTheme.accent_color) {
@@ -524,30 +531,55 @@ const ProfileEditPanel: React.FC<ProfileEditPanelProps> = ({
                     });
 
                     if (response.ok) {
-                      // Clear preview and state
-                      if (logoPreview.startsWith('blob:')) {
+                      const result = await response.json();
+                      console.log('[ProfileEditPanel] ✅ Logo deleted:', result);
+                      
+                      // Clear preview and state (LAYER 3: Client State)
+                      if (logoPreview && logoPreview.startsWith('blob:')) {
                         URL.revokeObjectURL(logoPreview);
                       }
                       setLogoPreview(null);
+                      logoPreviewRef.current = null;
                       setLogoFile(null);
-                      setFormData(prev => ({
-                        ...prev,
+                      
+                      const updatedFormData = {
+                        ...formData,
                         logo_url: null,
                         logo_use_background: false
-                      }));
+                      };
+                      setFormData(updatedFormData);
                       
-                      // Revert background if logo was being used
-                      setTimeout(() => {
-                        if (formData.background_use_image && backgroundPreview) {
-                          document.body.style.backgroundImage = `url(${backgroundPreview})`;
-                        } else {
-                          document.body.style.backgroundImage = 'none';
-                          document.body.style.background = formData.primary_color;
-                        }
-                        document.body.style.backgroundSize = 'cover';
-                        document.body.style.backgroundPosition = 'center';
-                        document.body.style.backgroundRepeat = 'no-repeat';
-                      }, 0);
+                      // CRITICAL: Update parent state immediately (LAYER 3: Client State)
+                      // This ensures page.tsx's artistConfig is updated and persists
+                      console.log('[ProfileEditPanel] 🔄 Notifying parent of logo deletion');
+                      
+                      // Dispatch event to trigger hook refresh
+                      window.dispatchEvent(new CustomEvent('logoDeleted'));
+                      
+                      onSave({
+                        logo_url: null,
+                        logo_use_background: false
+                        // Only include changed fields - parent will merge correctly
+                      });
+                      
+                      // Apply background immediately with cleared logo
+                      const previewConfig = {
+                        ...artistConfig,
+                        theme: {
+                          ...artistConfig?.theme,
+                          primaryColor: updatedFormData.primary_color,
+                          accentColor: updatedFormData.accent_color,
+                          gradientStart: updatedFormData.gradient_start,
+                          gradientEnd: updatedFormData.gradient_end,
+                          fontFamily: updatedFormData.font_family,
+                        },
+                        logo_url: null,
+                        background_image_url: backgroundPreviewRef.current || updatedFormData.background_image_url || null,
+                        logo_use_background: false,
+                        background_use_image: updatedFormData.background_use_image,
+                      };
+                      
+                      applyArtistBackground(previewConfig as ArtistConfig);
                     } else {
                       const result = await response.json();
                       alert(result.error || 'Failed to delete logo');
@@ -598,6 +630,7 @@ const ProfileEditPanel: React.FC<ProfileEditPanelProps> = ({
             }
             const preview = URL.createObjectURL(file);
             setLogoPreview(preview);
+            logoPreviewRef.current = preview; // Update ref immediately for checkbox handler
             
             // Upload to server (but don't apply yet - wait for checkbox)
             await uploadLogoFile(file, artistConfig.id || artistConfig.name.toLowerCase());
@@ -619,26 +652,52 @@ const ProfileEditPanel: React.FC<ProfileEditPanelProps> = ({
                   logo_use_background: checked,
                   background_use_image: checked ? false : prev.background_use_image
                 };
-                // Apply live preview with updated values
-                setTimeout(() => {
-                  if (checked && logoPreview) {
-                    // Logo checked - use logo as background
-                    document.body.style.backgroundImage = `url(${logoPreview})`;
-                    document.body.style.backgroundSize = 'cover';
-                    document.body.style.backgroundPosition = 'center';
-                    document.body.style.backgroundRepeat = 'no-repeat';
-                  } else if (!checked && updated.background_use_image && backgroundPreview) {
-                    // Logo unchecked, but background is checked - use background
-                    document.body.style.backgroundImage = `url(${backgroundPreview})`;
-                    document.body.style.backgroundSize = 'cover';
-                    document.body.style.backgroundPosition = 'center';
-                    document.body.style.backgroundRepeat = 'no-repeat';
-                  } else {
-                    // Both unchecked - use primary color
-                    document.body.style.backgroundImage = 'none';
-                    document.body.style.background = updated.primary_color;
+                // CRITICAL: Use the NEW checked value, not updated.logo_use_background
+                // (updated has the new value, but be explicit to avoid any confusion)
+                const newLogoUseBackground = checked;
+                const logoUrl = logoPreviewRef.current || updated.logo_url || null;
+                
+                // Build preview config with latest ref values (avoid stale closure)
+                const previewConfig = {
+                  ...artistConfig,
+                  theme: {
+                    ...artistConfig?.theme,
+                    primaryColor: updated.primary_color,
+                    accentColor: updated.accent_color,
+                    gradientStart: updated.gradient_start,
+                    gradientEnd: updated.gradient_end,
+                    fontFamily: updated.font_family,
+                  },
+                  logo_url: logoUrl,
+                  background_image_url: backgroundPreviewRef.current || updated.background_image_url || null,
+                  logo_use_background: newLogoUseBackground, // Use explicit checked value
+                  background_use_image: checked ? false : updated.background_use_image,
+                };
+                
+                // Log for debugging
+                console.log('[ProfileEditPanel] Logo checkbox changed:', {
+                  checked,
+                  newLogoUseBackground,
+                  logoUrl,
+                  logoPreviewRef: logoPreviewRef.current,
+                  previewConfig: {
+                    logo_url: previewConfig.logo_url,
+                    logo_use_background: previewConfig.logo_use_background,
+                    background_use_image: previewConfig.background_use_image,
+                    hasLogoUrl: !!previewConfig.logo_url
                   }
-                }, 0);
+                });
+                
+                // CRITICAL: Apply background IMMEDIATELY with correct values
+                // Apply synchronously to prevent any race conditions
+                console.log('[ProfileEditPanel] Applying background IMMEDIATELY with config:', {
+                  logo_url: previewConfig.logo_url,
+                  logo_use_background: previewConfig.logo_use_background,
+                  hasLogoUrl: !!previewConfig.logo_url,
+                  willUseLogo: !!(previewConfig.logo_url && previewConfig.logo_use_background)
+                });
+                applyArtistBackground(previewConfig as ArtistConfig);
+                
                 return updated;
               });
             }}
@@ -675,30 +734,55 @@ const ProfileEditPanel: React.FC<ProfileEditPanelProps> = ({
                     });
 
                     if (response.ok) {
-                      // Clear preview and state
-                      if (backgroundPreview.startsWith('blob:')) {
+                      const result = await response.json();
+                      console.log('[ProfileEditPanel] ✅ Background deleted:', result);
+                      
+                      // Clear preview and state (LAYER 3: Client State)
+                      if (backgroundPreview && backgroundPreview.startsWith('blob:')) {
                         URL.revokeObjectURL(backgroundPreview);
                       }
                       setBackgroundPreview(null);
+                      backgroundPreviewRef.current = null;
                       setBackgroundFile(null);
-                      setFormData(prev => ({
-                        ...prev,
+                      
+                      const updatedFormData = {
+                        ...formData,
                         background_image_url: null,
                         background_use_image: false
-                      }));
+                      };
+                      setFormData(updatedFormData);
                       
-                      // Revert background if it was being used
-                      setTimeout(() => {
-                        if (formData.logo_use_background && logoPreview) {
-                          document.body.style.backgroundImage = `url(${logoPreview})`;
-                        } else {
-                          document.body.style.backgroundImage = 'none';
-                          document.body.style.background = formData.primary_color;
-                        }
-                        document.body.style.backgroundSize = 'cover';
-                        document.body.style.backgroundPosition = 'center';
-                        document.body.style.backgroundRepeat = 'no-repeat';
-                      }, 0);
+                      // CRITICAL: Update parent state immediately (LAYER 3: Client State)
+                      // This ensures page.tsx's artistConfig is updated and persists
+                      console.log('[ProfileEditPanel] 🔄 Notifying parent of background deletion');
+                      
+                      // Dispatch event to trigger hook refresh
+                      window.dispatchEvent(new CustomEvent('backgroundDeleted'));
+                      
+                      onSave({
+                        background_image_url: null,
+                        background_use_image: false
+                        // Only include changed fields - parent will merge correctly
+                      });
+                      
+                      // Apply background immediately with cleared background image
+                      const previewConfig = {
+                        ...artistConfig,
+                        theme: {
+                          ...artistConfig?.theme,
+                          primaryColor: updatedFormData.primary_color,
+                          accentColor: updatedFormData.accent_color,
+                          gradientStart: updatedFormData.gradient_start,
+                          gradientEnd: updatedFormData.gradient_end,
+                          fontFamily: updatedFormData.font_family,
+                        },
+                        logo_url: logoPreviewRef.current || updatedFormData.logo_url || null,
+                        background_image_url: null,
+                        logo_use_background: updatedFormData.logo_use_background,
+                        background_use_image: false,
+                      };
+                      
+                      applyArtistBackground(previewConfig as ArtistConfig);
                     } else {
                       const result = await response.json();
                       alert(result.error || 'Failed to delete background image');
@@ -768,26 +852,50 @@ const ProfileEditPanel: React.FC<ProfileEditPanelProps> = ({
                   background_use_image: checked,
                   logo_use_background: checked ? false : prev.logo_use_background
                 };
-                // Apply live preview with updated values
-                setTimeout(() => {
-                  if (checked && backgroundPreview) {
-                    // Background checked - use background image (takes precedence)
-                    document.body.style.backgroundImage = `url(${backgroundPreview})`;
-                    document.body.style.backgroundSize = 'cover';
-                    document.body.style.backgroundPosition = 'center';
-                    document.body.style.backgroundRepeat = 'no-repeat';
-                  } else if (!checked && updated.logo_use_background && logoPreview) {
-                    // Background unchecked, but logo is checked - use logo
-                    document.body.style.backgroundImage = `url(${logoPreview})`;
-                    document.body.style.backgroundSize = 'cover';
-                    document.body.style.backgroundPosition = 'center';
-                    document.body.style.backgroundRepeat = 'no-repeat';
-                  } else {
-                    // Both unchecked - use primary color
-                    document.body.style.backgroundImage = 'none';
-                    document.body.style.background = updated.primary_color;
+                
+                // CRITICAL: Use the NEW checked value explicitly
+                const newBackgroundUseImage = checked;
+                const backgroundImageUrl = backgroundPreviewRef.current || updated.background_image_url || null;
+                
+                // Build preview config with latest ref values (avoid stale closure)
+                const previewConfig = {
+                  ...artistConfig,
+                  theme: {
+                    ...artistConfig?.theme,
+                    primaryColor: updated.primary_color,
+                    accentColor: updated.accent_color,
+                    gradientStart: updated.gradient_start,
+                    gradientEnd: updated.gradient_end,
+                    fontFamily: updated.font_family,
+                  },
+                  logo_url: logoPreviewRef.current || updated.logo_url || null,
+                  background_image_url: backgroundImageUrl,
+                  logo_use_background: checked ? false : updated.logo_use_background,
+                  background_use_image: newBackgroundUseImage, // Use explicit checked value
+                };
+                
+                // Log for debugging
+                console.log('[ProfileEditPanel] Background checkbox changed:', {
+                  checked,
+                  newBackgroundUseImage,
+                  backgroundImageUrl,
+                  backgroundPreviewRef: backgroundPreviewRef.current,
+                  previewConfig: {
+                    background_image_url: previewConfig.background_image_url,
+                    background_use_image: previewConfig.background_use_image,
+                    logo_use_background: previewConfig.logo_use_background,
+                    hasBackgroundUrl: !!previewConfig.background_image_url
                   }
-                }, 0);
+                });
+                
+                // CRITICAL: Apply background IMMEDIATELY with correct values
+                console.log('[ProfileEditPanel] Applying background IMMEDIATELY with config:', {
+                  background_image_url: previewConfig.background_image_url,
+                  background_use_image: previewConfig.background_use_image,
+                  willUseBackground: !!(previewConfig.background_image_url && previewConfig.background_use_image)
+                });
+                applyArtistBackground(previewConfig as ArtistConfig);
+                
                 return updated;
               });
             }}

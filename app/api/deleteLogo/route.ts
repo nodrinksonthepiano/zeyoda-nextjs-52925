@@ -47,6 +47,7 @@ export async function DELETE(request: NextRequest) {
     }
 
     // Delete all logo files for this artist
+    let storageDeleted = false;
     try {
       const { data: files } = await supabase.storage
         .from('artist-assets')
@@ -65,21 +66,52 @@ export async function DELETE(request: NextRequest) {
             .remove(logoFiles);
           
           if (deleteError) {
-            console.error('❌ Failed to delete logo files:', deleteError);
-            return NextResponse.json({ error: 'Failed to delete logo files' }, { status: 500 });
+            console.warn('⚠️ Failed to delete logo files from storage:', deleteError);
+            // Don't fail - continue to database update
+          } else {
+            console.log('✅ Deleted logo files from storage:', logoFiles);
+            storageDeleted = true;
           }
-          
-          console.log('✅ Deleted logo files:', logoFiles);
         }
+      } else {
+        console.log('ℹ️ No logo files found in storage (may already be deleted)');
       }
     } catch (error) {
-      console.error('❌ Error deleting logo files:', error);
-      return NextResponse.json({ error: 'Failed to delete logo files' }, { status: 500 });
+      console.warn('⚠️ Error deleting logo files from storage:', error);
+      // Don't fail - continue to database update
     }
+
+    // CRITICAL: Update database fields to null/false (LAYER 1: Database)
+    console.log('🔄 Updating database fields: logo_url=null, logo_use_background=false');
+    const { error: updateError } = await supabase
+      .from('artists')
+      .update({ 
+        logo_url: null, 
+        logo_use_background: false 
+      })
+      .eq('id', artistId);
+
+    if (updateError) {
+      console.error('❌ Failed to update database fields:', updateError);
+      return NextResponse.json({ 
+        error: 'Failed to update database fields',
+        details: updateError.message 
+      }, { status: 500 });
+    }
+
+    console.log('✅ Logo deletion complete:', {
+      artistId,
+      storageDeleted,
+      databaseUpdated: true,
+      logo_url: null,
+      logo_use_background: false
+    });
 
     return NextResponse.json({
       success: true,
-      message: 'Logo deleted successfully'
+      message: 'Logo deleted successfully',
+      storageDeleted,
+      databaseUpdated: true
     });
 
   } catch (error: any) {

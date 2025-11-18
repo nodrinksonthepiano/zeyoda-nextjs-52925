@@ -191,14 +191,17 @@ export async function PATCH(request: NextRequest) {
 
     console.log('✅ Profile updated successfully for:', updateData.artistId);
 
+    // Extract theme fields from JSONB theme column (not separate columns)
+    const themeData = updateResult.theme as any || {};
+    
     return NextResponse.json({
       success: true,
       updated: {
-        primary_color: updateResult.primary_color,
-        accent_color: updateResult.accent_color,
-        font_family: updateResult.font_family,
-        gradient_start: updateResult.gradient_start,
-        gradient_end: updateResult.gradient_end,
+        primary_color: themeData.primaryColor || updateData.primary_color,
+        accent_color: themeData.accentColor || updateData.accent_color,
+        font_family: themeData.fontFamily || updateData.font_family,
+        gradient_start: themeData.gradientStart || updateData.gradient_start,
+        gradient_end: themeData.gradientEnd || updateData.gradient_end,
         logo_url: updateResult.logo_url,
         background_image_url: updateResult.background_image_url,
         logo_use_background: updateResult.logo_use_background,

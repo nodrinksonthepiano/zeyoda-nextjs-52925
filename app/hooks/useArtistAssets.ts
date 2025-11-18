@@ -18,6 +18,7 @@ type UseArtistAssetsResult = {
   assets: ArtistAsset[];
   isLoading: boolean;
   error: string | null;
+  refresh: () => Promise<void>;
 };
 
 export function useArtistAssets(artistId: string | null | undefined): UseArtistAssetsResult {
@@ -25,55 +26,85 @@ export function useArtistAssets(artistId: string | null | undefined): UseArtistA
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const lastArtistIdRef = useRef<string | null>(null);
+  const refreshTriggerRef = useRef<number>(0);
 
-  useEffect(() => {
-    let cancelled = false;
-    const load = async () => {
-      const normalizedId = (artistId ?? '').trim();
-      if (!normalizedId) {
+  const loadAssets = async (normalizedId: string, forceRefresh = false) => {
+    if (!normalizedId) {
+      setRows([]);
+      setError(null);
+      return;
+    }
+
+    // Skip if same artist and not forcing refresh
+    if (!forceRefresh && lastArtistIdRef.current === normalizedId) return;
+    lastArtistIdRef.current = normalizedId;
+
+    setIsLoading(true);
+    setError(null);
+    try {
+      const { data, error } = await supabase
+        .from('artist_assets')
+        .select('*')
+        .eq('artist_id', normalizedId)
+        .or('is_hidden.is.null,is_hidden.eq.false')
+        .order('is_pinned', { ascending: false })
+        .order('asset_number', { ascending: false });
+
+      if (error) {
         setRows([]);
-        setError(null);
+        setError(error.message || 'Failed to load assets');
+        setIsLoading(false);
         return;
       }
 
-      if (lastArtistIdRef.current === normalizedId) return;
-      lastArtistIdRef.current = normalizedId;
+      setRows(Array.isArray(data) ? data : []);
+      setIsLoading(false);
+      console.log(`[useArtistAssets] ✅ Loaded ${Array.isArray(data) ? data.length : 0} assets for ${normalizedId}`);
+    } catch (e: any) {
+      setRows([]);
+      setError(e?.message || 'Unknown error loading assets');
+      setIsLoading(false);
+    }
+  };
 
-      setIsLoading(true);
-      setError(null);
-      try {
-        const { data, error } = await supabase
-          .from('artist_assets')
-          .select('*')
-          .eq('artist_id', normalizedId)
-          .or('is_hidden.is.null,is_hidden.eq.false')
-          .order('is_pinned', { ascending: false })
-          .order('asset_number', { ascending: false });
-
-        if (cancelled) return;
-
-        if (error) {
-          setRows([]);
-          setError(error.message || 'Failed to load assets');
-          setIsLoading(false);
-          return;
-        }
-
-        setRows(Array.isArray(data) ? data : []);
-        setIsLoading(false);
-      } catch (e: any) {
-        if (cancelled) return;
-        setRows([]);
-        setError(e?.message || 'Unknown error loading assets');
-        setIsLoading(false);
-      }
-    };
-
-    load();
+  useEffect(() => {
+    let cancelled = false;
+    const normalizedId = (artistId ?? '').trim();
+    
+    loadAssets(normalizedId).then(() => {
+      if (cancelled) return;
+    });
+    
     return () => {
       cancelled = true;
     };
   }, [artistId]);
+
+  // Listen for asset deletion events to trigger refresh
+  useEffect(() => {
+    const handleAssetDeleted = () => {
+      const normalizedId = (artistId ?? '').trim();
+      if (normalizedId) {
+        console.log('[useArtistAssets] 🔄 Refreshing assets after deletion');
+        refreshTriggerRef.current += 1;
+        loadAssets(normalizedId, true);
+      }
+    };
+
+    window.addEventListener('assetDeleted', handleAssetDeleted);
+    return () => {
+      window.removeEventListener('assetDeleted', handleAssetDeleted);
+    };
+  }, [artistId]);
+
+  const refresh = async () => {
+    const normalizedId = (artistId ?? '').trim();
+    if (normalizedId) {
+      console.log('[useArtistAssets] 🔄 Manual refresh triggered');
+      refreshTriggerRef.current += 1;
+      await loadAssets(normalizedId, true);
+    }
+  };
 
   const assets: ArtistAsset[] = useMemo(() => {
     if (!rows || rows.length === 0) return [];
@@ -97,7 +128,7 @@ export function useArtistAssets(artistId: string | null | undefined): UseArtistA
     return mapped;
   }, [rows]);
 
-  return { assets, isLoading, error };
+  return { assets, isLoading, error, refresh };
 }
 
 

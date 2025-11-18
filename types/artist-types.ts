@@ -51,6 +51,11 @@ export interface ArtistDatabaseEntry {
   orbital_tokens: OrbitalToken[];
   created_at: string;
   updated_at: string;
+  // Logo and background image fields
+  logo_url?: string | null;
+  logo_use_background?: boolean;
+  background_image_url?: string | null;
+  background_use_image?: boolean;
 }
 
 // Application types
@@ -78,6 +83,11 @@ export interface ArtistConfig {
     fontFamily: string;
   };
   orbitalTokens: OrbitalToken[];
+  // Logo and background image fields
+  logo_url?: string | null;
+  logo_use_background?: boolean;
+  background_image_url?: string | null;
+  background_use_image?: boolean;
 }
 
 export interface PriceDetails {

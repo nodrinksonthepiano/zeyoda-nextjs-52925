@@ -64,7 +64,72 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Asset not found' }, { status: 404 });
     }
     
-    // 4. Delete from database
+    // 4. Delete related records first (purchases, gas sponsorship events)
+    // Note: These don't have foreign keys, so we delete manually
+    console.log('🧹 Cleaning up related records...');
+    
+    // Delete purchases for this asset
+    const { error: purchaseDeleteError } = await supabase
+      .from('artist_purchases')
+      .delete()
+      .eq('artist_id', artistId)
+      .eq('asset_number', assetNumber);
+    
+    if (purchaseDeleteError) {
+      console.warn('⚠️ Failed to delete related purchases:', purchaseDeleteError);
+      // Don't fail - purchases are historical records, but log the warning
+    } else {
+      console.log('✅ Deleted related purchases');
+    }
+    
+    // Delete gas sponsorship events for this asset
+    const { error: gasDeleteError } = await supabase
+      .from('gas_sponsorship_events')
+      .delete()
+      .eq('artist_id', artistId)
+      .eq('asset_number', assetNumber);
+    
+    if (gasDeleteError) {
+      console.warn('⚠️ Failed to delete related gas sponsorship events:', gasDeleteError);
+      // Don't fail - these are historical records
+    } else {
+      console.log('✅ Deleted related gas sponsorship events');
+    }
+    
+    // 5. Delete file from storage (if it's a Supabase storage URL)
+    let storageDeleted = false;
+    if (asset.file_url && asset.file_url.includes('supabase.co/storage')) {
+      try {
+        // Extract bucket and path from URL
+        // Format: https://[project].supabase.co/storage/v1/object/public/[bucket]/[path]
+        const urlMatch = asset.file_url.match(/\/storage\/v1\/object\/public\/([^\/]+)\/(.+)$/);
+        if (urlMatch) {
+          const [, bucket, filePath] = urlMatch;
+          console.log('🗑️ Deleting file from storage:', { bucket, filePath });
+          
+          const { error: storageError } = await supabase.storage
+            .from(bucket)
+            .remove([filePath]);
+          
+          if (storageError) {
+            console.warn('⚠️ Failed to delete file from storage:', storageError);
+            // Don't fail - file might already be deleted or URL might be external
+          } else {
+            console.log('✅ Deleted file from storage');
+            storageDeleted = true;
+          }
+        } else {
+          console.log('ℹ️ File URL is not a Supabase storage URL, skipping storage deletion');
+        }
+      } catch (storageErr) {
+        console.warn('⚠️ Error deleting from storage:', storageErr);
+        // Don't fail - continue with database deletion
+      }
+    } else {
+      console.log('ℹ️ File URL is not a Supabase storage URL, skipping storage deletion');
+    }
+    
+    // 6. Delete from database
     const { error: deleteError } = await supabase
       .from('artist_assets')
       .delete()
@@ -79,11 +144,12 @@ export async function POST(request: NextRequest) {
       );
     }
     
-    // 5. Optionally delete file from storage (if it's a Supabase storage URL)
-    // Note: We'll leave the file in storage for now to avoid breaking references
-    // You can manually clean up storage later if needed
-    
-    console.log('✅ Asset deleted successfully');
+    console.log('✅ Asset deleted successfully', {
+      artistId,
+      assetNumber,
+      storageDeleted,
+      fileUrl: asset.file_url
+    });
     
     return NextResponse.json({
       success: true,
