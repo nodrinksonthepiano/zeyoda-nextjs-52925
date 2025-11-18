@@ -29,6 +29,9 @@ const ThemeOrbitRenderer: React.FC<ThemeOrbitRendererProps> = ({
   const tokenElementRefs = useRef<(HTMLElement | null)[]>([]);
   const animationFrameIdRef = useRef<number | null>(null);
   const [orbitAngleOffset, setOrbitAngleOffset] = React.useState(0);
+  // CRITICAL: Preview config for live coin color updates during editing
+  // This is set via event from ProfileEditPanel and cleared when artistConfig changes
+  const [previewConfig, setPreviewConfig] = React.useState<ArtistConfig | null>(null);
   const naturalOffsetRef = useRef(0);      // natural orbit offset (radians)
   const userOffsetRef = useRef(0);         // user-imposed offset (radians)
   const userVelocityRef = useRef(0);       // user angular velocity (radians/sec)
@@ -47,6 +50,35 @@ const ThemeOrbitRenderer: React.FC<ThemeOrbitRendererProps> = ({
   const downTsRef = useRef<number>(0);
   const hoverPauseTimerRef = useRef<number | null>(null);
   const heroDimensionsRef = useRef<{w: number, h: number} | null>(null);
+
+  // CRITICAL: Listen for preview config events from ProfileEditPanel for live coin updates
+  useEffect(() => {
+    const handlePreview = (e: Event) => {
+      const customEvent = e as CustomEvent<{ previewConfig: ArtistConfig }>;
+      if (customEvent.detail?.previewConfig) {
+        setPreviewConfig(customEvent.detail.previewConfig);
+      }
+    };
+    
+    const handleClear = () => {
+      setPreviewConfig(null);
+    };
+    
+    window.addEventListener('artistConfigPreview', handlePreview as EventListener);
+    window.addEventListener('artistConfigPreviewClear', handleClear);
+    return () => {
+      window.removeEventListener('artistConfigPreview', handlePreview as EventListener);
+      window.removeEventListener('artistConfigPreviewClear', handleClear);
+    };
+  }, []);
+
+  // CRITICAL: Clear preview config when artistConfig changes significantly (after save or artist switch)
+  // This ensures we don't use stale preview data
+  useEffect(() => {
+    // Clear preview when artistConfig id/name changes (indicates artist switched)
+    // Note: Save completion is handled by artistConfigPreviewClear event
+    setPreviewConfig(null);
+  }, [artistConfig?.id, artistConfig?.name]);
 
   useEffect(() => {
     const videoElement = videoContainerRef.current;
@@ -362,9 +394,27 @@ const ThemeOrbitRenderer: React.FC<ThemeOrbitRendererProps> = ({
         }))] as RenderableToken[])
           .filter((token, index, self) => token.name && self.findIndex(t => t.name === token.name) === index)
           .map((token: RenderableToken, index: number) => {
-            // 4-LINE PER-ARTIST COLOR FIX
+            // CRITICAL: Merged lookup for live coin color updates
+            // During editing: uses previewConfig (from ProfileEditPanel event) for immediate updates
+            // After save: uses artistConfig (updated state) for persistence
+            // Other artists: uses allArtistsConfig (from hook, updates on refresh)
+            const getTokenTheme = (artistId: string | undefined) => {
+              if (!artistId) return undefined;
+              const aid = artistId.toLowerCase();
+              
+              // Check if this token belongs to the current artist being edited
+              const currentArtistId = artistConfig?.id?.toLowerCase() || artistConfig?.name?.toLowerCase();
+              if (currentArtistId === aid) {
+                // Current artist: use previewConfig during editing (live), fallback to artistConfig after save
+                return previewConfig?.theme || artistConfig?.theme;
+              }
+              
+              // Other artists: use allArtistsConfig (from hook, updates on refresh)
+              return allArtistsConfig?.[aid]?.theme;
+            };
+            
             const aid = token.artistId ? token.artistId.toLowerCase() : undefined as string | undefined;
-            const tokenTheme = aid ? allArtistsConfig?.[aid]?.theme : undefined;
+            const tokenTheme = getTokenTheme(token.artistId);
             const bg = tokenTheme?.primaryColor || '#0a1230';
             const fg = tokenTheme?.accentColor || '#1e5cff';
             const ff = tokenTheme?.fontFamily || 'Bungee, cursive';

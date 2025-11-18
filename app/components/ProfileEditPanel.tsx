@@ -286,6 +286,12 @@ const ProfileEditPanel: React.FC<ProfileEditPanelProps> = ({
         if (field === 'primary_color') {
           window.dispatchEvent(new CustomEvent('primaryColorChange', { detail: { color: value as string } }));
         }
+        
+        // CRITICAL: Dispatch preview config for coin live updates
+        // This allows ThemeOrbitRenderer to update coin colors immediately during editing
+        window.dispatchEvent(new CustomEvent('artistConfigPreview', { 
+          detail: { previewConfig: previewConfig as ArtistConfig } 
+        }));
       }
       
       return updated;
@@ -347,6 +353,11 @@ const ProfileEditPanel: React.FC<ProfileEditPanelProps> = ({
 
       if (response.ok) {
         console.log('✅ Profile saved successfully');
+        
+        // CRITICAL: Clear preview config when save completes
+        // This ensures coins use saved state instead of preview
+        window.dispatchEvent(new CustomEvent('artistConfigPreviewClear'));
+        
         onSave(result.updated);
         onClose();
       } else {
@@ -406,8 +417,12 @@ const ProfileEditPanel: React.FC<ProfileEditPanelProps> = ({
       }
     }
     
+    // CRITICAL: Clear preview config when exiting edit mode (cancel)
+    // This ensures coins revert to saved state
+    window.dispatchEvent(new CustomEvent('artistConfigPreviewClear'));
+    
     onClose();
-  }, [originalTheme, onClose]);
+  }, [originalTheme, onClose, artistConfig]);
 
   return (
     <div className="profile-edit-panel bg-gray-800 bg-opacity-70 shadow-xl rounded-lg border border-gray-700 backdrop-blur-md mb-8 max-w-2xl mx-auto p-6">
