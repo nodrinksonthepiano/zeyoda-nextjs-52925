@@ -1963,7 +1963,7 @@ const ArtistPageContent: React.FC<{
 
   return (
     <UsdBalanceProvider userAddress={user || null}>
-      <div className="flex min-h-screen flex-col items-center justify-between p-24 relative bg-primary text-white font-sans">
+      <div className="flex min-h-screen flex-col items-center justify-between pt-10 px-6 pb-6 relative bg-primary text-white font-sans">
         <div id="particles" className="cosmic-particles"></div>
 
         {user && (
@@ -2000,7 +2000,7 @@ const ArtistPageContent: React.FC<{
           <div className="text-center">
               <>
                 <h1 
-                  className="text-4xl md:text-5xl font-bold tracking-wider mt-3 md:mt-4 mb-3 md:mb-3 cursor-pointer hover:opacity-80 transition-opacity" 
+                  className="text-4xl md:text-5xl font-bold tracking-wider mt-1 md:mt-2 mb-3 md:mb-3 cursor-pointer hover:opacity-80 transition-opacity" 
                   style={{ 
                     fontFamily: appMode === 'onboarding' ? 'Bungee, cursive' : artistConfig.theme.fontFamily, 
                     color: appMode === 'onboarding' ? '#B8860B' : artistConfig.theme.accentColor,

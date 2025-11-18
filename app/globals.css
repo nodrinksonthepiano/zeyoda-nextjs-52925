@@ -277,9 +277,9 @@ body {
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center; /* Vertically center content in main area */
+  justify-content: flex-start; /* Align content to top instead of center */
   min-height: 100vh;
-  padding-top: 10px; /* Space for the fixed header */
+  padding-top: 0; /* Removed top padding to eliminate wasted space */
   padding-bottom: 40px; /* Space at the bottom */
 }
 
