@@ -169,7 +169,7 @@ const OnboardingPanel: React.FC<OnboardingPanelProps> = ({
         if (themeField === 'primaryColor') {
           // Apply primary color only if no background image/logo is active
           if (!formData.background_use_image && !formData.logo_use_background) {
-            document.body.style.background = value;
+          document.body.style.background = value;
             document.body.style.backgroundImage = 'none';
           }
           // Dispatch event to update halo

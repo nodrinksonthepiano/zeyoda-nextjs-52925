@@ -6,6 +6,7 @@ import { ArtistConfig, UserTokenBalances } from '../../types/artist-types';
 import { UsdcSwapRouter } from '../utils/usdcSwapRouter';
 import { useWallet } from './MagicProvider';
 import { useDownloadAccess } from '../hooks/useDownloadAccess';
+import { authenticatedFetch } from '../utils/authenticatedFetch';
 import { useUsdBalance } from '../contexts/UsdBalanceContext';
 import { getArtistContracts } from '../utils/addressRegistryFallback';
 import { getDownloadPrice } from '../utils/downloadUtils';
@@ -69,7 +70,7 @@ const PurchaseFlow: React.FC<PurchaseFlowProps> = ({
   setShakeActive,
   swapToAmount
 }) => {
-    const { magic } = useWallet();
+    const { magic, getDidToken } = useWallet();
     const { setUsdBalance, usdBalance, isLoading: usdBalanceLoading } = useUsdBalance();
     const [isSwapping, setIsSwapping] = useState(false);
     const [downloadingAssets, setDownloadingAssets] = useState<Set<number>>(new Set());
@@ -168,18 +169,15 @@ const PurchaseFlow: React.FC<PurchaseFlowProps> = ({
         
         console.log('🔍 DEBUG: Purchasing download:', { artistId, user: userAddress, urlPath });
         
-        const mintResponse = await fetch('/api/public/purchase1155', {
+        const mintResponse = await authenticatedFetch('/api/public/purchase1155', {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
             body: JSON.stringify({
                 artistId: artistId,
                 assetNumber: 1,
                 quantity: 1,
                 userAddress: userAddress
             })
-        });
+        }, getDidToken);
         
         const mintData = await mintResponse.json();
         

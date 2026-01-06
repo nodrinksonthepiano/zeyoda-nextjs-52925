@@ -3,6 +3,7 @@ import { ethers } from 'ethers';
 import { getArtistContracts } from '../../utils/addressRegistryFallback';
 import { requireSecret, rateLimit } from '@/app/utils/apiGuard';
 import { createGuardedProvider, createGuardedSigner } from '@/app/utils/guardedSigner';
+import { verifyWhitelist } from '../../utils/server/whitelistCheck';
 
 // ERC-1155 ABI for minting download tokens
 const DOWNLOAD_CONTRACT_ABI = [
@@ -20,9 +21,22 @@ interface MintRequest {
 }
 
 export async function POST(request: NextRequest) {
-  // Security guards: secret header + rate limit
+  // Security guards: secret header + whitelist + rate limit
   const secretCheck = requireSecret(request);
   if (secretCheck) return secretCheck;
+  
+  // Also check whitelist (defense-in-depth - middleware should catch this, but backup check)
+  const whitelistResult = await verifyWhitelist(request);
+  if (!whitelistResult.verified) {
+    console.log(`❌ Route blocked: ${whitelistResult.error || 'Not whitelisted'}`);
+    return NextResponse.json(
+      { 
+        error: whitelistResult.error || 'Unauthorized',
+        message: 'Access denied - whitelist required'
+      },
+      { status: whitelistResult.email === null ? 401 : 403 }
+    );
+  }
   
   const rl = rateLimit(request, 'mint-download', 10, 60_000); // 10/min per IP
   if (rl) return rl;

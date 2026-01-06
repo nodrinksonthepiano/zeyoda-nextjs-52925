@@ -4,6 +4,7 @@ import { ethers, keccak256, toUtf8Bytes } from 'ethers';
 import { createGuardedSigner } from '@/app/utils/guardedSigner';
 import { ArtistDownloadsUUPSABI } from '../../../utils/abis/ArtistDownloadsUUPSABI';
 import { requireSecret, rateLimit, logInfo, logError } from '@/app/utils/apiGuard';
+import { verifyWhitelist } from '../../utils/server/whitelistCheck';
 
 // Supabase admin client (service role for database access)
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
@@ -290,6 +291,19 @@ export async function POST(request: NextRequest) {
   }
   
   console.error('[GUARD] ALLOWING: Secret matches');
+  
+  // Also check whitelist (defense-in-depth - middleware should catch this, but backup check)
+  const whitelistResult = await verifyWhitelist(request);
+  if (!whitelistResult.verified) {
+    console.log(`❌ Route blocked: ${whitelistResult.error || 'Not whitelisted'}`);
+    return NextResponse.json(
+      { 
+        error: whitelistResult.error || 'Unauthorized',
+        message: 'Access denied - whitelist required'
+      },
+      { status: whitelistResult.email === null ? 401 : 403 }
+    );
+  }
   
   // Guard passed, continue with rate limit
   

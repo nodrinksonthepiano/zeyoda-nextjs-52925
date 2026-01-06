@@ -1,6 +1,8 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { applyArtistBackground } from '../utils/themeBackground';
 import { ArtistConfig } from '../../types/artist-types';
+import { useWallet } from './MagicProvider';
+import { authenticatedFetch } from '../utils/authenticatedFetch';
 
 interface ProfileEditPanelProps {
   artistConfig: any;
@@ -70,6 +72,7 @@ const ProfileEditPanel: React.FC<ProfileEditPanelProps> = ({
   onClose,
   onSave
 }) => {
+  const { getDidToken } = useWallet();
   const [formData, setFormData] = useState({
     primary_color: artistConfig?.theme?.primaryColor || '#FFD700',
     accent_color: artistConfig?.theme?.accentColor || '#B8860B',
@@ -151,13 +154,13 @@ const ProfileEditPanel: React.FC<ProfileEditPanelProps> = ({
       uploadFormData.append('file', file);
       uploadFormData.append('artistId', artistId);
       
-      const response = await fetch('/api/uploadLogo', {
+      const response = await authenticatedFetch('/api/uploadLogo', {
         method: 'POST',
         headers: {
           'x-wallet-address': userAddress.toLowerCase()
         },
         body: uploadFormData
-      });
+      }, getDidToken);
       
       const result = await response.json();
       
@@ -212,13 +215,13 @@ const ProfileEditPanel: React.FC<ProfileEditPanelProps> = ({
       uploadFormData.append('file', file);
       uploadFormData.append('artistId', artistId);
       
-      const response = await fetch('/api/uploadBackground', {
+      const response = await authenticatedFetch('/api/uploadBackground', {
         method: 'POST',
         headers: {
           'x-wallet-address': userAddress.toLowerCase()
         },
         body: uploadFormData
-      });
+      }, getDidToken);
       
       const result = await response.json();
       
@@ -332,10 +335,9 @@ const ProfileEditPanel: React.FC<ProfileEditPanelProps> = ({
 
     setIsSaving(true);
     try {
-      const response = await fetch('/api/artist/profile', {
+      const response = await authenticatedFetch('/api/artist/profile', {
         method: 'PATCH',
         headers: {
-          'Content-Type': 'application/json',
           'x-wallet-address': userAddress.toLowerCase()
         },
       body: JSON.stringify({
@@ -534,10 +536,9 @@ const ProfileEditPanel: React.FC<ProfileEditPanelProps> = ({
                 if (confirm('Are you sure you want to remove the logo?')) {
                   try {
                     // Delete from server
-                    const response = await fetch('/api/deleteLogo', {
+                    const response = await authenticatedFetch('/api/deleteLogo', {
                       method: 'DELETE',
                       headers: {
-                        'Content-Type': 'application/json',
                         'x-wallet-address': userAddress.toLowerCase()
                       },
                       body: JSON.stringify({
@@ -737,10 +738,9 @@ const ProfileEditPanel: React.FC<ProfileEditPanelProps> = ({
                 if (confirm('Are you sure you want to remove the background image?')) {
                   try {
                     // Delete from server
-                    const response = await fetch('/api/deleteBackground', {
+                    const response = await authenticatedFetch('/api/deleteBackground', {
                       method: 'DELETE',
                       headers: {
-                        'Content-Type': 'application/json',
                         'x-wallet-address': userAddress.toLowerCase()
                       },
                       body: JSON.stringify({

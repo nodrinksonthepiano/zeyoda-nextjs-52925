@@ -1,10 +1,27 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { verifyWhitelist } from '../../utils/server/whitelistCheck';
 
 /**
  * Public proxy for /api/uploadAsset
  * Adds x-internal-secret header server-side before forwarding to internal route
+ * 
+ * NOTE: This route is also protected by middleware, but we add whitelist check here
+ * as defense-in-depth to ensure no bypass routes exist.
  */
 export async function POST(request: NextRequest) {
+  // First: Check whitelist (defense-in-depth)
+  const whitelistResult = await verifyWhitelist(request);
+  if (!whitelistResult.verified) {
+    console.log(`❌ Public route blocked: ${whitelistResult.error || 'Not whitelisted'}`);
+    return NextResponse.json(
+      { 
+        error: whitelistResult.error || 'Unauthorized',
+        message: 'Access denied - whitelist required'
+      },
+      { status: whitelistResult.email === null ? 401 : 403 }
+    );
+  }
+
   try {
     // Get origin from request (works in dev and prod)
     const origin = request.headers.get('x-forwarded-origin') || new URL(request.url).origin;
@@ -29,6 +46,7 @@ export async function POST(request: NextRequest) {
       headers: {
         'content-type': contentType, // Preserve multipart/form-data boundary
         'x-internal-secret': secret, // Always overwrite, never trust client
+        'x-verified-email': whitelistResult.email!, // Pass verified email to internal route
       },
       body: body, // Use ArrayBuffer to preserve FormData structure
     });

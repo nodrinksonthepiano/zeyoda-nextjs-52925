@@ -8,6 +8,8 @@ import { useTreasuryEarnings } from '../hooks/useTreasuryEarnings';
 import { supabase } from '../utils/supabaseClient';
 import { useToast } from '../contexts/ToastContext';
 import { useUsdBalance } from '../contexts/UsdBalanceContext';
+import { useWallet } from './MagicProvider';
+import { authenticatedFetch } from '../utils/authenticatedFetch';
 import { toBigIntStrict } from '../utils/bigint';
 
 import { ArtistConfig } from '../../types/artist-types';
@@ -57,6 +59,7 @@ const Wallet: React.FC<WalletProps> = ({
   const [cashAmount, setCashAmount] = useState<string>('0.00');
   const { showToast } = useToast();
   const { usdBalance, isLoading: usdLoading } = useUsdBalance();
+  const { getDidToken } = useWallet();
   const router = useRouter();
 
   // Use the new wallet balances hook
@@ -180,11 +183,10 @@ const Wallet: React.FC<WalletProps> = ({
     setDownloadingAssets(prev => new Set([...prev, key]));
     
     try {
-      const response = await fetch('/api/createSignedUrl', {
+      const response = await authenticatedFetch('/api/createSignedUrl', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ artistId, assetNumber, userAddress })
-      });
+      }, getDidToken);
       
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || 'Failed to get download URL');
@@ -252,17 +254,16 @@ const Wallet: React.FC<WalletProps> = ({
       console.log('💎 Starting LP withdrawal:', { artistId: ownedArtistId, percent: lpPct });
       showToast(`Withdrawing ${lpPct}% of LP position...`, 'info');
 
-      const response = await fetch('/api/public/lpWithdraw', {
+      const response = await authenticatedFetch('/api/public/lpWithdraw', {
         method: 'POST',
         headers: { 
-          'Content-Type': 'application/json',
           'x-wallet-address': userAddress.toLowerCase()
         },
         body: JSON.stringify({
           artistId: ownedArtistId,
           percent: lpPct
         })
-      });
+      }, getDidToken);
 
       const result = await response.json();
 
@@ -333,10 +334,9 @@ const Wallet: React.FC<WalletProps> = ({
       console.log('💰 Starting downloads withdrawal:', { artistId: ownedArtistId, amount: amountUsd });
       showToast(`Withdrawing $${amountUsd.toFixed(2)} in download earnings...`, 'info');
 
-      const response = await fetch('/api/artist/withdraw', {
+      const response = await authenticatedFetch('/api/artist/withdraw', {
         method: 'POST',
         headers: { 
-          'Content-Type': 'application/json',
           'x-wallet-address': userAddress.toLowerCase()
         },
         body: JSON.stringify({
@@ -376,10 +376,9 @@ const Wallet: React.FC<WalletProps> = ({
       const amount = parseFloat(cashAmount);
       showToast(`Withdrawing $${amount.toFixed(2)} from cash balance...`, 'info');
 
-      const response = await fetch('/api/artist/withdraw', {
+      const response = await authenticatedFetch('/api/artist/withdraw', {
         method: 'POST',
         headers: { 
-          'Content-Type': 'application/json',
           'x-wallet-address': userAddress.toLowerCase()
         },
         body: JSON.stringify({

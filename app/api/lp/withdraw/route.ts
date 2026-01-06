@@ -3,6 +3,7 @@ import { createClient } from '@supabase/supabase-js';
 import { ethers } from 'ethers';
 import { requireSecret, rateLimit } from '@/app/utils/apiGuard';
 import { createGuardedProvider, createGuardedSigner } from '@/app/utils/guardedSigner';
+import { verifyWhitelist } from '../../utils/server/whitelistCheck';
 
 // Use service role key to bypass RLS
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
@@ -37,9 +38,22 @@ export async function GET() {
 }
 
 export async function POST(request: NextRequest) {
-  // Security guards: secret header + rate limit (stricter for withdrawals)
+  // Security guards: secret header + whitelist + rate limit (stricter for withdrawals)
   const secretCheck = requireSecret(request);
   if (secretCheck) return secretCheck;
+  
+  // Also check whitelist (defense-in-depth - middleware should catch this, but backup check)
+  const whitelistResult = await verifyWhitelist(request);
+  if (!whitelistResult.verified) {
+    console.log(`❌ Route blocked: ${whitelistResult.error || 'Not whitelisted'}`);
+    return NextResponse.json(
+      { 
+        error: whitelistResult.error || 'Unauthorized',
+        message: 'Access denied - whitelist required'
+      },
+      { status: whitelistResult.email === null ? 401 : 403 }
+    );
+  }
   
   const rl = rateLimit(request, 'lp-withdraw', 5, 60_000); // 5/min per IP (stricter)
   if (rl) return rl;

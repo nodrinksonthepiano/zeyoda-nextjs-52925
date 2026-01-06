@@ -10,6 +10,7 @@ type WalletCtx = {
   isReady: boolean      // true once auth check finished
   isLoading: boolean    // initial loader
   error?: string | null
+  getDidToken?: () => Promise<string | null>  // Get Magic DID token for API calls
 }
 
 const WalletContext = createContext<WalletCtx>({
@@ -76,14 +77,51 @@ export function MagicProvider({ children }: { children: React.ReactNode }) {
           console.log("🔍 MagicProvider: User session detected, getting user info...")
           const meta = await magic.user.getInfo()
           userAddress = meta.publicAddress || null
-          console.log("👤 MagicProvider: User authenticated:", userAddress)
+          const userEmail = meta.email || null
+          console.log("👤 MagicProvider: User authenticated:", userAddress, "Email:", userEmail)
           
-          // Cache successful auth (but don't cache too aggressively)
-          if (userAddress) {
-            sessionStorage.setItem('magic-auth-state', JSON.stringify({
-              user: userAddress,
-              timestamp: Date.now()
-            }))
+          // CRITICAL: Check whitelist on every page load
+          if (userEmail) {
+            console.log("🔍 MagicProvider: Checking whitelist status for:", userEmail)
+            try {
+              const whitelistCheck = await fetch('/api/checkWhitelist', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email: userEmail })
+              })
+              
+              const whitelistResult = await whitelistCheck.json()
+              
+              if (!whitelistResult.isWhitelisted) {
+                console.log("❌ MagicProvider: User no longer whitelisted, forcing logout")
+                // Force logout if not whitelisted
+                await magic.user.logout()
+                sessionStorage.removeItem('magic-auth-state')
+                userAddress = null
+                console.log("✅ MagicProvider: User logged out due to whitelist removal")
+              } else {
+                console.log("✅ MagicProvider: User is whitelisted, session valid")
+                // Cache successful auth (but don't cache too aggressively)
+                if (userAddress) {
+                  sessionStorage.setItem('magic-auth-state', JSON.stringify({
+                    user: userAddress,
+                    timestamp: Date.now()
+                  }))
+                }
+              }
+            } catch (whitelistError) {
+              console.error("❌ MagicProvider: Whitelist check failed:", whitelistError)
+              // On error, be safe and logout (fail-closed)
+              await magic.user.logout()
+              sessionStorage.removeItem('magic-auth-state')
+              userAddress = null
+            }
+          } else {
+            console.warn("⚠️ MagicProvider: No email found in Magic metadata")
+            // No email = can't verify whitelist = logout for safety
+            await magic.user.logout()
+            sessionStorage.removeItem('magic-auth-state')
+            userAddress = null
           }
         } else {
           console.log("❌ MagicProvider: No existing user session")
@@ -91,6 +129,20 @@ export function MagicProvider({ children }: { children: React.ReactNode }) {
           sessionStorage.removeItem('magic-auth-state')
         }
         
+        // Helper function to get DID token for API calls
+        const getDidToken = async (): Promise<string | null> => {
+          try {
+            if (!magic) return null
+            const isLoggedIn = await magic.user.isLoggedIn()
+            if (!isLoggedIn) return null
+            const token = await magic.user.getIdToken()
+            return token
+          } catch (error) {
+            console.error('❌ Error getting DID token:', error)
+            return null
+          }
+        }
+
         // SINGLE ATOMIC STATE UPDATE
         setState({ 
           magic, 
@@ -98,7 +150,8 @@ export function MagicProvider({ children }: { children: React.ReactNode }) {
           user: userAddress,
           isReady: true,
           isLoading: false,
-          error: null
+          error: null,
+          getDidToken
         })
         
         console.log("✅ MagicProvider: Authentication initialization complete")
@@ -108,6 +161,20 @@ export function MagicProvider({ children }: { children: React.ReactNode }) {
         // Clear any cached data on error
         sessionStorage.removeItem('magic-auth-state')
         
+        // Helper function (even on error, provide it if magic exists)
+        const getDidToken = async (): Promise<string | null> => {
+          try {
+            if (!state.magic) return null
+            const isLoggedIn = await state.magic.user.isLoggedIn()
+            if (!isLoggedIn) return null
+            const token = await state.magic.user.getIdToken()
+            return token
+          } catch (error) {
+            console.error('❌ Error getting DID token:', error)
+            return null
+          }
+        }
+
         // Single error state update
         setState(prev => ({ 
           ...prev,
@@ -116,7 +183,8 @@ export function MagicProvider({ children }: { children: React.ReactNode }) {
           user: null,
           isReady: true,
           isLoading: false,
-          error: error instanceof Error ? error.message : 'Authentication failed'
+          error: error instanceof Error ? error.message : 'Authentication failed',
+          getDidToken: prev.magic ? getDidToken : undefined
         }))
       }
     }

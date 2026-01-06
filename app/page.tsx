@@ -8,6 +8,7 @@ import Wallet from './components/Wallet';
 import dynamic from 'next/dynamic';
 import { useWallet } from './components/MagicProvider';
 import { useToast } from './contexts/ToastContext';
+import { authenticatedFetch } from './utils/authenticatedFetch';
 import { UsdBalanceProvider } from './contexts/UsdBalanceContext';
 import { ethers } from "ethers";
 import ArtistockArtifact from '../artifacts/contracts/Artistock.sol/Artistock.json';
@@ -69,6 +70,7 @@ const ArtistPageContent: React.FC<{
   magic 
 }) => {
   const { showToast } = useToast();
+  const { getDidToken } = useWallet();
   const [email, setEmail] = useState('');
   
   // Whitelist and treasure hunt state
@@ -752,21 +754,20 @@ const ArtistPageContent: React.FC<{
           logoFormData.append('file', artistData.logoFile);
           logoFormData.append('artistId', artistId);
           
-          const logoResponse = await fetch('/api/uploadLogo', {
+          const logoResponse = await authenticatedFetch('/api/uploadLogo', {
             method: 'POST',
             headers: {
               'x-wallet-address': artistWallet.toLowerCase()
             },
             body: logoFormData
-          });
+          }, getDidToken);
           
           if (logoResponse.ok) {
             const logoResult = await logoResponse.json();
             // Update artist with logo URL
-            await fetch('/api/artist/profile', {
+            await authenticatedFetch('/api/artist/profile', {
               method: 'PATCH',
               headers: {
-                'Content-Type': 'application/json',
                 'x-wallet-address': artistWallet.toLowerCase()
               },
               body: JSON.stringify({
@@ -774,7 +775,7 @@ const ArtistPageContent: React.FC<{
                 logo_url: logoResult.logoUrl,
                 logo_use_background: artistData.logo_use_background || false
               })
-            });
+            }, getDidToken);
             console.log('✅ Logo uploaded');
           }
         } catch (logoError) {
@@ -789,21 +790,20 @@ const ArtistPageContent: React.FC<{
           bgFormData.append('file', artistData.backgroundFile);
           bgFormData.append('artistId', artistId);
           
-          const bgResponse = await fetch('/api/uploadBackground', {
+          const bgResponse = await authenticatedFetch('/api/uploadBackground', {
             method: 'POST',
             headers: {
               'x-wallet-address': artistWallet.toLowerCase()
             },
             body: bgFormData
-          });
+          }, getDidToken);
           
           if (bgResponse.ok) {
             const bgResult = await bgResponse.json();
             // Update artist with background URL
-            await fetch('/api/artist/profile', {
+            await authenticatedFetch('/api/artist/profile', {
               method: 'PATCH',
               headers: {
-                'Content-Type': 'application/json',
                 'x-wallet-address': artistWallet.toLowerCase()
               },
               body: JSON.stringify({
@@ -831,10 +831,10 @@ const ArtistPageContent: React.FC<{
           formData.append('description', artistData.description || 'First featured asset');
           formData.append('userAddress', artistWallet);
           
-          const uploadResponse = await fetch('/api/public/uploadAsset', {
+          const uploadResponse = await authenticatedFetch('/api/public/uploadAsset', {
             method: 'POST',
             body: formData
-          });
+          }, getDidToken);
           
           if (uploadResponse.ok) {
             console.log('✅ Asset #1 minted successfully!');
@@ -865,9 +865,8 @@ const ArtistPageContent: React.FC<{
     try {
       showToast('💾 Saving changes...', 'info');
       
-      const response = await fetch('/api/updateAsset', {
+      const response = await authenticatedFetch('/api/updateAsset', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           artistId: artistIdFromUrl,
           assetNumber: editingAsset.assetNumber,
@@ -876,7 +875,7 @@ const ArtistPageContent: React.FC<{
           price: updates.price,
           userAddress: user
         })
-      });
+      }, getDidToken);
       
       if (!response.ok) {
         throw new Error('Update failed');
@@ -1129,13 +1128,10 @@ const ArtistPageContent: React.FC<{
     };
     
     // Call API route to save with service role permissions
-    const response = await fetch('/api/createArtist', {
+    const response = await authenticatedFetch('/api/createArtist', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
       body: JSON.stringify(completeArtistData),
-    });
+    }, getDidToken);
     
     if (!response.ok) {
       const errorData = await response.json();
@@ -1177,10 +1173,10 @@ const ArtistPageContent: React.FC<{
       formData.append('description', assetData.description || '');
       formData.append('userAddress', user);
 
-      const response = await fetch('/api/public/uploadAsset', {
+      const response = await authenticatedFetch('/api/public/uploadAsset', {
         method: 'POST',
         body: formData,
-      });
+      }, getDidToken);
 
       const result = await response.json();
 
@@ -1447,9 +1443,8 @@ const ArtistPageContent: React.FC<{
         const assetNumber = 1; // Featured asset for now
 
         // 2) Record the sale
-        const recordResponse = await fetch('/api/record-sale', {
+        const recordResponse = await authenticatedFetch('/api/record-sale', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             userAddress: user,
             artistId: artistConfig.name,
@@ -1474,15 +1469,14 @@ const ArtistPageContent: React.FC<{
         showToast("Minting your collectible...", "info");
 
         // 3) Mint the collectible (gas-sponsored)
-        const mintResponse = await fetch('/api/public/mintCollectible', {
+        const mintResponse = await authenticatedFetch('/api/public/mintCollectible', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             userAddress: user,
             artistId: artistConfig.name,
             assetNumber
           })
-        });
+        }, getDidToken);
 
         const mintResult = await mintResponse.json();
 
@@ -1710,11 +1704,11 @@ const ArtistPageContent: React.FC<{
   // Check whitelist function
   async function checkWhitelist(emailToCheck: string, clue?: string) {
     try {
-      const response = await fetch('/api/checkWhitelist', {
+      // Skip auth for whitelist check (needed for login)
+      const response = await authenticatedFetch('/api/checkWhitelist', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: emailToCheck, clue })
-      });
+      }, getDidToken, true); // skipAuth = true
       return await response.json();
     } catch (error) {
       console.error('Whitelist check failed:', error);
@@ -1775,14 +1769,13 @@ const ArtistPageContent: React.FC<{
         // Auto-fund new wallets
         try {
           console.log('🏴‍☠️ Checking if wallet needs treasure...');
-          const fundingResponse = await fetch('/api/fundWallet', {
+          const fundingResponse = await authenticatedFetch('/api/fundWallet', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ 
               userAddress: meta.publicAddress, 
               email: meta.email 
             })
-          });
+          }, getDidToken);
           
           const fundingResult = await fundingResponse.json();
           

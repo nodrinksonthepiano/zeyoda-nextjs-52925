@@ -1,5 +1,7 @@
 import { useState, useCallback } from 'react';
 import { useToast } from '../contexts/ToastContext';
+import { useWallet } from '../components/MagicProvider';
+import { authenticatedFetch } from '../utils/authenticatedFetch';
 
 export interface PurchaseResult {
   success: boolean;
@@ -23,6 +25,7 @@ export interface PurchaseParams {
 export function usePurchase1155() {
   const [isLoading, setIsLoading] = useState(false);
   const { showToast } = useToast();
+  const { getDidToken } = useWallet();
 
   const purchaseAsset = useCallback(async (
     params: PurchaseParams
@@ -32,16 +35,15 @@ export function usePurchase1155() {
     setIsLoading(true);
     
     try {
-      const response = await fetch('/api/public/purchase1155', {
+      const response = await authenticatedFetch('/api/public/purchase1155', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           artistId,
           assetNumber,
           quantity,
           userAddress
         })
-      });
+      }, getDidToken);
 
       const data = await response.json();
 
@@ -81,7 +83,7 @@ export function usePurchase1155() {
     } finally {
       setIsLoading(false);
     }
-  }, [showToast]);
+  }, [showToast, getDidToken]);
 
   return { purchaseAsset, isLoading };
 }
