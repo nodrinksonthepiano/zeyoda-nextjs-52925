@@ -29,11 +29,22 @@ export async function authenticatedFetch(
       if (token) {
         headers.set('Authorization', `Bearer ${token}`);
       } else {
-        console.warn('⚠️ No DID token available for authenticated request');
+        console.error('❌ No DID token available for authenticated request');
+        // Throw error instead of silently continuing without auth
+        throw new Error('Authentication token not available. Please refresh the page and try again.');
       }
     } catch (error) {
       console.error('❌ Error getting DID token:', error);
+      // Re-throw if it's already an Error, otherwise wrap it
+      if (error instanceof Error) {
+        throw error;
+      }
+      throw new Error('Failed to get authentication token. Please refresh the page and try again.');
     }
+  } else if (!skipAuth && !getDidToken) {
+    // No getDidToken function provided but auth is required
+    console.error('❌ authenticatedFetch called without getDidToken function');
+    throw new Error('Authentication not configured. Please refresh the page and try again.');
   }
 
   // Make fetch request with updated headers

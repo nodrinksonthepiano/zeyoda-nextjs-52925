@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { verifyWhitelist } from './app/utils/server/whitelistCheck';
 
 /**
- * Next.js Middleware - Security Guard
+ * Next.js Middleware - Lightweight Security Guard (Edge Runtime Compatible)
  * 
- * Intercepts ALL API requests and verifies:
- * 1. Valid Magic DID token
- * 2. Email is whitelisted
+ * Intercepts ALL API requests and checks:
+ * 1. Authorization header with Bearer token is present (for protected routes)
+ * 
+ * NOTE: Actual Magic token verification happens in API routes (Node.js runtime)
+ * This middleware provides first-line defense by blocking requests without tokens.
  * 
  * Runs BEFORE route handlers execute.
  */
@@ -36,38 +37,50 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  // All other API routes require authentication + whitelist
+  // All other API routes require authentication token OR internal secret
   console.log(`🛡️ Middleware intercepting: ${pathname} (${request.method})`);
 
-  // Verify Magic token and whitelist status
-  const whitelistResult = await verifyWhitelist(request);
+  // Check for internal secret header (for server-to-server/internal routes)
+  const internalSecret = request.headers.get('x-internal-secret');
+  const expectedSecret = process.env.INTERNAL_API_SECRET;
+  
+  if (internalSecret && expectedSecret && internalSecret === expectedSecret) {
+    console.log(`✅ Internal route accessed with secret header`);
+    return NextResponse.next();
+  }
 
-  if (!whitelistResult.verified) {
-    console.log(`❌ Request blocked: ${whitelistResult.error || 'Not verified'}`);
-    
-    // Return appropriate status code
-    const statusCode = whitelistResult.email === null ? 401 : 403;
-    const errorMessage = whitelistResult.error || 'Unauthorized';
-    
+  // Check for Authorization header with Bearer token (for client requests)
+  const authHeader = request.headers.get('authorization');
+  
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    console.log(`❌ Request blocked: No Authorization header or internal secret`);
     return NextResponse.json(
       { 
-        error: errorMessage,
-        message: statusCode === 401 
-          ? 'Authentication required' 
-          : 'Access denied - not whitelisted'
+        error: 'No token provided',
+        message: 'Authentication required - please log in'
       },
-      { status: statusCode }
+      { status: 401 }
     );
   }
 
-  // Request is verified and whitelisted - allow through
-  console.log(`✅ Request allowed for whitelisted user: ${whitelistResult.email}`);
-
-  // Add verified email to request headers for route handlers to use
-  const response = NextResponse.next();
-  response.headers.set('x-verified-email', whitelistResult.email!);
+  const token = authHeader.substring(7); // Remove "Bearer " prefix
   
-  return response;
+  if (!token || token.trim().length === 0) {
+    console.log(`❌ Request blocked: Empty token`);
+    return NextResponse.json(
+      { 
+        error: 'Empty token',
+        message: 'Authentication required - please log in'
+      },
+      { status: 401 }
+    );
+  }
+
+  // Token format is valid - allow through
+  // Actual Magic token verification happens in API routes (Node.js runtime)
+  console.log(`✅ Token present, forwarding to route handler for verification`);
+  
+  return NextResponse.next();
 }
 
 /**

@@ -4,7 +4,7 @@ import { ethers, keccak256, toUtf8Bytes } from 'ethers';
 import { createGuardedSigner } from '@/app/utils/guardedSigner';
 import { ArtistDownloadsUUPSABI } from '../../../utils/abis/ArtistDownloadsUUPSABI';
 import { requireSecret, rateLimit, logInfo, logError } from '@/app/utils/apiGuard';
-import { verifyWhitelist } from '../../utils/server/whitelistCheck';
+import { verifyWhitelist } from '@/app/utils/server/whitelistCheck';
 
 // Supabase admin client (service role for database access)
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
@@ -292,17 +292,41 @@ export async function POST(request: NextRequest) {
   
   console.error('[GUARD] ALLOWING: Secret matches');
   
-  // Also check whitelist (defense-in-depth - middleware should catch this, but backup check)
-  const whitelistResult = await verifyWhitelist(request);
-  if (!whitelistResult.verified) {
-    console.log(`❌ Route blocked: ${whitelistResult.error || 'Not whitelisted'}`);
+  // For internal routes called via proxy, whitelist is already verified by the proxy
+  // The proxy passes x-verified-email header, so we can trust it
+  // Only verify whitelist if this is a direct call (has Authorization header)
+  const hasAuthHeader = request.headers.get('authorization');
+  const verifiedEmail = request.headers.get('x-verified-email');
+  
+  if (!hasAuthHeader && !verifiedEmail) {
+    // No auth header and no verified email from proxy - this shouldn't happen
+    console.log(`❌ Route blocked: No authentication provided`);
     return NextResponse.json(
       { 
-        error: whitelistResult.error || 'Unauthorized',
-        message: 'Access denied - whitelist required'
+        error: 'Unauthorized',
+        message: 'Access denied - authentication required'
       },
-      { status: whitelistResult.email === null ? 401 : 403 }
+      { status: 401 }
     );
+  }
+  
+  // If we have verified email from proxy, trust it (proxy already verified whitelist)
+  if (verifiedEmail) {
+    console.log(`✅ Using verified email from proxy: ${verifiedEmail}`);
+    // Whitelist already verified by proxy, proceed
+  } else if (hasAuthHeader) {
+    // Direct call with auth header - verify whitelist here
+    const whitelistResult = await verifyWhitelist(request);
+    if (!whitelistResult.verified) {
+      console.log(`❌ Route blocked: ${whitelistResult.error || 'Not whitelisted'}`);
+      return NextResponse.json(
+        { 
+          error: whitelistResult.error || 'Unauthorized',
+          message: 'Access denied - whitelist required'
+        },
+        { status: whitelistResult.email === null ? 401 : 403 }
+      );
+    }
   }
   
   // Guard passed, continue with rate limit

@@ -62,21 +62,42 @@ export async function verifyWhitelist(request: NextRequest): Promise<WhitelistCh
 
     console.log('🔍 Verifying Magic DID token...');
 
-    // 2. Verify token with Magic Admin SDK
-    let tokenMetadata;
+    // 2. Verify token with Magic Admin SDK and get user metadata
+    let userMetadata;
     try {
-      tokenMetadata = await magicAdmin.token.validate(didToken);
+      // First validate the token
+      await magicAdmin.token.validate(didToken);
+      
+      // Then get user metadata by token
+      userMetadata = await magicAdmin.users.getMetadataByToken(didToken);
+      
+      // Check if userMetadata is undefined or null
+      if (!userMetadata) {
+        console.error('❌ Magic token validation returned undefined/null metadata');
+        return {
+          verified: false,
+          email: null,
+          error: 'Invalid token: validation returned no metadata'
+        };
+      }
+      
+      console.log('🔍 User metadata received:', {
+        hasEmail: !!userMetadata.email,
+        hasIssuer: !!userMetadata.issuer,
+        keys: Object.keys(userMetadata)
+      });
     } catch (magicError: any) {
-      console.error('❌ Magic token verification failed:', magicError.message);
+      console.error('❌ Magic token verification failed:', magicError.message || magicError);
       return {
         verified: false,
         email: null,
-        error: `Invalid token: ${magicError.message}`
+        error: `Invalid token: ${magicError.message || 'Token validation failed'}`
       };
     }
 
-    // 3. Extract email from verified token
-    const email = tokenMetadata.issuer || tokenMetadata.email;
+    // 3. Extract email from user metadata
+    // Magic Admin SDK returns metadata with 'email' field
+    const email = userMetadata.email || userMetadata.issuer;
     
     if (!email) {
       console.error('❌ No email found in token metadata');

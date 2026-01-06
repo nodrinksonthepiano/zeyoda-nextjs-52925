@@ -1,6 +1,8 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { useWallet } from '../components/MagicProvider';
+import { authenticatedFetch } from '../utils/authenticatedFetch';
 
 interface ArtistEarning {
   id: number;
@@ -60,6 +62,7 @@ export function useArtistEarnings({
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastFetchTime, setLastFetchTime] = useState<Date | null>(null);
+  const { getDidToken } = useWallet();
   
   // Detect if connected user is the artist (matches treasury_wallet)
   const treasuryWallet = allArtistsConfig?.[artistId]?.treasury_wallet;
@@ -92,7 +95,11 @@ export function useArtistEarnings({
     setError(null);
     
     try {
-      const response = await fetch(`/api/artist-earnings?artistId=${artistId}`);
+      const response = await authenticatedFetch(
+        `/api/artist-earnings?artistId=${artistId}`,
+        { method: 'GET' },
+        getDidToken
+      );
       
       if (!response.ok) {
         const errorData = await response.json();
@@ -121,7 +128,7 @@ export function useArtistEarnings({
     } finally {
       setIsLoading(false);
     }
-  }, [artistId, isArtist]);
+  }, [artistId, isArtist, getDidToken]);
 
   // Initial fetch and dependency updates
   useEffect(() => {

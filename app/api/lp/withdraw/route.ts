@@ -3,7 +3,7 @@ import { createClient } from '@supabase/supabase-js';
 import { ethers } from 'ethers';
 import { requireSecret, rateLimit } from '@/app/utils/apiGuard';
 import { createGuardedProvider, createGuardedSigner } from '@/app/utils/guardedSigner';
-import { verifyWhitelist } from '../../utils/server/whitelistCheck';
+import { verifyWhitelist } from '@/app/utils/server/whitelistCheck';
 
 // Use service role key to bypass RLS
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;

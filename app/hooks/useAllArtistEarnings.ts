@@ -1,6 +1,8 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { useWallet } from '../components/MagicProvider';
+import { authenticatedFetch } from '../utils/authenticatedFetch';
 
 interface ArtistEarningsSummary {
   artistId: string;
@@ -24,6 +26,7 @@ export function useAllArtistEarnings(userAddress: string | null): UseAllArtistEa
   const [artistEarnings, setArtistEarnings] = useState<ArtistEarningsSummary[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const { getDidToken } = useWallet();
   
   const fetchAllEarnings = useCallback(async () => {
     if (!userAddress) {
@@ -40,7 +43,11 @@ export function useAllArtistEarnings(userAddress: string | null): UseAllArtistEa
       const artistIds = ['gosheesh', 'jaitea', 'cancakes'];
       const earningsPromises = artistIds.map(async (artistId) => {
         try {
-          const response = await fetch(`/api/artist-earnings?artistId=${artistId}`);
+          const response = await authenticatedFetch(
+            `/api/artist-earnings?artistId=${artistId}`,
+            { method: 'GET' },
+            getDidToken
+          );
           
           if (!response.ok) {
             console.warn(`Failed to fetch earnings for ${artistId}`);
@@ -78,7 +85,7 @@ export function useAllArtistEarnings(userAddress: string | null): UseAllArtistEa
     } finally {
       setIsLoading(false);
     }
-  }, [userAddress]);
+  }, [userAddress, getDidToken]);
 
   useEffect(() => {
     fetchAllEarnings();

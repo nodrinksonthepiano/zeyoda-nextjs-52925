@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { ethers } from 'ethers';
+import { verifyWhitelist } from '@/app/utils/server/whitelistCheck';
 
 // Use service role key to bypass RLS
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
@@ -80,6 +81,19 @@ export async function POST() {
 
 export async function GET(request: NextRequest) {
   try {
+    // Verify whitelist (defense-in-depth - middleware should catch this, but backup check)
+    const whitelistResult = await verifyWhitelist(request);
+    if (!whitelistResult.verified) {
+      console.log(`❌ Route blocked: ${whitelistResult.error || 'Not whitelisted'}`);
+      return NextResponse.json(
+        { 
+          error: whitelistResult.error || 'Unauthorized',
+          message: 'Access denied - whitelist required'
+        },
+        { status: whitelistResult.email === null ? 401 : 403 }
+      );
+    }
+
     const { searchParams } = new URL(request.url);
     const artistId = searchParams.get('artistId');
     

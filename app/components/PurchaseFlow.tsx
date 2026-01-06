@@ -146,6 +146,12 @@ const PurchaseFlow: React.FC<PurchaseFlowProps> = ({
     const mintDownloadToken = async (userAddress: string): Promise<string> => {
         console.log('🪙 Starting download token purchase via new API...');
         
+        // Verify getDidToken is available
+        if (!getDidToken) {
+            console.error('❌ getDidToken not available');
+            throw new Error('Authentication not available. Please refresh the page and try again.');
+        }
+        
         // Get artistId from URL - handle both /artist=joz3n and /artist=joz3n/
         const urlPath = window.location.pathname;
         let artistId = '';
@@ -168,6 +174,13 @@ const PurchaseFlow: React.FC<PurchaseFlowProps> = ({
         }
         
         console.log('🔍 DEBUG: Purchasing download:', { artistId, user: userAddress, urlPath });
+        
+        // Verify token before making request
+        const token = await getDidToken();
+        if (!token) {
+            console.error('❌ No DID token available');
+            throw new Error('Authentication token expired. Please refresh the page and try again.');
+        }
         
         const mintResponse = await authenticatedFetch('/api/public/purchase1155', {
             method: 'POST',
@@ -453,12 +466,28 @@ const PurchaseFlow: React.FC<PurchaseFlowProps> = ({
             }
             
             // 🎯 DOWNLOAD TOKEN MINTING (after successful swap OR if no swap was needed)
+            let downloadMintFailed = false;
+            let downloadMintError: string | null = null;
             if (includeDownload && user) {
                 try {
+                    // Small delay to ensure token is fresh after swap transaction
+                    await new Promise(resolve => setTimeout(resolve, 500));
                     downloadTxHash = await mintDownloadToken(user);
                 } catch (mintError: any) {
                     console.error('❌ Download token mint failed:', mintError);
-                    alert(mintError.message || 'Download purchase failed');
+                    downloadMintFailed = true;
+                    downloadMintError = mintError.message || 'Download purchase failed';
+                    
+                    // If it's an auth error, suggest refreshing
+                    if (mintError.message?.includes('token') || mintError.message?.includes('Authentication')) {
+                        downloadMintError = 'Authentication expired. Please refresh the page and your download token will be minted automatically.';
+                    }
+                    
+                    // Don't show alert here - will be included in success message if swap succeeded
+                    // Only show alert if this was download-only purchase
+                    if (!transactionHash) {
+                        alert(downloadMintError);
+                    }
                 }
             }
             
@@ -475,12 +504,17 @@ const PurchaseFlow: React.FC<PurchaseFlowProps> = ({
                 else if (transactionHash && downloadTxHash) {
                     successMessage = `🎉 PURCHASE SUCCESSFUL!\n\n${swapType}\n\nSwap Transaction: ${transactionHash.substring(0, 10)}...\n\n🎵 Download Token Minted! ✅\nMint Transaction: ${downloadTxHash.substring(0, 10)}...\n\nYour download access is now available in your wallet!`;
                 }
-                // If only swap (no download)
+                // If only swap (no download) OR swap succeeded but download mint failed
                 else if (transactionHash) {
                     successMessage = `🎉 PURCHASE SUCCESSFUL!\n\n${swapType}\n\nSwap Transaction: ${transactionHash.substring(0, 10)}...`;
                     if (includeDownload) {
-                        const downloadPrice = getDownloadPrice(featuredAsset);
-                        successMessage += `\n\n💡 Download processing: Your payment included $${downloadPrice.toFixed(2)} for download access. Download tokens are being credited to your wallet.`;
+                        if (downloadMintFailed) {
+                            const downloadPrice = getDownloadPrice(featuredAsset);
+                            successMessage += `\n\n⚠️ Download Token Issue:\nYour payment of $${downloadPrice.toFixed(2)} was successful, but we encountered an issue minting your download token.\n\n${downloadMintError || 'Please contact support or try again.'}`;
+                        } else {
+                            const downloadPrice = getDownloadPrice(featuredAsset);
+                            successMessage += `\n\n💡 Download processing: Your payment included $${downloadPrice.toFixed(2)} for download access. Download tokens are being credited to your wallet.`;
+                        }
                     }
                 }
                 

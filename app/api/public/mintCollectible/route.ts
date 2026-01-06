@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { verifyWhitelist } from '../../utils/server/whitelistCheck';
+import { verifyWhitelist } from '@/app/utils/server/whitelistCheck';
 
 /**
  * Public proxy for /api/mint-collectible
