@@ -27,6 +27,16 @@ interface AssetMetadata {
   metadata: any;
 }
 
+interface FeedbackItem {
+  id: string;
+  message: string;
+  submitted_by: string;
+  source: string;
+  status: string;
+  artist_id: string | null;
+  created_at: string;
+}
+
 interface WalletProps {
   artistConfig: ArtistConfig | null;
   allArtistsConfig: { [key: string]: ArtistConfig } | null;
@@ -35,6 +45,7 @@ interface WalletProps {
   onClose: () => void;
   userAddress?: string;
   magic?: any;
+  isAdmin?: boolean;
 }
 
 const Wallet: React.FC<WalletProps> = ({
@@ -44,7 +55,8 @@ const Wallet: React.FC<WalletProps> = ({
   showAssetsPanel,
   onClose,
   userAddress,
-  magic
+  magic,
+  isAdmin = false
 }) => {
   const [downloadingAssets, setDownloadingAssets] = useState<Set<string>>(new Set());
   const [assetMetadata, setAssetMetadata] = useState<{ [key: string]: AssetMetadata }>({});
@@ -57,6 +69,8 @@ const Wallet: React.FC<WalletProps> = ({
   const [showCashPanel, setShowCashPanel] = useState<boolean>(false);
   const [cashPct, setCashPct] = useState<number>(0);
   const [cashAmount, setCashAmount] = useState<string>('0.00');
+  const [feedbackList, setFeedbackList] = useState<FeedbackItem[]>([]);
+  const [feedbackLoading, setFeedbackLoading] = useState(false);
   const { showToast } = useToast();
   const { usdBalance, isLoading: usdLoading } = useUsdBalance();
   const { getDidToken } = useWallet();
@@ -103,6 +117,30 @@ const Wallet: React.FC<WalletProps> = ({
     allArtistsConfig
   );
 
+  // Fetch feedback list when admin opens wallet
+  useEffect(() => {
+    if (!isAdmin || !showAssetsPanel) return;
+    let cancelled = false;
+    setFeedbackLoading(true);
+    (async () => {
+      try {
+        const token = getDidToken ? await getDidToken() : null;
+        const res = await fetch('/api/feedback/list', {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+        });
+        if (!cancelled && res.ok) {
+          const data = await res.json();
+          setFeedbackList(data.feedback || []);
+        }
+      } catch {
+        if (!cancelled) setFeedbackList([]);
+      } finally {
+        if (!cancelled) setFeedbackLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [isAdmin, showAssetsPanel, getDidToken]);
+
   // Determine which artist this wallet owns (check all artists)
   const { ownedArtistId, isArtistWallet } = useMemo(() => {
     if (!userAddress || !allArtistsConfig) return { ownedArtistId: null, isArtistWallet: false };
@@ -127,7 +165,7 @@ const Wallet: React.FC<WalletProps> = ({
   });
 
   // Use treasury earnings hook for treasury mode
-  const { isTreasury, data: treasuryEarnings, isLoading: treasuryLoading } = useTreasuryEarnings({
+  const { isTreasury, data: treasuryEarnings, isLoading: treasuryLoading, error: treasuryError, refetch: refetchTreasury } = useTreasuryEarnings({
     userAddress: userAddress || null,
     autoRefresh: showAssetsPanel
   });
@@ -468,6 +506,32 @@ const Wallet: React.FC<WalletProps> = ({
           </button>
         </div>
       </div>
+      
+      {/* Feedback section - admin only */}
+      {isAdmin && (
+        <div className="p-4 border-b border-gray-700 bg-gray-900 bg-opacity-50">
+          <h3 className="text-sm font-bold text-gray-300 mb-2">📢 Feedback</h3>
+          {feedbackLoading ? (
+            <div className="text-xs text-gray-400">Loading...</div>
+          ) : feedbackList.length === 0 ? (
+            <div className="text-xs text-gray-400">No feedback yet.</div>
+          ) : (
+            <div className="space-y-2 max-h-48 overflow-y-auto">
+              {feedbackList.map((f) => (
+                <div
+                  key={f.id}
+                  className="text-xs p-2 rounded bg-gray-800 border border-gray-700"
+                >
+                  <div className="text-white">{f.message}</div>
+                  <div className="text-gray-400 mt-1">
+                    {f.submitted_by} • {f.source} • {f.artist_id || '—'} • {new Date(f.created_at).toLocaleString()}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
       
       {/* Content */}
       <div className="p-4 overflow-y-auto">
@@ -873,8 +937,8 @@ const Wallet: React.FC<WalletProps> = ({
           </div>
         )}
 
-        {/* Treasury Earnings Display */}
-        {isTreasury && (treasuryEarnings || treasuryLoading) && (
+        {/* Treasury Earnings Display - always show when treasury wallet, even if fetch failed */}
+        {isTreasury && (
           <div className="mt-4 bg-yellow-900 bg-opacity-50 rounded-lg p-3 border border-yellow-400 border-opacity-50">
             <div className="flex justify-between items-start">
               <div className="flex flex-col flex-grow">
@@ -882,15 +946,25 @@ const Wallet: React.FC<WalletProps> = ({
                 <div className="text-white font-bold text-lg">
                   {treasuryLoading ? (
                     <span className="text-gray-300">Loading...</span>
+                  ) : treasuryError ? (
+                    <span className="text-red-300 text-sm">{treasuryError}</span>
                   ) : !showUsdBalance ? (
                     <span className="text-gray-400">••••••</span>
-                  ) : treasuryEarnings?.totalProtocolFees < 0.01 && treasuryEarnings?.totalProtocolFees > 0 ? (
+                  ) : (treasuryEarnings?.totalProtocolFees ?? 0) < 0.01 && (treasuryEarnings?.totalProtocolFees ?? 0) > 0 ? (
                     '< $0.01'
                   ) : (
                     `$${(treasuryEarnings?.totalProtocolFees || 0).toFixed(4)}`
                   )}
                 </div>
-                {!treasuryLoading && treasuryEarnings && showUsdBalance && (
+                {treasuryError && (
+                  <button
+                    onClick={() => refetchTreasury()}
+                    className="mt-2 py-1 px-2 bg-yellow-600 hover:bg-yellow-500 text-white text-xs rounded transition-colors"
+                  >
+                    Retry
+                  </button>
+                )}
+                {!treasuryLoading && !treasuryError && treasuryEarnings && showUsdBalance && (
                   <div className="text-yellow-200 text-xs mt-1">
                     <div>Swap Fees: ${treasuryEarnings.swapFeesUsd.toFixed(4)}</div>
                     {treasuryEarnings.totalTransactions > 0 && (

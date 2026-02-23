@@ -95,6 +95,40 @@ const ArtistPageContent: React.FC<{
   const [showSearchDropdown, setShowSearchDropdown] = useState(false);
   const [selectedSearchIndex, setSelectedSearchIndex] = useState(0);
   const [assetMetadata, setAssetMetadata] = useState<{ [key: string]: any }>({});
+
+  // Feedback state
+  const [showFeedbackPanel, setShowFeedbackPanel] = useState(false);
+  const [feedbackMessage, setFeedbackMessage] = useState('');
+  const [isSubmittingFeedback, setIsSubmittingFeedback] = useState(false);
+  const [feedbackSuccess, setFeedbackSuccess] = useState(false);
+
+  // Admin state (for feedback inbox)
+  const [isAdmin, setIsAdmin] = useState(false);
+
+  useEffect(() => {
+    if (!user) {
+      setIsAdmin(false);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const token = getDidToken ? await getDidToken() : null;
+        const res = await fetch('/api/me', {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+        });
+        if (!cancelled && res.ok) {
+          const data = await res.json();
+          setIsAdmin(data.isAdmin === true);
+        } else {
+          setIsAdmin(false);
+        }
+      } catch {
+        if (!cancelled) setIsAdmin(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [user, getDidToken]);
   
   // Upload mode state
   const [uploadAssetData, setUploadAssetData] = useState({
@@ -1968,6 +2002,7 @@ const ArtistPageContent: React.FC<{
             onClose={() => setShowAssetsPanel(false)}
             userAddress={user}
             magic={magic}
+            isAdmin={isAdmin}
           />
         )}
 
@@ -2464,46 +2499,169 @@ const ArtistPageContent: React.FC<{
               
               {/* Main input */}
               <div className="flex items-center w-full chat-input-container relative">
+                {/* Feedback panel - inline above input, same pattern as search dropdown */}
+                {user && showFeedbackPanel && (
+                  <div 
+                    className="absolute bottom-full left-0 right-0 mb-2 bg-gray-900 border border-gray-600 rounded-lg p-3 z-[10000]"
+                    style={{ backdropFilter: 'blur(10px)' }}
+                  >
+                  {feedbackSuccess ? (
+                    <div className="text-emerald-400 text-sm py-1">Got it — thanks</div>
+                  ) : (
+                    <>
+                      <input
+                        type="text"
+                        value={feedbackMessage}
+                        onChange={(e) => setFeedbackMessage(e.target.value)}
+                        placeholder="Leave feedback..."
+                        className="w-full p-2 rounded bg-gray-800 border border-gray-600 text-white text-sm mb-2 focus:ring-accentColor focus:border-accentColor"
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            if (feedbackMessage.trim()) {
+                              (async () => {
+                                try {
+                                  setIsSubmittingFeedback(true);
+                                  const token = getDidToken ? await getDidToken() : null;
+                                  const res = await fetch('/api/feedback', {
+                                    method: 'POST',
+                                    headers: {
+                                      'Content-Type': 'application/json',
+                                      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+                                    },
+                                    body: JSON.stringify({
+                                      message: feedbackMessage.trim(),
+                                      artist_id: artistIdFromUrl || null,
+                                    }),
+                                  });
+                                  if (!res.ok) throw new Error((await res.json()).error || 'Failed');
+                                  setFeedbackMessage('');
+                                  setFeedbackSuccess(true);
+                                  setTimeout(() => {
+                                    setShowFeedbackPanel(false);
+                                    setFeedbackSuccess(false);
+                                  }, 2000);
+                                } catch (err: any) {
+                                  showToast(err.message || 'Failed to submit feedback', 'error');
+                                } finally {
+                                  setIsSubmittingFeedback(false);
+                                }
+                              })();
+                            }
+                          }
+                          if (e.key === 'Escape') {
+                            setShowFeedbackPanel(false);
+                            setFeedbackMessage('');
+                          }
+                        }}
+                        autoFocus
+                      />
+                      <div className="flex justify-end gap-2">
+                        <button
+                          onClick={() => {
+                            setShowFeedbackPanel(false);
+                            setFeedbackMessage('');
+                          }}
+                          className="px-3 py-1 text-sm text-gray-400 hover:text-white"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          onClick={async () => {
+                            if (!feedbackMessage.trim()) return;
+                            try {
+                              setIsSubmittingFeedback(true);
+                              const token = getDidToken ? await getDidToken() : null;
+                              const res = await fetch('/api/feedback', {
+                                method: 'POST',
+                                headers: {
+                                  'Content-Type': 'application/json',
+                                  ...(token ? { Authorization: `Bearer ${token}` } : {}),
+                                },
+                                body: JSON.stringify({
+                                  message: feedbackMessage.trim(),
+                                  artist_id: artistIdFromUrl || null,
+                                }),
+                              });
+                              if (!res.ok) throw new Error((await res.json()).error || 'Failed');
+                              setFeedbackMessage('');
+                              setFeedbackSuccess(true);
+                              setTimeout(() => {
+                                setShowFeedbackPanel(false);
+                                setFeedbackSuccess(false);
+                              }, 2000);
+                            } catch (err: any) {
+                              showToast(err.message || 'Failed to submit feedback', 'error');
+                            } finally {
+                              setIsSubmittingFeedback(false);
+                            }
+                          }}
+                          disabled={!feedbackMessage.trim() || isSubmittingFeedback}
+                          className="px-3 py-1 text-sm bg-accentColor text-white rounded hover:opacity-80 disabled:opacity-50"
+                        >
+                          {isSubmittingFeedback ? 'Sending...' : 'Send'}
+                        </button>
+                      </div>
+                    </>
+                  )}
+                </div>
+                )}
+
                 {/* Action buttons - match top button styling */}
-                {user && artistConfig && artistConfig.contract && (
+                {user && (
                   <div className="flex gap-2 mr-3">
                     <button
                       onClick={() => {
-                        if (appMode === 'upload-asset') {
-                          setAppMode('normal');
-                          setUploadedFile(null);
-                          setUploadAssetData({ title: '', price: 5, description: '' });
-                        } else {
-                          // Find user's owned artist
-                          const ownedArtist = allArtistsConfig ? Object.values(allArtistsConfig).find(artist => 
-                            artist.treasury_wallet?.toLowerCase() === user?.toLowerCase()
-                          ) : null;
-                          
-                          if (ownedArtist) {
-                            // Navigate to their own artist page with upload mode
-                            router.push(`/?artist=${ownedArtist.name?.toLowerCase()}&mode=upload`);
-                          } else {
-                            setAppMode('upload-asset');
-                            setOnboardingArtistName('ADD NEW ASSET');
-                          }
+                        setShowFeedbackPanel(!showFeedbackPanel);
+                        if (showFeedbackPanel) {
+                          setFeedbackMessage('');
+                          setFeedbackSuccess(false);
                         }
                       }}
                       className="bg-gray-600 hover:bg-gray-500 px-3 py-2 rounded text-white text-sm font-medium transition-colors w-10 h-8 flex items-center justify-center"
-                      title="Create new 1155 asset"
+                      title="Leave feedback"
                     >
-                      {appMode === 'upload-asset' ? '✕' : '+'}
+                      🎤→📢
                     </button>
-                    
-                    {/* Edit Artist Page button - only show for artist's own wallet */}
-                    {user && artistConfig && artistConfig.treasury_wallet && 
-                     user.toLowerCase() === artistConfig.treasury_wallet.toLowerCase() && (
-                      <button
-                        onClick={() => setAppMode('profile-edit')}
-                        className="bg-yellow-600 hover:bg-yellow-500 px-3 py-2 rounded text-white text-sm font-medium transition-colors w-10 h-8 flex items-center justify-center"
-                        title="Edit artist page"
-                      >
-                        ✏️
-                      </button>
+                    {artistConfig && artistConfig.contract && (
+                      <>
+                        <button
+                          onClick={() => {
+                            if (appMode === 'upload-asset') {
+                              setAppMode('normal');
+                              setUploadedFile(null);
+                              setUploadAssetData({ title: '', price: 5, description: '' });
+                            } else {
+                              // Find user's owned artist
+                              const ownedArtist = allArtistsConfig ? Object.values(allArtistsConfig).find(artist => 
+                                artist.treasury_wallet?.toLowerCase() === user?.toLowerCase()
+                              ) : null;
+                              
+                              if (ownedArtist) {
+                                // Navigate to their own artist page with upload mode
+                                router.push(`/?artist=${ownedArtist.name?.toLowerCase()}&mode=upload`);
+                              } else {
+                                setAppMode('upload-asset');
+                                setOnboardingArtistName('ADD NEW ASSET');
+                              }
+                            }
+                          }}
+                          className="bg-gray-600 hover:bg-gray-500 px-3 py-2 rounded text-white text-sm font-medium transition-colors w-10 h-8 flex items-center justify-center"
+                          title="Create new 1155 asset"
+                        >
+                          {appMode === 'upload-asset' ? '✕' : '+'}
+                        </button>
+                        {artistConfig.treasury_wallet && 
+                         user.toLowerCase() === artistConfig.treasury_wallet.toLowerCase() && (
+                          <button
+                            onClick={() => setAppMode('profile-edit')}
+                            className="bg-yellow-600 hover:bg-yellow-500 px-3 py-2 rounded text-white text-sm font-medium transition-colors w-10 h-8 flex items-center justify-center"
+                            title="Edit artist page"
+                          >
+                            ✏️
+                          </button>
+                        )}
+                      </>
                     )}
                   </div>
                 )}

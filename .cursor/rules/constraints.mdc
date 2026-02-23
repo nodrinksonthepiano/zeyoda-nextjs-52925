@@ -1,0 +1,10 @@
+---
+description: Hard constraints — never violate
+alwaysApply: true
+---
+
+# Constraints
+
+- **Never** read or modify `.env` — only the user handles environment variables
+- **Never** run git commands — the user manages version control
+- **Propose a plan** before making non-trivial code changes

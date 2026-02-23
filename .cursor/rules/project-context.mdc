@@ -1,0 +1,14 @@
+---
+description: Read knowledge base and PRD before feature/architecture/auth changes
+alwaysApply: true
+---
+
+# Project Context
+
+Before making changes that touch **product features**, **architecture**, or **auth/security**:
+
+1. Read `ZEYODA_KNOWLEDGE_BASE.md` for architecture, auth flow, and conventions
+2. If `PRD.json` exists, consult it for requirements and status
+3. For integration with ArtisTalks, see the "Integration Points" section in the knowledge base
+
+For trivial edits (typos, formatting, comments), this is optional.

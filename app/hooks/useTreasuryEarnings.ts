@@ -1,6 +1,8 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { useWallet } from '../components/MagicProvider';
+import { authenticatedFetch } from '../utils/authenticatedFetch';
 
 interface TreasuryEarningsData {
   totalProtocolFees: number;
@@ -42,7 +44,8 @@ export function useTreasuryEarnings({
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastFetchTime, setLastFetchTime] = useState<Date | null>(null);
-  
+  const { getDidToken } = useWallet();
+
   // Detect if connected user should see treasury data (admin privileges)
   const isTreasury = Boolean(
     userAddress && 
@@ -66,8 +69,12 @@ export function useTreasuryEarnings({
     setError(null);
     
     try {
-      const response = await fetch('/api/treasury-earnings');
-      
+      const response = await authenticatedFetch(
+        '/api/treasury-earnings',
+        { method: 'GET' },
+        getDidToken
+      );
+
       if (!response.ok) {
         const errorData = await response.json();
         throw new Error(errorData.error || `HTTP ${response.status}`);
@@ -97,7 +104,7 @@ export function useTreasuryEarnings({
     } finally {
       setIsLoading(false);
     }
-  }, [isTreasury]);
+  }, [isTreasury, getDidToken]);
 
   // Initial fetch and dependency updates
   useEffect(() => {
