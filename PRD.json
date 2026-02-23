@@ -1,0 +1,107 @@
+{
+  "version": 1,
+  "project": "Zeyoda",
+  "updatedAt": "2026-02-23T23:49:58.560Z",
+  "sections": [
+    {
+      "id": "critical",
+      "name": "Critical / Security",
+      "priority": 1,
+      "items": [
+        {
+          "id": "T-001",
+          "title": "Add ownership verification to uploadAsset",
+          "description": "uploadAsset route does not verify caller owns the artist before allowing upload",
+          "location": "app/api/uploadAsset/route.ts:64",
+          "status": "todo",
+          "feedbackId": null,
+          "createdAt": "2025-02-23T00:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "id": "high",
+      "name": "High / Core Features",
+      "priority": 2,
+      "items": [
+        {
+          "id": "T-002",
+          "title": "Refresh page after new asset upload",
+          "description": "After upload, new asset doesn't appear until manual refresh",
+          "location": "app/page.tsx:1222",
+          "status": "todo",
+          "feedbackId": null,
+          "createdAt": "2025-02-23T00:00:00.000Z"
+        },
+        {
+          "id": "T-003",
+          "title": "Implement proper LP calculation in artist/balances",
+          "description": "lpWithdrawableUsd is hardcoded to 0; LP calculation not implemented",
+          "location": "app/api/artist/balances/route.ts:87",
+          "status": "todo",
+          "feedbackId": null,
+          "createdAt": "2025-02-23T00:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "id": "medium",
+      "name": "Medium / Performance",
+      "priority": 3,
+      "items": [
+        {
+          "id": "T-004",
+          "title": "Implement Redis cache for purchase/1155",
+          "description": "5-min TTL cache for price/quote data",
+          "location": "app/api/purchase/1155/route.ts:50",
+          "status": "todo",
+          "feedbackId": null,
+          "createdAt": "2025-02-23T00:00:00.000Z"
+        },
+        {
+          "id": "T-005",
+          "title": "Implement proper session management with Magic.link",
+          "description": "Session handling for purchase flow",
+          "location": "app/api/purchase/1155/route.ts:261",
+          "status": "todo",
+          "feedbackId": null,
+          "createdAt": "2025-02-23T00:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "id": "low",
+      "name": "Low / Nice to Have",
+      "priority": 4,
+      "items": [
+        {
+          "id": "T-006",
+          "title": "Add server-side treasury wallet check",
+          "description": "Treasury API returns data to any logged-in user; UI restricts to Gosheesh. Add server-side check for defense-in-depth",
+          "location": "app/api/treasury-earnings/route.ts",
+          "status": "todo",
+          "feedbackId": null,
+          "createdAt": "2025-02-23T00:00:00.000Z"
+        },
+        {
+          "id": "T-007",
+          "title": "Refactor feedback submit to use authenticatedFetch",
+          "description": "Feedback submit uses manual fetch with token; other flows use authenticatedFetch — consistency",
+          "location": "app/page.tsx (feedback submit handlers)",
+          "status": "todo",
+          "feedbackId": null,
+          "createdAt": "2025-02-23T00:00:00.000Z"
+        },
+        {
+          "id": "FB-93c329f5",
+          "title": "test feedback loop",
+          "description": "test feedback loop",
+          "location": "?artist=jait333a",
+          "status": "todo",
+          "feedbackId": "93c329f5-ae0f-440a-8013-02dbc2e934b1",
+          "createdAt": "2026-02-23T23:13:50.796821+00:00"
+        }
+      ]
+    }
+  ]
+}

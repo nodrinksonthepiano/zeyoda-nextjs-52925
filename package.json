@@ -8,7 +8,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "type-check": "tsc --noEmit"
+    "type-check": "tsc --noEmit",
+    "sync-feedback": "node scripts/sync-feedback-to-prd.js"
   },
   "dependencies": {
     "@magic-sdk/admin": "^2.8.2",

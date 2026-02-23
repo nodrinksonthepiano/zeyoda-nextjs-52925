@@ -1,0 +1,14 @@
+---
+description: At session start, sync admin feedback to PRD and read project docs
+alwaysApply: true
+---
+
+# Feedback-PRD Sync
+
+At the start of every session, before assisting with any task:
+
+1. Run `npm run sync-feedback` to pull new admin feedback from Supabase into PRD.json
+2. Read `AGENT_NOTES.md` and `PRD.json`
+3. Use PRD.json as the source of truth for backlog items and priorities
+
+This ensures feedback submitted via the app (as Gosheesh) becomes visible work items.
