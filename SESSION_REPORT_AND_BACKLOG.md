@@ -145,3 +145,59 @@ Add a `.cursor/rules/backlog.mdc` that references this file so agents know the b
 - [ ] Run `sql/feedback.sql` in Supabase (if not already done)
 - [ ] Ensure `gosheeshnli10@gmail.com` has `role: 'admin'` in `whitelist_emails`
 - [ ] `encoding` package installed (for Magic login)
+
+---
+
+## Part 7: Strategic Decisions From Founder Review
+
+### Product Phase
+
+- Current repo = **private testnet rehearsal**
+- Inner-circle artists may test here before a later clean public fork
+- Public-ready launch should likely happen from a fresh repo with fresh keys and cleaner assumptions
+
+### ArtisTalks Relationship
+
+- **ArtisTalks** is a different website, different login, and different codebase
+- It is more public-facing and functions as an education / onboarding path
+- Discovery is word of mouth, initiation, and secret knowledge rather than broad marketing
+
+### Voice And Language
+
+- This is **not** a stock market for artists
+- Core phrasing: **stock up on your favorite art**
+- Feedback is not only for Gosheesh to submit; fans and artists should be able to send feedback **to** GOSHEESH
+- The chat is the command center; safewords should reveal tools and worlds
+
+### Economics Clarification
+
+- Current test LP appears to be `100M` tokens out of `10B`, which is **1%**, not 10%
+- Current shallow launch is therefore even more fragile than first described
+- Strong current direction to assess: `1B artist / 1B LP / 8B reserve vault`
+- LP health depends on both token-side and ETH-side depth
+
+### Reserve Vault / Treasury Meaning
+
+- Reserve is positive if treated as a **protected reserve under stewardship**
+- It should support later sovereignty, not act like hidden supply
+- Borrowing against reserve is a later-stage idea, not an early launch feature
+
+### Artist Launch Model
+
+- Best current direction: protocol-funded launch with just an email
+- Protocol fronts launch support, stewards the reserve, and helps the artist toward sovereignty
+- Later, reserve control, fee rights, and ownership may be handed over to the artist when they are ready
+
+### Onboarding Direction
+
+- Main bottleneck is the onboarding experience
+- For the first inner-circle cohort, prefer **pre-curated onboarding** over blank-canvas-first
+- Let artists arrive to something that already feels alive, then fine tune it
+- NFCs inside custom 3D printed coins are central to the fan discovery experience
+
+### Future Experience Work
+
+- Upload flow should support tags and per-asset splits
+- Wallet should eventually support reload flows
+- Toppins per view should likely be metered internally and settled in batches
+- A grounded language model should eventually guide both ArtisTalks curriculum and portal navigation in founder voice

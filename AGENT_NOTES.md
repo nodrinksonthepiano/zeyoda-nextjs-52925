@@ -1,14 +1,23 @@
 # Agent Notes — Zeyoda
 
-> Quick reference for AI agents. For full architecture, see `ZEYODA_KNOWLEDGE_BASE.md`.
+> Quick reference for AI agents. Read `VOICE_AND_VISION.md` first. For full system detail, see `ZEYODA_KNOWLEDGE_BASE.md`.
 
 ---
 
 ## Project
 
-**Zeyoda** = Artistocks Protocol. Next.js Web3 platform for artists to sell tokens and downloads. Protocol custody model.
+**Zeyoda** is the layer, the portal, and the community hub.
 
-**ArtisTalks** = Onboarding tool (separate app). Artists create art there, then list on Zeyoda.
+**ARTISTOCKS** is the responsible issuer and steward inside that ecosystem.
+
+**ArtisTalks** is separate:
+- separate login
+- separate codebase
+- separate website
+- more public-facing
+- education and onboarding path for artists preparing to release responsibly
+
+This repo is currently the **private testnet rehearsal space**, not the final public-ready birth of the system.
 
 ---
 
@@ -24,18 +33,37 @@
 
 | File | Purpose |
 |------|---------|
-| `ZEYODA_KNOWLEDGE_BASE.md` | Full architecture, auth, flows |
-| `PRD.json` | Backlog items, priorities, status |
-| `SESSION_REPORT_AND_BACKLOG.md` | Session history, ticket list |
-| `PLAN_FEEDBACK_PRD_SYNC.md` | Feedback→PRD sync system design |
+| `VOICE_AND_VISION.md` | Source of truth for tone, language, intent |
+| `LAUNCH_ROADMAP.md` | Current phase, sequencing, and next steps |
+| `TOKENOMICS_AND_STEWARDSHIP.md` | Launch economics, reserve vault logic, sovereignty handoff |
+| `ZEYODA_KNOWLEDGE_BASE.md` | Architecture, auth, contracts, flows |
+| `PRD.json` | Active backlog and priorities |
+| `SESSION_REPORT_AND_BACKLOG.md` | Session history, strategic decisions, ticket context |
+| `PLAN_FEEDBACK_PRD_SYNC.md` | Feedback → PRD sync design |
+| `PLAN_REVERSE_SYNC.md` | PRD → feedback reverse sync design |
 
 ---
 
-## Feedback → PRD Flow
+## Current Truths
 
-1. Gosheesh submits feedback via 🎤→📢 in app → saved to `feedback` table (`source: admin`, `status: open`)
-2. Run `npm run sync-feedback` → script pulls open admin feedback, adds to PRD.json, marks feedback `in_progress`
-3. PRD.json is source of truth for backlog
+- This repo is for rehearsal and refinement on Base Sepolia
+- Inner-circle artists may be onboarded here for testing before a clean public fork
+- Current LP issue is based on `100M` LP seed out of `10B` total supply, which is **1%**, not 10%
+- The likely next launch model to assess is `1B artist / 1B LP / 8B reserve vault`
+- The reserve vault is part of the stewardship-to-sovereignty path
+- The onboarding experience is the current bottleneck
+- For the first artist cohort, prefer pre-curated onboarding over blank-canvas-first
+- The chat is the command center and reveal mechanism
+- Feedback should flow from fans and artists to GOSHEESH
+
+---
+
+## Feedback ↔ PRD Flow
+
+1. App feedback goes to Supabase
+2. `npm run sync-feedback` pulls feedback into `PRD.json`
+3. Reverse sync can also place PRD items back into the wallet inbox
+4. Wallet inbox and PRD should stay aligned over time
 
 ---
 
@@ -51,5 +79,6 @@
 
 - **PGRST116** — Supabase "no rows" is not an error
 - **BigInt** — ethers v6 uses `0n`; check `balance > 0n`
-- **Base Sepolia** — chainId 84532
-- **fundWallet** — DISABLED; do not re-enable until SEC-001
+- **Base Sepolia** — chainId `84532`
+- **Base gas** — cheap, not free
+- **fundWallet** — disabled until deliberately re-enabled with guardrails

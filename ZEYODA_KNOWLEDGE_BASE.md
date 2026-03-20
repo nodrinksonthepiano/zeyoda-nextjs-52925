@@ -1,189 +1,252 @@
 # Zeyoda Knowledge Base
 
-> **AI Agent Context** — Read this before making changes to features, architecture, or auth/security.
-
----
-
-## Table of Contents
-
-1. [Project Overview](#project-overview)
-2. [Architecture](#architecture)
-3. [Integration Points (Downstream: ArtisTalks)](#integration-points-downstream-artistalks)
-4. [Security Enhancements](#security-enhancements-already-built)
-5. [Auth & Security](#auth--security)
-6. [Key Flows](#key-flows)
-7. [Conventions](#conventions)
-8. [Known Gotchas](#known-gotchas)
-9. [References](#references)
+> AI agent context for architecture, auth, contract behavior, and system truths.
 
 ---
 
 ## Project Overview
 
-**Zeyoda** (Artistocks Protocol) is a Next.js Web3 platform enabling artists to sell art while maintaining token sovereignty through a protocol custody model.
+**Zeyoda** is the layer, portal, and community hub.
 
-- **Protocol** controls smart contracts, liquidity pools, and private keys
-- **Artists** focus on creativity and content; earn from their tokens
-- **Users** authenticate via Magic.link, trade tokens, purchase NFTs/downloads
+**ARTISTOCKS** is the issuer and steward inside that ecosystem. It launches the digital assets, handles the swap mechanics, and protects artists from carrying too much risk too early.
 
-**Tech Stack:** Next.js 15, TypeScript, Tailwind, Magic.link, Supabase, Base Sepolia, Solidity
+This repo is currently a **private testnet rehearsal** on Base Sepolia.
+
+It is being used to:
+- refine launch economics
+- improve the onboarding experience
+- test the fan journey
+- prepare for a later clean public fork with new keys and cleaner assumptions
+
+**Tech stack:** Next.js 15, TypeScript, Tailwind, Magic.link, Supabase, Base Sepolia, Solidity
+
+---
+
+## ArtisTalks Relationship
+
+**ArtisTalks** is separate:
+- separate login
+- separate codebase
+- separate website
+- more public-facing
+
+ArtisTalks is the education and onboarding path for artists preparing to release responsibly.
+It is not this app.
+
+There are still shared ideas and patterns between the two codebases, especially around:
+- theme handling
+- previews
+- artist guidance
+- onboarding language
+
+---
+
+## Current Economic Reality
+
+Current testnet launch economics appear to be:
+- total supply = `10B`
+- `1B` to the artist
+- `100M` for LP seeding
+- `8.9B` in reserve
+- LP paired with roughly `0.01 ETH`
+
+Important correction:
+- `100M` out of `10B` is **1%**, not 10%
+
+The practical result is a shallow opening market.
+
+The launch problem is not just token allocation. It is:
+- token-side reserve depth
+- ETH-side reserve depth
+- constant-product AMM behavior together
+
+The likely next model to assess is:
+- `1B` artist
+- `1B` LP
+- `8B` reserve vault
+
+---
+
+## Stewardship And Sovereignty
+
+The reserve should be thought of as a **reserve vault under stewardship**.
+
+Purpose:
+- keep some supply protected for later
+- let the protocol support the artist at launch
+- create a path to later sovereignty and handoff
+
+The reserve is not meant to be:
+- random hidden future supply
+- an unclear dilution bucket
+- a casual intervention tool
+
+Long-term direction:
+- protocol stewards first
+- artist can inherit more later
+- fee control, reserve control, and ownership can be handed off when the artist is ready
+
+Because the contracts are UUPS proxy upgradeable, mechanics can improve over time.
+Promises should not casually change under people.
+
+Best principle:
+**upgradeable mechanics, not casually changeable promises**
 
 ---
 
 ## Architecture
 
-### Folder Structure
+### Main Structure
 
-```
+```text
 app/
-├── api/                    # API routes (all protected except whitelist)
-│   ├── checkWhitelist/     # Public — login flow
-│   ├── artist-earnings/    # Whitelist + token
-│   ├── fundWallet/         # Whitelist
-│   ├── purchase/1155/      # ERC-1155 purchase flow
-│   ├── public/             # Proxy routes (whitelist, forward to internal)
-│   └── ...
-├── components/             # Wallet, PurchaseFlow, MagicProvider
-├── contexts/               # ArtistRegistryContext
-├── hooks/                  # useArtistConfig, useDownloadAccess, useWalletBalances
-└── utils/
-    ├── authenticatedFetch.ts   # Adds Bearer token to requests
-    └── server/
-        ├── whitelistCheck.ts   # verifyWhitelist()
-        └── artistRegistry.ts   # getArtistContractsFromServer()
-contracts/                  # ArtistToken, Swap, ERC-1155
-deploy/                     # Hardhat deploy scripts
-middleware.ts               # API route guard (token or internal secret)
+  api/           protected and public routes
+  components/    wallet, chat, purchase flow, onboarding
+  contexts/      artist registry context
+  hooks/         balances, config, download access
+  utils/         auth, registry, swap helpers, guards
+contracts/       token, AMM, downloads
+deploy/          deployment and seeding scripts
+middleware.ts    token / internal-secret gate
 ```
 
-### Key Modules
+### Important Modules
 
 | Module | Purpose |
 |--------|---------|
-| `middleware.ts` | Intercepts `/api/*`; requires Bearer token or `x-internal-secret`; public: `_health`, `checkWhitelist`, `GET /api/registry` |
-| `whitelistCheck.ts` | Verifies Magic DID token + Supabase `whitelist_emails` |
-| `authenticatedFetch` | Client-side fetch wrapper; adds `Authorization: Bearer <DID>` |
-| `ArtistRegistryContext` | Provides `artist_registry` (token, swap, downloads) per artist |
-| `useDownloadAccess` | Checks ERC-1155 balances for user's download access |
-| `useArtistConfig` | Artist config + live LP pricing (30s refresh) |
+| `middleware.ts` | Protects `/api/*`; allows public health/whitelist/registry routes |
+| `app/utils/server/whitelistCheck.ts` | Verifies Magic DID token and whitelist access |
+| `app/utils/authenticatedFetch.ts` | Adds Bearer token to protected requests |
+| `app/utils/server/artistRegistry.ts` | Reads artist contract addresses with cache |
+| `app/hooks/useArtistConfig.ts` | Artist config, live LP pricing, and fallback pricing |
+| `app/hooks/useDownloadAccess.ts` | Checks ERC-1155 ownership for download access |
 
 ---
 
-## Integration Points (Downstream: ArtisTalks)
+## Auth And Access
 
-**ArtisTalks** is built on Zeyoda patterns. It does **not** call Zeyoda APIs directly; it shares:
+### Magic Flow
 
-- **Patterns:** Event-driven preview (`profilePreview`, `primaryColorChange`), `applyLogoBackground`
-- **Utilities:** `themeBackground.ts`, color/font/logo handling
-- **UI concepts:** Orbit renderer, halo, token theming
-
-**Zeyoda files ArtisTalks references:**
-
-- `app/utils/themeBackground.ts` → `applyLogoBackground()`
-- `app/components/ProfileEditPanel.tsx` (panel UI patterns)
-- `app/components/ThemeOrbitRenderer.tsx` (token color events)
-
-**ArtisTalks repo:** `https://github.com/nodrinksonthepiano/ArtisTalks112025`
-
----
-
-## Security Enhancements (Already Built)
-
-| Module | Purpose |
-|--------|---------|
-| `app/utils/networkGuard.ts` | `requireBaseSepolia(provider)` — throws if chainId !== 84532. Blocks mainnet (1, 10, 8453, etc.). |
-| `app/utils/guardedSigner.ts` | `createGuardedSigner`, `createGuardedProvider` — wrap ethers Wallet/Provider with network guard. Used by purchase/1155, lp/withdraw, mintDownload, uploadAsset, mint-collectible. |
-| `app/utils/apiGuard.ts` | `requireSecret(req)` — x-internal-secret header. `rateLimit(req, key)` — uses x-forwarded-for, x-real-ip. |
-| **Proxy pattern** | `/api/public/*` routes verify whitelist, forward to internal with `x-internal-secret` and `x-verified-email`. Internal routes trust proxy when headers present. |
-| **fundWallet** | **DISABLED** — returns 403. Original logic commented out. Do not re-enable until SEC-001 remediation complete. |
-
----
-
-## Auth & Security
-
-### Magic.link Flow
-
-1. User enters email → `checkWhitelist` (public, no token)
-2. If whitelisted → Magic.loginWithEmailOTP()
-3. Client gets DID token → stored in MagicProvider
-4. All protected API calls use `authenticatedFetch` → adds `Authorization: Bearer <DID>`
-5. Middleware checks token presence; route handlers call `verifyWhitelist()` for full validation
+1. Fan or artist enters email
+2. `checkWhitelist` decides whether they may continue
+3. Magic login returns a DID token
+4. Protected requests use `authenticatedFetch`
+5. Middleware checks token presence
+6. Route handlers call `verifyWhitelist()` for full validation
 
 ### Whitelist
 
-- **Table:** `whitelist_emails` (email, role, used, notes)
-- **Check:** `verifyWhitelist(request)` in `app/utils/server/whitelistCheck.ts`
-- **Flow:** Magic token → email → Supabase lookup → verified/not
-- **Login attempts:** Logged to `login_attempts` (email, whitelisted, clue, timestamp)
+- table: `whitelist_emails`
+- protected routes require verified whitelist status
+- login attempts are recorded in `login_attempts`
 
-### Middleware Public Routes
+### Public Routes
 
 - `/api/_health`
 - `/api/checkWhitelist`
 - `GET /api/registry`
 
-### Internal Routes
+### Internal Proxy Pattern
 
-- `x-internal-secret` header + `INTERNAL_API_SECRET` env → bypasses token check
-- Used for server-to-server calls (e.g. public proxy → internal route)
-
-### Defense-in-Depth
-
-Protected routes call `verifyWhitelist()` even though middleware checks token. Middleware blocks missing tokens; route handlers verify Magic + whitelist.
+- `/api/public/*` routes verify the caller
+- then forward internally using `x-internal-secret`
+- internal route trusts the forwarded verified context
 
 ---
 
-## Key Flows
+## Swap And Pricing
 
-### LP Pricing
+### AMM Shape
 
-- **LP exists:** `getReserves()` from pool → live price
-- **No LP:** Supabase `tokenprice` fallback
-- **Refresh:** 30 seconds
-- **Indicator:** "● Live Price" vs "● Fallback Price"
+The AMM uses a constant-product curve with a `0.3%` fee.
 
-### Download Access (ERC-1155)
+Practical meaning:
+- price depends on both token reserve and ETH reserve
+- shallow reserves cause violent price movement
+- Base is cheap, not free
 
-- `useDownloadAccess(userAddress, artistId)` → checks `balanceOf` for assets 1–10
-- `useAllArtistsDownloadAccess` → checks all artists' assets from `artist_assets`
-- Registry provides `downloads` contract address per artist
+### Pricing Flow
 
-### Artist Registry
+- if LP exists, the app reads `getReserves()` and shows live pricing
+- if LP does not exist, the app falls back to stored price data
+- live pricing refreshes on an interval
 
-- **Source:** Supabase `artist_registry` (id, token, swap, downloads, treasury_wallet)
-- **Cache:** 5 min server-side in `artistRegistry.ts`
-- **Fallback:** `addressRegistryFallback.ts` if DB fails
-- **Context:** `ArtistRegistryProvider` wraps app; `useArtistRegistryContext()` in components
+---
 
-### Purchase Flow (1155)
+## Downloads And Purchases
 
-- Whitelist verified
-- Proxy routes (`/api/public/purchase1155`) verify whitelist, forward to internal with `x-verified-email`
+### Download Access
+
+- ERC-1155 ownership gates download access
+- `useDownloadAccess()` checks balances
+- registry supplies the download contract per artist
+
+### Purchase Flow
+
+- purchase routes are protected
+- public proxy routes forward verified requests internally
+- purchases are tracked in Supabase
+
+---
+
+## Feedback And Backlog
+
+Feedback flow is intended to work like this:
+- fans and artists send feedback through the chat
+- feedback lands in Supabase
+- `npm run sync-feedback` pulls it into `PRD.json`
+- PRD items can also be reflected back into the wallet inbox
+
+The long-term goal is a living loop:
+- community signal
+- PRD item
+- implementation
+- reflected back into the experience
+
+---
+
+## Onboarding Direction
+
+The current bottleneck is the onboarding experience.
+
+For the first inner-circle artist cohort, the preferred experience is:
+- pre-curated portal
+- artist arrives to something that already feels alive
+- artist fine tunes after the reveal
+
+This is stronger than leading with a blank self-serve form in the early cohort.
+
+Chat remains the command center:
+- safewords reveal tools
+- revealed tools can still appear as visual panels
+- the artist should feel guided, not buried in menus
 
 ---
 
 ## Conventions
 
-- **Never** read or modify `.env` — agent must not touch env files
-- **Never** run git commands — user manages version control
-- **Propose a plan** before non-trivial edits
-- **Event naming:** `profilePreview`, `profilePreviewClear`, `primaryColorChange`, `logoPreviewChange`
-- **API errors:** Return `{ error, message }` with appropriate status (401/403/500)
+- Never read or modify `.env`
+- Never run git commands unless explicitly asked
+- Propose a plan before non-trivial edits
+- API errors return `{ error, message }`
+- Event names: `profilePreview`, `profilePreviewClear`, `primaryColorChange`, `logoPreviewChange`
 
 ---
 
 ## Known Gotchas
 
-1. **PGRST116** — Supabase "no rows" is not an error; check `whitelistError.code !== 'PGRST116'`
-2. **BigInt** — `useDownloadAccess` / ethers v6 use `0n` for zero; `balance > 0n`
-3. **Provider chainId** — Base Sepolia = 84532; RPC from `NEXT_PUBLIC_RPC`
-4. **MagicProvider** — Checks whitelist on every page load; forces logout if user removed from whitelist
-5. **Proxy routes** — `/api/public/*` verify whitelist, then forward with `x-verified-email`; internal route trusts header
+1. `PGRST116` is not a real failure for "no rows"
+2. ethers v6 uses `0n` for BigInt zero
+3. Base Sepolia chain ID is `84532`
+4. Base gas is low, not free
+5. `fundWallet` is currently disabled and must be re-enabled deliberately with guardrails
 
 ---
 
 ## References
 
-- **README:** `README.md` — onboarding, LP seeding, deployment
-- **ArtisTalks KB:** `https://github.com/nodrinksonthepiano/ArtisTalks112025` — `ARTISTALKS_KNOWLEDGE_BASE.md`
-- **Zeyoda repo:** `https://github.com/nodrinksonthepiano/zeyoda-nextjs-52925` (branch: `feat/secure-middleware-whitelist-clean`)
+- `VOICE_AND_VISION.md`
+- `LAUNCH_ROADMAP.md`
+- `TOKENOMICS_AND_STEWARDSHIP.md`
+- `PRD.json`
+- `SESSION_REPORT_AND_BACKLOG.md`

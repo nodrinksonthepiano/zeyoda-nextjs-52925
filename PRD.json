@@ -1,17 +1,35 @@
 {
   "version": 1,
   "project": "Zeyoda",
-  "updatedAt": "2026-02-23T23:49:58.560Z",
+  "updatedAt": "2026-03-20T00:00:00.000Z",
   "sections": [
     {
       "id": "critical",
-      "name": "Critical / Security",
+      "name": "Critical / Launch Economics",
       "priority": 1,
       "items": [
         {
+          "id": "T-011",
+          "title": "Assess and lock the next launch tokenomics",
+          "description": "Confirm the current live split, choose the next test model, and size both the token side and ETH side of opening liquidity so one buyer cannot cheaply dominate early supply.",
+          "location": "contracts/uups/ArtistTokenUUPS.sol, contracts/uups/ArtistFactory.sol, tasks/seed-lp.js",
+          "status": "todo",
+          "feedbackId": null,
+          "createdAt": "2026-03-20T00:00:00.000Z"
+        },
+        {
+          "id": "T-012",
+          "title": "Replay historical swaps against deeper opening liquidity",
+          "description": "Use recorded swap fee and purchase data to estimate how pricing and supply distribution would have behaved under healthier LP configurations.",
+          "location": "sql/create_protocol_swap_fees_table.sql, sql/create_artist_purchases_table.sql",
+          "status": "todo",
+          "feedbackId": null,
+          "createdAt": "2026-03-20T00:00:00.000Z"
+        },
+        {
           "id": "T-001",
           "title": "Add ownership verification to uploadAsset",
-          "description": "uploadAsset route does not verify caller owns the artist before allowing upload",
+          "description": "uploadAsset route does not verify caller owns the artist before allowing upload.",
           "location": "app/api/uploadAsset/route.ts:64",
           "status": "todo",
           "feedbackId": null,
@@ -21,13 +39,49 @@
     },
     {
       "id": "high",
-      "name": "High / Core Features",
+      "name": "High / Onboarding And Core Experience",
       "priority": 2,
       "items": [
         {
+          "id": "T-013",
+          "title": "Improve inner-circle artist onboarding reveal",
+          "description": "Make first artist onboarding feel like treasure: pre-curated portal, artist-specific mood, and fine-tuning after the reveal instead of blank-canvas-first.",
+          "location": "app/page.tsx, app/create/page.tsx, onboarding and theme components",
+          "status": "todo",
+          "feedbackId": null,
+          "createdAt": "2026-03-20T00:00:00.000Z"
+        },
+        {
+          "id": "T-014",
+          "title": "Re-enable fundWallet safely for testnet rehearsal",
+          "description": "After key rotation, restore a guarded faucet-like flow so artists and fans can transact during the rehearsal phase without unnecessary friction.",
+          "location": "app/api/fundWallet/route.ts",
+          "status": "todo",
+          "feedbackId": null,
+          "createdAt": "2026-03-20T00:00:00.000Z"
+        },
+        {
+          "id": "T-015",
+          "title": "Open feedback to all fans and artists",
+          "description": "Every fan and artist should be able to reach GOSHEESH through the chat so the rehearsal loop captures real confusion and delight.",
+          "location": "app/page.tsx, app/api/feedback/route.ts, app/components/Wallet.tsx",
+          "status": "todo",
+          "feedbackId": null,
+          "createdAt": "2026-03-20T00:00:00.000Z"
+        },
+        {
+          "id": "T-016",
+          "title": "Add tagging and per-asset splits to upload flow",
+          "description": "Let artists tag uploads and define collaborator splits per asset, with equal split as the default and custom percentages optional.",
+          "location": "upload flow, asset metadata, payout logic",
+          "status": "todo",
+          "feedbackId": null,
+          "createdAt": "2026-03-20T00:00:00.000Z"
+        },
+        {
           "id": "T-002",
           "title": "Refresh page after new asset upload",
-          "description": "After upload, new asset doesn't appear until manual refresh",
+          "description": "After upload, new asset doesn't appear until manual refresh.",
           "location": "app/page.tsx:1222",
           "status": "todo",
           "feedbackId": null,
@@ -36,7 +90,7 @@
         {
           "id": "T-003",
           "title": "Implement proper LP calculation in artist/balances",
-          "description": "lpWithdrawableUsd is hardcoded to 0; LP calculation not implemented",
+          "description": "lpWithdrawableUsd is hardcoded to 0; LP calculation not implemented.",
           "location": "app/api/artist/balances/route.ts:87",
           "status": "todo",
           "feedbackId": null,
@@ -46,13 +100,58 @@
     },
     {
       "id": "medium",
-      "name": "Medium / Performance",
+      "name": "Medium / Stewardship, Wallet, And Guidance",
       "priority": 3,
       "items": [
         {
+          "id": "T-017",
+          "title": "Design reserve vault stewardship and sovereignty handoff",
+          "description": "Document what stays fixed, what can be handed over later, and how reserve control, fee rights, and ownership move from stewardship to artist sovereignty.",
+          "location": "docs + launch model",
+          "status": "todo",
+          "feedbackId": null,
+          "createdAt": "2026-03-20T00:00:00.000Z"
+        },
+        {
+          "id": "T-018",
+          "title": "Design wallet reload flow for rehearsal and later real money",
+          "description": "Use faucet-style reloads on testnet now and prepare a Venmo-based reload path later so fans can keep going without friction.",
+          "location": "wallet flow, fundWallet, future payments rail",
+          "status": "todo",
+          "feedbackId": null,
+          "createdAt": "2026-03-20T00:00:00.000Z"
+        },
+        {
+          "id": "T-019",
+          "title": "Design toppins per-view meter with 1155 exemption",
+          "description": "First few views are free, then a small internal toll applies per view, and ownership of the 1155 removes the toll entirely.",
+          "location": "content playback, wallet balance, ownership checks",
+          "status": "todo",
+          "feedbackId": null,
+          "createdAt": "2026-03-20T00:00:00.000Z"
+        },
+        {
+          "id": "T-020",
+          "title": "Add grounded chat guidance for ArtisTalks and portal navigation",
+          "description": "Hook up a language model that is grounded in founder voice and can guide artists through ArtisTalks curriculum while helping fans and artists navigate the portal.",
+          "location": "chat system, knowledge grounding, ArtisTalks guidance layer",
+          "status": "todo",
+          "feedbackId": null,
+          "createdAt": "2026-03-20T00:00:00.000Z"
+        },
+        {
+          "id": "T-021",
+          "title": "Prepare clean public fork and key rotation plan",
+          "description": "Document what survives the private rehearsal, what gets reset, and how the clean public-ready repo and key set will be created.",
+          "location": "repo strategy, deployment process, launch ops",
+          "status": "todo",
+          "feedbackId": null,
+          "createdAt": "2026-03-20T00:00:00.000Z"
+        },
+        {
           "id": "T-004",
           "title": "Implement Redis cache for purchase/1155",
-          "description": "5-min TTL cache for price/quote data",
+          "description": "5-min TTL cache for price/quote data.",
           "location": "app/api/purchase/1155/route.ts:50",
           "status": "todo",
           "feedbackId": null,
@@ -61,7 +160,7 @@
         {
           "id": "T-005",
           "title": "Implement proper session management with Magic.link",
-          "description": "Session handling for purchase flow",
+          "description": "Session handling for purchase flow.",
           "location": "app/api/purchase/1155/route.ts:261",
           "status": "todo",
           "feedbackId": null,
@@ -71,13 +170,31 @@
     },
     {
       "id": "low",
-      "name": "Low / Nice to Have",
+      "name": "Low / Later And Supporting Work",
       "priority": 4,
       "items": [
         {
+          "id": "T-022",
+          "title": "Add playlist and play-next flow",
+          "description": "Create a smoother media journey so fans can continue through releases without friction and the portal can guide attention more intentionally.",
+          "location": "playback UI, wallet/media flow",
+          "status": "todo",
+          "feedbackId": null,
+          "createdAt": "2026-03-20T00:00:00.000Z"
+        },
+        {
+          "id": "T-023",
+          "title": "Explore reserve-backed borrowing as a later-stage feature",
+          "description": "Research whether artists could later borrow against reserve value instead of draining LP, without introducing harmful complexity too early.",
+          "location": "future economics research",
+          "status": "todo",
+          "feedbackId": null,
+          "createdAt": "2026-03-20T00:00:00.000Z"
+        },
+        {
           "id": "T-006",
           "title": "Add server-side treasury wallet check",
-          "description": "Treasury API returns data to any logged-in user; UI restricts to Gosheesh. Add server-side check for defense-in-depth",
+          "description": "Treasury API returns data to any logged-in user; UI restricts to Gosheesh. Add server-side check for defense-in-depth.",
           "location": "app/api/treasury-earnings/route.ts",
           "status": "todo",
           "feedbackId": null,
@@ -86,7 +203,7 @@
         {
           "id": "T-007",
           "title": "Refactor feedback submit to use authenticatedFetch",
-          "description": "Feedback submit uses manual fetch with token; other flows use authenticatedFetch — consistency",
+          "description": "Feedback submit uses manual fetch with token; other flows use authenticatedFetch for consistency.",
           "location": "app/page.tsx (feedback submit handlers)",
           "status": "todo",
           "feedbackId": null,
@@ -100,6 +217,15 @@
           "status": "todo",
           "feedbackId": "93c329f5-ae0f-440a-8013-02dbc2e934b1",
           "createdAt": "2026-02-23T23:13:50.796821+00:00"
+        },
+        {
+          "id": "FB-16be689f",
+          "title": "feedback test 2",
+          "description": "feedback test 2",
+          "location": "?artist=joz3n",
+          "status": "todo",
+          "feedbackId": "16be689f-343d-4cfe-91bb-81acf9b45560",
+          "createdAt": "2026-02-23T23:59:12.910002+00:00"
         }
       ]
     }

@@ -7,8 +7,8 @@ alwaysApply: true
 
 At the start of every session, before assisting with any task:
 
-1. Run `npm run sync-feedback` to pull new admin feedback from Supabase into PRD.json
-2. Read `AGENT_NOTES.md` and `PRD.json`
+1. Run `npm run sync-feedback` to sync feedback and PRD state
+2. Read `VOICE_AND_VISION.md`, `LAUNCH_ROADMAP.md`, `TOKENOMICS_AND_STEWARDSHIP.md`, `AGENT_NOTES.md`, `PRD.json`, `ZEYODA_KNOWLEDGE_BASE.md`, `PLAN_REVERSE_SYNC.md`, and `SESSION_REPORT_AND_BACKLOG.md`
 3. Use PRD.json as the source of truth for backlog items and priorities
 
-This ensures feedback submitted via the app (as Gosheesh) becomes visible work items.
+This ensures feedback submitted through the app becomes visible work items, and the agent has full context for voice, economics, architecture, sync design, and session history without needing the user to fill it in.
