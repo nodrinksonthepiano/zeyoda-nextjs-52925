@@ -451,7 +451,6 @@ const ArtistPageContent: React.FC<{
   
   // Fetch user's downloads for search
   const { allDownloads } = useAllArtistsDownloadAccess(
-    magic,
     user || null,
     allArtistsConfig
   );
