@@ -1,10 +1,9 @@
 #!/usr/bin/env node
 /**
- * Sync admin feedback from Supabase to PRD.json
+ * Sync feedback ↔ PRD.json (bidirectional)
  *
- * Reads feedback where source='admin' and status='open',
- * adds each as a new item in PRD.json (low section),
- * marks feedback status as 'in_progress'.
+ * Forward: feedback (source='admin', status='open') → PRD.json (low section)
+ * Reverse: PRD items with feedbackId null → feedback table (prd_item_id)
  *
  * Run: npm run sync-feedback
  */
@@ -41,28 +40,31 @@ function getLowSection(prd) {
   return (prd.sections || []).find((s) => s.id === 'low') || prd.sections?.[prd.sections.length - 1];
 }
 
+function getPrdItemsWithoutFeedbackId(prd) {
+  const items = [];
+  for (const section of prd.sections || []) {
+    for (const item of section.items || []) {
+      if (item.feedbackId == null) items.push(item);
+    }
+  }
+  return items;
+}
+
+function parseArtistFromLocation(location) {
+  if (!location || typeof location !== 'string') return null;
+  const match = location.match(/\?artist=([^&]+)/);
+  return match ? match[1] : null;
+}
+
+function prdStatusToFeedbackStatus(prdStatus) {
+  const map = { todo: 'open', in_progress: 'in_progress', done: 'done' };
+  return map[prdStatus] || 'open';
+}
+
 async function main() {
   const supabase = createClient(supabaseUrl, supabaseKey);
 
-  // Fetch open admin feedback
-  const { data: feedbackRows, error: fetchError } = await supabase
-    .from('feedback')
-    .select('id, message, artist_id, created_at')
-    .eq('source', 'admin')
-    .eq('status', 'open')
-    .order('created_at', { ascending: true });
-
-  if (fetchError) {
-    console.error('❌ Supabase fetch error:', fetchError.message);
-    process.exit(1);
-  }
-
-  if (!feedbackRows || feedbackRows.length === 0) {
-    console.log('✅ No open admin feedback to sync.');
-    process.exit(0);
-  }
-
-  // Read PRD
+  // Read PRD first (needed for both syncs)
   let prd;
   try {
     const raw = fs.readFileSync(PRD_PATH, 'utf8');
@@ -87,49 +89,99 @@ async function main() {
     lowSection.items = [];
   }
 
-  let synced = 0;
+  // --- Forward sync: feedback → PRD ---
+  const { data: feedbackRows, error: fetchError } = await supabase
+    .from('feedback')
+    .select('id, message, artist_id, created_at')
+    .eq('source', 'admin')
+    .eq('status', 'open')
+    .order('created_at', { ascending: true });
 
-  for (const row of feedbackRows) {
-    if (findItemByFeedbackId(prd, row.id)) {
-      console.log(`⏭️  Skipping feedback ${row.id.slice(0, 8)} (already in PRD)`);
-      continue;
-    }
-
-    const item = {
-      id: `FB-${row.id.slice(0, 8)}`,
-      title: row.message.slice(0, 200),
-      description: row.message,
-      location: row.artist_id ? `?artist=${row.artist_id}` : null,
-      status: 'todo',
-      feedbackId: row.id,
-      createdAt: row.created_at || new Date().toISOString(),
-    };
-
-    lowSection.items.push(item);
-    synced++;
-
-    // Mark feedback as in_progress
-    const { error: updateError } = await supabase
-      .from('feedback')
-      .update({ status: 'in_progress', updated_at: new Date().toISOString() })
-      .eq('id', row.id);
-
-    if (updateError) {
-      console.error(`❌ Failed to update feedback ${row.id}:`, updateError.message);
-    }
-  }
-
-  // Write PRD
-  prd.updatedAt = new Date().toISOString();
-
-  try {
-    fs.writeFileSync(PRD_PATH, JSON.stringify(prd, null, 2), 'utf8');
-  } catch (err) {
-    console.error('❌ Failed to write PRD.json:', err.message);
+  if (fetchError) {
+    console.error('❌ Supabase fetch error:', fetchError.message);
     process.exit(1);
   }
 
-  console.log(`✅ Synced ${synced} feedback item(s) to PRD.json`);
+  let forwardSynced = 0;
+  if (feedbackRows && feedbackRows.length > 0) {
+    for (const row of feedbackRows) {
+      if (findItemByFeedbackId(prd, row.id)) {
+        console.log(`⏭️  Skipping feedback ${row.id.slice(0, 8)} (already in PRD)`);
+        continue;
+      }
+
+      const item = {
+        id: `FB-${row.id.slice(0, 8)}`,
+        title: row.message.slice(0, 200),
+        description: row.message,
+        location: row.artist_id ? `?artist=${row.artist_id}` : null,
+        status: 'todo',
+        feedbackId: row.id,
+        createdAt: row.created_at || new Date().toISOString(),
+      };
+
+      lowSection.items.push(item);
+      forwardSynced++;
+
+      const { error: updateError } = await supabase
+        .from('feedback')
+        .update({ status: 'in_progress', updated_at: new Date().toISOString() })
+        .eq('id', row.id);
+
+      if (updateError) {
+        console.error(`❌ Failed to update feedback ${row.id}:`, updateError.message);
+      }
+    }
+
+    prd.updatedAt = new Date().toISOString();
+    fs.writeFileSync(PRD_PATH, JSON.stringify(prd, null, 2), 'utf8');
+    console.log(`✅ Forward: synced ${forwardSynced} feedback item(s) to PRD.json`);
+  } else {
+    console.log('✅ Forward: no open admin feedback to sync.');
+  }
+
+  // --- Reverse sync: PRD → feedback ---
+  const itemsWithoutFeedback = getPrdItemsWithoutFeedbackId(prd);
+  let reverseSynced = 0;
+
+  for (const item of itemsWithoutFeedback) {
+    const { data: existing } = await supabase
+      .from('feedback')
+      .select('id')
+      .eq('prd_item_id', item.id)
+      .maybeSingle();
+
+    if (existing) {
+      continue; // already in feedback, skip
+    }
+
+    const artistId = parseArtistFromLocation(item.location);
+    const feedbackStatus = prdStatusToFeedbackStatus(item.status);
+    const message = (item.title || item.description || '').slice(0, 500);
+
+    const { error: insertError } = await supabase.from('feedback').insert({
+      message,
+      submitted_by: 'system@prd-sync',
+      source: 'admin',
+      status: feedbackStatus,
+      artist_id: artistId,
+      prd_item_id: item.id,
+    });
+
+    if (insertError) {
+      console.error(`❌ Failed to insert feedback for ${item.id}:`, insertError.message);
+    } else {
+      reverseSynced++;
+    }
+  }
+
+  if (reverseSynced > 0) {
+    console.log(`✅ Reverse: synced ${reverseSynced} PRD item(s) to feedback.`);
+  } else if (itemsWithoutFeedback.length > 0) {
+    console.log('✅ Reverse: all PRD items already in feedback.');
+  } else {
+    console.log('✅ Reverse: no PRD items to sync.');
+  }
 }
 
 main().catch((err) => {

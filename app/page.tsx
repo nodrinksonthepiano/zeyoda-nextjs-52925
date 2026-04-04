@@ -298,28 +298,49 @@ const ArtistPageContent: React.FC<{
     
     return matrix[len1][len2];
   }
+
+  /** Smallest DL distance from query to any alphanumeric token in target (matches anywhere in the title). */
+  function fuzzyBestDistance(q: string, t: string): number {
+    const tokens = t.split(/[^a-z0-9]+/i).filter((x) => x.length > 0);
+    const candidates = tokens.length > 0 ? tokens : [t];
+    let minD = Infinity;
+    for (const c of candidates) {
+      const d = damerauLevenshtein(q, c);
+      if (d < minD) minD = d;
+    }
+    return minD === Infinity ? damerauLevenshtein(q, t) : minD;
+  }
+
+  function distanceToFuzzyScore(distance: number, queryLen: number): number {
+    if (distance === 0) return 100;
+    if (distance === 1) return 60;
+    // Two edits: allow short queries (was queryLen >= 5 only)
+    if (distance === 2 && queryLen >= 3) return 40;
+    return 0;
+  }
   
   // Score a match (higher is better)
   function scoreMatch(query: string, target: string, queryLen: number): number {
     const q = query.toLowerCase().trim();
     const t = target.toLowerCase().trim();
     
+    if (!q || !t) return 0;
+
     // Prefix match (highest priority)
     if (t.startsWith(q)) return 100;
     
     // Substring match
     if (t.includes(q)) return 80;
+
+    // Per-token substring (query appears inside a word after punctuation)
+    const tokens = t.split(/[^a-z0-9]+/i).filter((x) => x.length > 0);
+    for (const token of tokens) {
+      if (token.includes(q)) return 80;
+    }
     
-    // Fuzzy matching with dynamic thresholds
-    const maxDistance = queryLen <= 2 ? 0 : queryLen <= 4 ? 1 : 2;
-    const compareLen = Math.min(t.length, q.length + 1);
-    const distance = damerauLevenshtein(q, t.slice(0, compareLen));
-    
-    if (distance === 0) return 100;
-    if (distance === 1) return 60;
-    if (distance === 2 && queryLen >= 5) return 40;
-    
-    return 0;
+    // Fuzzy: best distance against any token (typo tolerance, e.g. "gaoa" → "gaia")
+    const distance = fuzzyBestDistance(q, t);
+    return distanceToFuzzyScore(distance, queryLen);
   }
 
   const selectedAsset = React.useMemo(() => {
