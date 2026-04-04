@@ -71,6 +71,7 @@ const Wallet: React.FC<WalletProps> = ({
   const [cashAmount, setCashAmount] = useState<string>('0.00');
   const [feedbackList, setFeedbackList] = useState<FeedbackItem[]>([]);
   const [feedbackLoading, setFeedbackLoading] = useState(false);
+  const [feedbackExpanded, setFeedbackExpanded] = useState(false);
   const { showToast } = useToast();
   const { usdBalance, isLoading: usdLoading } = useUsdBalance();
   const { getDidToken } = useWallet();
@@ -509,25 +510,63 @@ const Wallet: React.FC<WalletProps> = ({
       
       {/* Feedback section - admin only */}
       {isAdmin && (
-        <div className="p-4 border-b border-gray-700 bg-gray-900 bg-opacity-50">
-          <h3 className="text-sm font-bold text-gray-300 mb-2">📢 Feedback</h3>
-          {feedbackLoading ? (
-            <div className="text-xs text-gray-400">Loading...</div>
-          ) : feedbackList.length === 0 ? (
-            <div className="text-xs text-gray-400">No feedback yet.</div>
-          ) : (
-            <div className="space-y-2 max-h-48 overflow-y-auto">
-              {feedbackList.map((f) => (
-                <div
-                  key={f.id}
-                  className="text-xs p-2 rounded bg-gray-800 border border-gray-700"
-                >
-                  <div className="text-white">{f.message}</div>
-                  <div className="text-gray-400 mt-1">
-                    {f.submitted_by} • {f.source} • {f.artist_id || '—'} • {new Date(f.created_at).toLocaleString()}
+        <div className="p-4 border-b border-gray-700 bg-gray-900 bg-opacity-50 flex-shrink-0">
+          <button
+            type="button"
+            id="wallet-feedback-toggle"
+            aria-expanded={feedbackExpanded}
+            aria-controls="wallet-admin-feedback-panel"
+            onClick={() => setFeedbackExpanded((v) => !v)}
+            className="w-full flex items-center justify-between gap-2 text-left rounded-md px-1 py-1.5 -mx-1 hover:bg-gray-800/60 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-yellow-500/80 focus-visible:ring-offset-2 focus-visible:ring-offset-gray-900"
+          >
+            <span className="flex items-center gap-2 min-w-0 text-sm font-bold text-gray-300">
+              <span>📢 Feedback</span>
+              {feedbackList.length > 0 && (
+                <span className="text-xs font-normal text-gray-400 tabular-nums">
+                  ({feedbackList.length})
+                </span>
+              )}
+            </span>
+            <span className="text-gray-400 flex-shrink-0 text-xs" aria-hidden>
+              {feedbackExpanded ? '▼' : '▶'}
+            </span>
+          </button>
+          {feedbackExpanded && (
+            <div
+              id="wallet-admin-feedback-panel"
+              role="region"
+              aria-labelledby="wallet-feedback-toggle"
+              className="mt-2"
+            >
+              {feedbackLoading ? (
+                <div className="text-xs text-gray-400">Loading...</div>
+              ) : feedbackList.length === 0 ? (
+                <div className="text-xs text-gray-400">No feedback yet.</div>
+              ) : (
+                <>
+                  <div className="space-y-2 max-h-48 overflow-y-auto">
+                    {feedbackList.map((f) => (
+                      <div
+                        key={f.id}
+                        className="text-xs p-2 rounded bg-gray-800 border border-gray-700"
+                      >
+                        <div className="text-white">{f.message}</div>
+                        <div className="text-gray-400 mt-1">
+                          {f.submitted_by} • {f.source} • {f.artist_id || '—'} •{' '}
+                          {new Date(f.created_at).toLocaleString()}
+                        </div>
+                      </div>
+                    ))}
                   </div>
-                </div>
-              ))}
+                  <button
+                    type="button"
+                    onClick={() => setFeedbackExpanded(false)}
+                    className="mt-2 w-full text-center text-xs text-gray-500 hover:text-gray-300 py-1 rounded transition-colors"
+                  >
+                    Collapse
+                  </button>
+                </>
+              )}
             </div>
           )}
         </div>
@@ -551,17 +590,40 @@ const Wallet: React.FC<WalletProps> = ({
             const tokenName = artistId === 'gosheesh' ? 'GOSH33SH' : artistId === 'jaitea' ? 'JAIT33' : config.tokenName;
             const tokenBalance = combinedBalances[tokenName];
             const downloads = allDownloads[artistId] || [];
-            
+            const artistDisplayTitle =
+              artistId === 'gosheesh' ? 'GOSHEESH' : artistId === 'jaitea' ? 'JAI TEA' : config.displayName;
+
             return (
               <div key={artistId} className="mb-3 rounded-lg p-3 border border-opacity-50" style={{ 
                 backgroundColor: `${config.theme.primaryColor}80`, // 50% opacity
                 borderColor: config.theme.accentColor 
               }}>
                 <div className="flex flex-col">
-                  {/* Artist Name */}
-                  <h3 className="text-lg font-bold text-white mb-2" style={{ color: config.theme.accentColor }}>
-                    {artistId === 'gosheesh' ? 'GOSHEESH' : artistId === 'jaitea' ? 'JAI TEA' : config.displayName}
-                  </h3>
+                  {/* Artist Name — navigates to artist page */}
+                  <button
+                    type="button"
+                    className="text-lg font-bold text-white mb-2 text-left w-full bg-transparent border-0 p-0 cursor-pointer hover:opacity-80 transition-opacity rounded"
+                    style={{ color: config.theme.accentColor }}
+                    aria-label={`View ${artistDisplayTitle} on artist page`}
+                    onClick={() => {
+                      const targetUrl = `/?artist=${artistId}`;
+                      if (typeof window !== 'undefined') router.prefetch(targetUrl);
+                      router.push(targetUrl);
+                    }}
+                    onMouseEnter={() => {
+                      if (typeof window !== 'undefined') router.prefetch(`/?artist=${artistId}`);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        const targetUrl = `/?artist=${artistId}`;
+                        if (typeof window !== 'undefined') router.prefetch(targetUrl);
+                        router.push(targetUrl);
+                      }
+                    }}
+                  >
+                    {artistDisplayTitle}
+                  </button>
                   
                   {/* Token Balance */}
                   {tokenBalance && tokenBalance > BigInt(0) && (
