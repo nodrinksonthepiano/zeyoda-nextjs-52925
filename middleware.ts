@@ -23,6 +23,8 @@ export async function middleware(request: NextRequest) {
   const publicRoutes = [
     '/api/_health',           // Health check endpoint
     '/api/checkWhitelist',   // Needed for login flow
+    '/api/invite/resolve',
+    '/api/treasure-interest',
   ];
 
   // Check if this is a public route

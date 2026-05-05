@@ -1,7 +1,7 @@
 {
   "version": 1,
   "project": "Zeyoda",
-  "updatedAt": "2026-03-20T00:00:00.000Z",
+  "updatedAt": "2026-05-02T16:30:19.428Z",
   "sections": [
     {
       "id": "critical",
@@ -226,6 +226,222 @@
           "status": "todo",
           "feedbackId": "16be689f-343d-4cfe-91bb-81acf9b45560",
           "createdAt": "2026-02-23T23:59:12.910002+00:00"
+        },
+        {
+          "id": "FB-0f5a6b40",
+          "title": "Add ownership verification to uploadAsset",
+          "description": "Add ownership verification to uploadAsset",
+          "location": null,
+          "status": "todo",
+          "feedbackId": "0f5a6b40-05a6-4c6e-b504-e7627b2138a7",
+          "createdAt": "2026-02-24T02:59:38.650214+00:00"
+        },
+        {
+          "id": "FB-f834b09a",
+          "title": "Refresh page after new asset upload",
+          "description": "Refresh page after new asset upload",
+          "location": null,
+          "status": "todo",
+          "feedbackId": "f834b09a-46d9-4495-90d9-edd77de2698f",
+          "createdAt": "2026-02-24T02:59:38.785471+00:00"
+        },
+        {
+          "id": "FB-6682cbcd",
+          "title": "Implement proper LP calculation in artist/balances",
+          "description": "Implement proper LP calculation in artist/balances",
+          "location": null,
+          "status": "todo",
+          "feedbackId": "6682cbcd-69a5-433f-ad0d-c673ae8aa2ad",
+          "createdAt": "2026-02-24T02:59:38.927792+00:00"
+        },
+        {
+          "id": "FB-2004dc67",
+          "title": "Implement Redis cache for purchase/1155",
+          "description": "Implement Redis cache for purchase/1155",
+          "location": null,
+          "status": "todo",
+          "feedbackId": "2004dc67-5841-422b-8761-817280528163",
+          "createdAt": "2026-02-24T02:59:39.048994+00:00"
+        },
+        {
+          "id": "FB-a58d2124",
+          "title": "Implement proper session management with Magic.link",
+          "description": "Implement proper session management with Magic.link",
+          "location": null,
+          "status": "todo",
+          "feedbackId": "a58d2124-1546-4479-963c-fa8660624885",
+          "createdAt": "2026-02-24T02:59:39.165623+00:00"
+        },
+        {
+          "id": "FB-4f80a4a1",
+          "title": "Add server-side treasury wallet check",
+          "description": "Add server-side treasury wallet check",
+          "location": null,
+          "status": "todo",
+          "feedbackId": "4f80a4a1-a8a0-41e4-bf90-f14befd7ce81",
+          "createdAt": "2026-02-24T02:59:39.284299+00:00"
+        },
+        {
+          "id": "FB-e5065f11",
+          "title": "Refactor feedback submit to use authenticatedFetch",
+          "description": "Refactor feedback submit to use authenticatedFetch",
+          "location": null,
+          "status": "todo",
+          "feedbackId": "e5065f11-67bd-410d-ab1e-9bcc30a5f66f",
+          "createdAt": "2026-02-24T02:59:39.405039+00:00"
+        },
+        {
+          "id": "FB-3e791e81",
+          "title": "turn on search for assets not just artists",
+          "description": "turn on search for assets not just artists",
+          "location": "?artist=gosh333h",
+          "status": "todo",
+          "feedbackId": "3e791e81-1206-44aa-842d-f5cf95fc9eb5",
+          "createdAt": "2026-04-01T01:10:51.792868+00:00"
+        },
+        {
+          "id": "FB-89dc93da",
+          "title": "make the swap collapsable after safeword to hide it if desired",
+          "description": "make the swap collapsable after safeword to hide it if desired",
+          "location": "?artist=gosh333h",
+          "status": "todo",
+          "feedbackId": "89dc93da-f5fa-41aa-bae1-26a0d894fa7c",
+          "createdAt": "2026-04-01T19:14:36.617047+00:00"
+        },
+        {
+          "id": "FB-4b214303",
+          "title": "make the media player pop out to resume playing while people use their phone for other things",
+          "description": "make the media player pop out to resume playing while people use their phone for other things",
+          "location": "?artist=gosh333h",
+          "status": "todo",
+          "feedbackId": "4b214303-010d-4e89-ae8b-144ca33bd192",
+          "createdAt": "2026-04-01T19:16:39.488961+00:00"
+        },
+        {
+          "id": "FB-6ff3e4a4",
+          "title": "add a play next que to the right, collapsable",
+          "description": "add a play next que to the right, collapsable",
+          "location": "?artist=gosh333h",
+          "status": "todo",
+          "feedbackId": "6ff3e4a4-9ed8-4188-b5b2-9780243317e3",
+          "createdAt": "2026-04-01T19:17:00.055728+00:00"
+        },
+        {
+          "id": "FB-d8d86781",
+          "title": "Assess and lock the next launch tokenomics",
+          "description": "Assess and lock the next launch tokenomics",
+          "location": null,
+          "status": "todo",
+          "feedbackId": "d8d86781-c86c-4d79-a9d1-ea2d351a0ae4",
+          "createdAt": "2026-04-19T19:43:09.208175+00:00"
+        },
+        {
+          "id": "FB-05eb933d",
+          "title": "Replay historical swaps against deeper opening liquidity",
+          "description": "Replay historical swaps against deeper opening liquidity",
+          "location": null,
+          "status": "todo",
+          "feedbackId": "05eb933d-89c0-4c4f-9930-cb97c56b2606",
+          "createdAt": "2026-04-19T19:43:09.663366+00:00"
+        },
+        {
+          "id": "FB-da521ac3",
+          "title": "Improve inner-circle artist onboarding reveal",
+          "description": "Improve inner-circle artist onboarding reveal",
+          "location": null,
+          "status": "todo",
+          "feedbackId": "da521ac3-d34c-4e3b-b1e6-8b9810bd70c3",
+          "createdAt": "2026-04-19T19:43:10.66132+00:00"
+        },
+        {
+          "id": "FB-f0091e38",
+          "title": "Re-enable fundWallet safely for testnet rehearsal",
+          "description": "Re-enable fundWallet safely for testnet rehearsal",
+          "location": null,
+          "status": "todo",
+          "feedbackId": "f0091e38-66e1-488b-bca3-a040cecf493c",
+          "createdAt": "2026-04-19T19:43:11.244459+00:00"
+        },
+        {
+          "id": "FB-0887d645",
+          "title": "Open feedback to all fans and artists",
+          "description": "Open feedback to all fans and artists",
+          "location": null,
+          "status": "todo",
+          "feedbackId": "0887d645-2d96-47e5-a8d6-2c48f48a464b",
+          "createdAt": "2026-04-19T19:43:11.834706+00:00"
+        },
+        {
+          "id": "FB-fee7d16c",
+          "title": "Add tagging and per-asset splits to upload flow",
+          "description": "Add tagging and per-asset splits to upload flow",
+          "location": null,
+          "status": "todo",
+          "feedbackId": "fee7d16c-d76a-411b-a22e-3dafdcad8290",
+          "createdAt": "2026-04-19T19:43:12.290023+00:00"
+        },
+        {
+          "id": "FB-c37caca7",
+          "title": "Design reserve vault stewardship and sovereignty handoff",
+          "description": "Design reserve vault stewardship and sovereignty handoff",
+          "location": null,
+          "status": "todo",
+          "feedbackId": "c37caca7-423b-4469-a77c-53e9f13e39f4",
+          "createdAt": "2026-04-19T19:43:13.149445+00:00"
+        },
+        {
+          "id": "FB-7da57c41",
+          "title": "Design wallet reload flow for rehearsal and later real money",
+          "description": "Design wallet reload flow for rehearsal and later real money",
+          "location": null,
+          "status": "todo",
+          "feedbackId": "7da57c41-20f2-4f30-aeab-5de53dd6c4e6",
+          "createdAt": "2026-04-19T19:43:13.573871+00:00"
+        },
+        {
+          "id": "FB-52865a3a",
+          "title": "Design toppins per-view meter with 1155 exemption",
+          "description": "Design toppins per-view meter with 1155 exemption",
+          "location": null,
+          "status": "todo",
+          "feedbackId": "52865a3a-2979-493a-8898-a3c5fe12de69",
+          "createdAt": "2026-04-19T19:43:13.952267+00:00"
+        },
+        {
+          "id": "FB-d719eee4",
+          "title": "Add grounded chat guidance for ArtisTalks and portal navigation",
+          "description": "Add grounded chat guidance for ArtisTalks and portal navigation",
+          "location": null,
+          "status": "todo",
+          "feedbackId": "d719eee4-b0fa-4fb3-96f4-a6be5d8ade34",
+          "createdAt": "2026-04-19T19:43:14.38314+00:00"
+        },
+        {
+          "id": "FB-0914de29",
+          "title": "Prepare clean public fork and key rotation plan",
+          "description": "Prepare clean public fork and key rotation plan",
+          "location": null,
+          "status": "todo",
+          "feedbackId": "0914de29-48fb-4819-a32e-781de94efe18",
+          "createdAt": "2026-04-19T19:43:14.767706+00:00"
+        },
+        {
+          "id": "FB-98ff8e12",
+          "title": "Add playlist and play-next flow",
+          "description": "Add playlist and play-next flow",
+          "location": null,
+          "status": "todo",
+          "feedbackId": "98ff8e12-bcf5-42df-a1cf-ad0c68bc715d",
+          "createdAt": "2026-04-19T19:43:15.640583+00:00"
+        },
+        {
+          "id": "FB-61388377",
+          "title": "Explore reserve-backed borrowing as a later-stage feature",
+          "description": "Explore reserve-backed borrowing as a later-stage feature",
+          "location": null,
+          "status": "todo",
+          "feedbackId": "61388377-3cdd-4fd5-85e4-52a8ed9d5cd0",
+          "createdAt": "2026-04-19T19:43:16.033186+00:00"
         }
       ]
     }

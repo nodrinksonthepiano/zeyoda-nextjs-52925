@@ -2,7 +2,7 @@
 
 import React from 'react';
 import Image from "next/image";
-import { useEffect, useState, useRef, useCallback, useMemo } from "react";
+import { useEffect, useState, useRef, useCallback, useMemo, Suspense } from "react";
 import { useSearchParams, useRouter } from 'next/navigation';
 import Wallet from './components/Wallet';
 import dynamic from 'next/dynamic';
@@ -38,6 +38,16 @@ import { useOrbitTokens } from './hooks/useOrbitTokens';
 import { supabase } from './utils/supabaseClient';
 import ArtistTokenArtifact from '../artifacts/contracts/ArtistToken.sol/ArtistToken.json';
 import ArtistDownloadsArtifact from '../artifacts/contracts/ArtistDownloads.sol/ArtistDownloads.json';
+import TreasureAwareHome from './components/TreasureAwareHome';
+import BurialWizard from './components/BurialWizard';
+
+import {
+  buildStubArtistConfigFromDraft,
+  clearInviteLaunchBundle,
+  type InviteLaunchBridge,
+} from './utils/inviteLaunchBridge';
+
+import { CLAIM_ERROR_SESSION_EXPIRED } from './constants/treasureCopy';
 
 interface OrbitalToken {
   name: string; 
@@ -60,6 +70,7 @@ const ArtistPageContent: React.FC<{
   videoUrl: string | null;
   user: string | null;
   magic: any | null;
+  inviteLaunchBridge?: InviteLaunchBridge | null;
 }> = ({ 
   artistConfig: initialArtistConfig, 
   allArtistsConfig, 
@@ -67,7 +78,8 @@ const ArtistPageContent: React.FC<{
   featuredAsset,
   videoUrl,
   user, 
-  magic 
+  magic,
+  inviteLaunchBridge = null,
 }) => {
   const { showToast } = useToast();
   const { getDidToken } = useWallet();
@@ -87,7 +99,8 @@ const ArtistPageContent: React.FC<{
   const [onboardingData, setOnboardingData] = useState<any>({});
   const [editingAsset, setEditingAsset] = useState<any | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  
+  const inviteLaunchCoinRef = useRef<string | null>(null);
+
   // Search state
   const [searchQuery, setSearchQuery] = useState('');
   const [artistResults, setArtistResults] = useState<any[]>([]);
@@ -129,7 +142,19 @@ const ArtistPageContent: React.FC<{
     })();
     return () => { cancelled = true; };
   }, [user, getDidToken]);
-  
+
+  useEffect(() => {
+    if (!inviteLaunchBridge) return;
+    inviteLaunchCoinRef.current = inviteLaunchBridge.coinPublicId;
+    clearInviteLaunchBundle();
+    (window as any).onboardingMode = true;
+    setAppMode('onboarding');
+
+    const dn = inviteLaunchBridge.draft.displayname;
+
+    if (typeof dn === 'string' && dn.trim()) setOnboardingArtistName(dn);
+  }, [inviteLaunchBridge]);
+
   // Upload mode state
   const [uploadAssetData, setUploadAssetData] = useState({
     title: '',
@@ -712,6 +737,14 @@ const ArtistPageContent: React.FC<{
     
     try {
       if (!magic) throw new Error('Magic not initialized');
+
+      if (getDidToken) {
+        const tok = await getDidToken();
+        if (!tok) {
+          showToast(CLAIM_ERROR_SESSION_EXPIRED, 'error');
+          return;
+        }
+      }
       
       showToast('⚡ Deploying via Factory (single transaction)...', 'info');
       
@@ -797,7 +830,8 @@ const ArtistPageContent: React.FC<{
         downloadsAddress: downloadsProxy,
         poolAddress: ammProxy,
         contentUrl: contentUrl,
-        treasuryWallet: artistWallet
+        treasuryWallet: artistWallet,
+        coin_public_id: inviteLaunchCoinRef.current ?? undefined,
       });
       
       // Upload logo and background images (if provided)
@@ -902,6 +936,8 @@ const ArtistPageContent: React.FC<{
       
       console.log('🎉 Artist created successfully!');
       showToast(`🎉 ${tokenName} launched successfully!`, 'success');
+
+      inviteLaunchCoinRef.current = null;
       
       // Redirect to new artist page
       window.location.href = `/?artist=${artistId}`;
@@ -910,7 +946,7 @@ const ArtistPageContent: React.FC<{
       console.error('❌ Factory deployment failed:', error);
       showToast(`❌ Deployment failed: ${error.message}`, 'error');
     }
-  }, [magic, uploadedFile, showToast]);
+  }, [magic, uploadedFile, showToast, getDidToken]);
 
   // ASSET EDIT HANDLER
   const handleSaveAssetEdit = useCallback(async (updates: { title: string; description: string; price: number }) => {
@@ -1178,7 +1214,10 @@ const ArtistPageContent: React.FC<{
       treasuryWallet: await signer.getAddress(),
       
       // Download price
-      downloadPrice: artistData.downloadPrice || 5
+      downloadPrice: artistData.downloadPrice || 5,
+      ...(typeof artistData.coin_public_id === 'string' && artistData.coin_public_id.trim()
+        ? { coin_public_id: artistData.coin_public_id.trim() }
+        : {}),
     };
     
     // Call API route to save with service role permissions
@@ -2427,6 +2466,10 @@ const ArtistPageContent: React.FC<{
               onUploadClick={handleUploadClick}
               mode={appMode} // Pass mode to panel
               existingArtist={artistConfig} // Pass artist config
+              initialInviteDraft={inviteLaunchBridge?.draft ?? null}
+              isAdmin={isAdmin}
+              getDidToken={getDidToken}
+              inviteLaunchCoinPublicId={inviteLaunchBridge?.coinPublicId ?? null}
             />
           )}
 
@@ -2970,22 +3013,31 @@ const ArtistPageContent: React.FC<{
 }
 
 
-export default function HomePage() {
+function LiveArtistPortal(props?: { inviteLaunchBridge?: InviteLaunchBridge | null }) {
+  const inviteLaunchBridge = props?.inviteLaunchBridge ?? null;
+  const bridging = !!(
+    inviteLaunchBridge?.coinPublicId &&
+    inviteLaunchBridge?.draft &&
+    typeof inviteLaunchBridge.draft === 'object'
+  );
+
   const { magic, user, isReady, isLoading: authLoading, error: authError } = useWallet();
   const { artistConfig, allArtistsConfig, isLoading: configLoading, error: configError } = useArtistConfig();
-  
-  // Get artistId from URL once and pass it down
+
   const searchParams = useSearchParams();
   const artistIdFromUrl = searchParams.get('artist') ?? 'gosheesh';
 
-  // **ALL DATA FETCHING MOVED HERE**
-  const { featuredAsset, videoUrl, isLoading: assetLoading, error: assetError } = useFeaturedAsset(artistIdFromUrl);
+  const { featuredAsset, videoUrl, isLoading: assetLoading, error: assetError } =
+    useFeaturedAsset(artistIdFromUrl);
   const { assets: artistAssets } = useArtistAssets(artistIdFromUrl);
 
-  // Unified loading state
-  const isLoading = authLoading || !isReady || configLoading || assetLoading;
+  const stubConfig = bridging
+    ? buildStubArtistConfigFromDraft(inviteLaunchBridge!.draft as Record<string, unknown>)
+    : null;
 
-  // Show authentication loading screen first
+  const coreLoading =
+    authLoading || !isReady || (!bridging && (configLoading || assetLoading));
+
   if (authLoading || !isReady) {
     return (
       <div className="auth-loading">
@@ -2995,45 +3047,103 @@ export default function HomePage() {
     );
   }
 
-  // Show authentication error if present
   if (authError) {
     return (
       <div className="auth-loading">
         <div className="auth-error-icon">⚠️</div>
         <p className="auth-error-text">Authentication failed: {authError ?? 'Unknown error'}</p>
-        <button 
-          onClick={() => window.location.reload()} 
-          className="auth-retry-button"
-        >
+        <button type="button" onClick={() => window.location.reload()} className="auth-retry-button">
           Try Again
         </button>
       </div>
     );
   }
 
-  // Show a unified loading state until all core data is ready
-  if (isLoading) {
+  if (coreLoading) {
     return <div className="flex justify-center items-center h-screen">Loading artist profile...</div>;
   }
 
-  // Show artist config error
-  if (configError || assetError) {
-    return <div className="flex justify-center items-center h-screen">Error: {configError || assetError}</div>;
+  if (!bridging && !artistConfig) {
+    return <BurialWizard variant="interest" artistSlugAttempted={artistIdFromUrl} />;
   }
 
-  if (!artistConfig) {
-    return <div className="flex justify-center items-center h-screen">Artist not found.</div>;
+  if (!bridging && (configError || assetError)) {
+    return (
+      <div className="flex justify-center items-center h-screen">
+        Error: {configError || assetError}
+      </div>
+    );
+  }
+
+  const renderConfig = bridging ? stubConfig! : artistConfig!;
+  const renderAllArtists =
+    bridging && stubConfig ? { [stubConfig.name]: stubConfig } : allArtistsConfig!;
+  const renderAssets = bridging ? [] : artistAssets ?? [];
+  const renderFeatured = bridging ? null : featuredAsset ?? null;
+  let renderVideo: string | null = bridging ? null : videoUrl ?? null;
+  if (bridging && stubConfig?.videoSrc) {
+    const vs = stubConfig.videoSrc;
+    if (vs.startsWith('http') || vs.startsWith('/')) renderVideo = vs;
   }
 
   return (
     <ArtistPageContent
-      artistConfig={artistConfig}
-      allArtistsConfig={allArtistsConfig}
-      artistAssets={artistAssets}
-      featuredAsset={featuredAsset}
-      videoUrl={videoUrl}
+      artistConfig={renderConfig}
+      allArtistsConfig={renderAllArtists}
+      artistAssets={renderAssets}
+      featuredAsset={renderFeatured}
+      videoUrl={renderVideo}
       user={user}
       magic={magic}
+      inviteLaunchBridge={bridging ? inviteLaunchBridge : null}
     />
+  );
+}
+
+function HomeGate() {
+  const searchParams = useSearchParams();
+  const coinPresent = !!(searchParams.get('coin')?.trim());
+
+  const { isReady, isLoading: authLoading, error: authError } = useWallet();
+
+  if (authLoading || !isReady) {
+    return (
+      <div className="auth-loading">
+        <div className="auth-loading-spinner"></div>
+        <p className="auth-loading-text">Connecting wallet...</p>
+      </div>
+    );
+  }
+
+  if (authError) {
+    return (
+      <div className="auth-loading">
+        <div className="auth-error-icon">⚠️</div>
+        <p className="auth-error-text">Authentication failed: {authError ?? 'Unknown error'}</p>
+        <button type="button" onClick={() => window.location.reload()} className="auth-retry-button">
+          Try Again
+        </button>
+      </div>
+    );
+  }
+
+  if (coinPresent) {
+    return <TreasureAwareHome RenderLivePortal={LiveArtistPortal} />;
+  }
+
+  return <LiveArtistPortal />;
+}
+
+export default function HomePage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex justify-center items-center min-h-screen bg-black text-white">
+          Loading…
+        </div>
+      }
+    >
+      <HomeGate />
+    </Suspense>
   );
 }

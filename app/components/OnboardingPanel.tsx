@@ -1,4 +1,10 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useRef, useMemo } from 'react';
+import { useToast } from '@/app/contexts/ToastContext';
+import {
+  applyInviteDraftPayloadToForm,
+  buildInviteDraftPayloadV1,
+  type InviteDraftFormInput,
+} from '@/app/utils/buildInviteDraftPayloadV1';
 
 interface OnboardingPanelProps {
   artistName: string;
@@ -10,6 +16,81 @@ interface OnboardingPanelProps {
   onUploadClick?: () => void;
   mode?: 'onboarding' | 'upload-asset';
   existingArtist?: any;
+  /** Optional treasure draft payload (invite handoff); applied once when mode is onboarding. */
+  initialInviteDraft?: Record<string, unknown> | null;
+  isAdmin?: boolean;
+  getDidToken?: () => Promise<string | null>;
+  /** When opening onboarding from claim handoff, carry coin id for draft workshop + snapshot. */
+  inviteLaunchCoinPublicId?: string | null;
+}
+
+type TreasureCommittedSnapshot = {
+  form: InviteDraftFormInput;
+  coinPublicId: string | null;
+  reservedEmail: string;
+};
+
+function createInviteFormBaseline(
+  mode: 'onboarding' | 'upload-asset',
+  existingArtist?: Record<string, unknown>
+): InviteDraftFormInput {
+  return {
+    displayname: mode === 'upload-asset' ? String(existingArtist?.name ?? '') : '',
+    tokenName: mode === 'upload-asset' ? String(existingArtist?.tokenName ?? '') : '',
+    artworktitle: mode === 'upload-asset' ? 'New Content' : 'Featured Content #1',
+    artworkyear: '2025',
+    downloadPrice: 1.0,
+    description: '',
+    videosrc: 'assets/placeholder.mp4',
+    logo_url: null,
+    background_image_url: null,
+    featured_asset_url: null,
+    logo_use_background: false,
+    background_use_image: false,
+    theme: {
+      fontFamily: 'Bungee, cursive',
+      primaryColor: '#FAF0E6',
+      accentColor: '#B8860B',
+      gradientStart: '#FAF0E6',
+      gradientMiddle: '#FDF5E6',
+      gradientEnd: '#F5F5DC',
+    },
+  };
+}
+
+function cloneInviteDraftForm(f: InviteDraftFormInput): InviteDraftFormInput {
+  return JSON.parse(JSON.stringify(f)) as InviteDraftFormInput;
+}
+
+function clientTreasureUrlForInvite(artistSlug: string, coinPublicId: string): string {
+  const base =
+    process.env.NEXT_PUBLIC_INVITE_BASE_URL?.replace(/\/$/, '') ||
+    process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, '') ||
+    (typeof window !== 'undefined'
+      ? `${window.location.origin}`
+      : 'https://test.artistocks.io');
+  const u = new URL(base);
+  u.pathname = '/';
+  u.search = '';
+  u.hash = '';
+  const q = new URLSearchParams();
+  q.set('artist', artistSlug);
+  q.set('coin', coinPublicId);
+  return `${u.origin}/?${q.toString()}`;
+}
+
+/** Matches slugFromDisplayName (server save-draft slug lock). */
+function clientSlugFromDisplayName(displayname: string): string {
+  const s = displayname
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, '-')
+    .replace(/[^a-z0-9-]/g, '')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '');
+  const out = s.slice(0, 80);
+  if (!out) throw new Error('Invalid artist name for slug');
+  return out;
 }
 
 const COLOR_PRESETS = {
@@ -114,34 +195,88 @@ const OnboardingPanel: React.FC<OnboardingPanelProps> = ({
   filePreviewUrl,
   onUploadClick,
   mode = 'onboarding',
-  existingArtist
+  existingArtist,
+  initialInviteDraft = null,
+  isAdmin = false,
+  getDidToken,
+  inviteLaunchCoinPublicId = null,
 }) => {
-  const [formData, setFormData] = useState({
-    displayname: mode === 'upload-asset' ? existingArtist?.name || '' : '',
-    tokenName: mode === 'upload-asset' ? existingArtist?.tokenName || '' : '',
-    artworktitle: mode === 'upload-asset' ? 'New Content' : 'Featured Content #1',
-    artworkyear: '2025',
-    downloadPrice: 1.00, // Price for ERC-1155 featured content downloads
-    description: '', // Description for the asset
-    logo_url: null as string | null,
-    background_image_url: null as string | null,
-    logo_use_background: false,
-    background_use_image: false,
-    theme: {
-      fontFamily: 'Bungee, cursive',
-      primaryColor: '#FAF0E6',
-      accentColor: '#B8860B',
-      gradientStart: '#FAF0E6',
-      gradientMiddle: '#FDF5E6',
-      gradientEnd: '#F5F5DC'
-    }
-  });
+  const { showToast } = useToast();
+  const ea = existingArtist as Record<string, unknown> | undefined;
+  const [formData, setFormData] = useState<InviteDraftFormInput>(() =>
+    createInviteFormBaseline(mode, ea)
+  );
 
-  // Logo and background file state (for upload after artist creation)
+  const inviteSeedAppliedRef = useRef(false);
+
+  /** Coin id returned from save-draft / admin-draft load / invite handoff bridge. */
+  const [treasureDraftCoinPublicId, setTreasureDraftCoinPublicId] = useState<string | null>(null);
+  const [treasureDraftReservedEmail, setTreasureDraftReservedEmail] = useState('');
+  const [loadTreasureDraftCoinQuery, setLoadTreasureDraftCoinQuery] = useState('');
+  const [treasureDraftTreasureUrl, setTreasureDraftTreasureUrl] = useState<string | null>(null);
+  const [committedTreasureSnapshot, setCommittedTreasureSnapshot] =
+    useState<TreasureCommittedSnapshot | null>(null);
+  const [treasureBusy, setTreasureBusy] = useState<'idle' | 'upload' | 'save' | 'load'>('idle');
+  const draftMediaFileRef = useRef<HTMLInputElement>(null);
+  const pendingDraftUploadKindRef = useRef<'logo' | 'background' | 'featured' | null>(null);
+
   const [logoFile, setLogoFile] = useState<File | null>(null);
   const [backgroundFile, setBackgroundFile] = useState<File | null>(null);
   const [logoPreview, setLogoPreview] = useState<string | null>(null);
   const [backgroundPreview, setBackgroundPreview] = useState<string | null>(null);
+
+  useEffect(() => {
+    const c = typeof inviteLaunchCoinPublicId === 'string' ? inviteLaunchCoinPublicId.trim() : '';
+    if (c) setTreasureDraftCoinPublicId(c);
+  }, [inviteLaunchCoinPublicId]);
+
+  useEffect(() => {
+    if (mode !== 'onboarding' || !initialInviteDraft || inviteSeedAppliedRef.current) return;
+    inviteSeedAppliedRef.current = true;
+    const d = initialInviteDraft;
+
+    const base = createInviteFormBaseline(mode, ea);
+    const merged = applyInviteDraftPayloadToForm(base, d);
+    setFormData(merged);
+
+    const dn = merged.displayname?.trim?.() || merged.tokenName?.trim?.() || '';
+    if (dn) onArtistNameChange(dn);
+
+    setLogoPreview((prev) => {
+      if (prev?.startsWith('blob:')) URL.revokeObjectURL(prev);
+      if (merged.logo_url && merged.logo_url.startsWith('https://')) return merged.logo_url;
+      if (merged.logo_url === null) return null;
+      return prev;
+    });
+    setBackgroundPreview((prev) => {
+      if (prev?.startsWith('blob:')) URL.revokeObjectURL(prev);
+      if (merged.background_image_url && merged.background_image_url.startsWith('https://')) {
+        return merged.background_image_url;
+      }
+      if (merged.background_image_url === null) return null;
+      return prev;
+    });
+
+    const coinFromBridge =
+      typeof inviteLaunchCoinPublicId === 'string' ? inviteLaunchCoinPublicId.trim() : '';
+    if (coinFromBridge) setTreasureDraftCoinPublicId(coinFromBridge);
+
+    const snapCoin = coinFromBridge || null;
+    setCommittedTreasureSnapshot({
+      form: cloneInviteDraftForm(merged),
+      coinPublicId: snapCoin,
+      reservedEmail: '',
+    });
+
+    if (snapCoin && merged.displayname.trim()) {
+      try {
+        const slugGuess = clientSlugFromDisplayName(merged.displayname);
+        setTreasureDraftTreasureUrl(clientTreasureUrlForInvite(slugGuess, snapCoin));
+      } catch {
+        /* non-fatal — URL omitted until save/load echo */
+      }
+    }
+  }, [ea, initialInviteDraft, inviteLaunchCoinPublicId, mode, onArtistNameChange]);
 
   // Initialize halo with current primary color
   useEffect(() => {
@@ -262,11 +397,16 @@ const OnboardingPanel: React.FC<OnboardingPanelProps> = ({
   }, [handleFieldChange]);
 
   const handleSave = useCallback(() => {
+    const videosrcResolved =
+      typeof formData.videosrc === 'string' && formData.videosrc.trim()
+        ? formData.videosrc.trim()
+        : 'assets/placeholder.mp4';
+
     const completeData = {
       ...formData,
       id: formData.tokenName.toLowerCase(),
       name: formData.tokenName, // Required for Supabase
-      videosrc: 'assets/placeholder.mp4', // Will be updated with actual upload
+      videosrc: videosrcResolved,
       orbitaltokens: [],
       paused: false,
       // Logo/background files (will be uploaded after artist creation)
@@ -281,6 +421,341 @@ const OnboardingPanel: React.FC<OnboardingPanelProps> = ({
     console.log('Complete artist data for deployment:', completeData);
     onSave(completeData);
   }, [formData, logoFile, backgroundFile, onSave]);
+
+  const treasureDraftDirty = useMemo(() => {
+    if (!committedTreasureSnapshot) return false;
+    const s = committedTreasureSnapshot;
+    if (treasureDraftCoinPublicId !== s.coinPublicId) return true;
+    if (!s.coinPublicId && treasureDraftReservedEmail.trim() !== s.reservedEmail.trim()) return true;
+    return JSON.stringify(formData) !== JSON.stringify(s.form);
+  }, [
+    committedTreasureSnapshot,
+    formData,
+    treasureDraftCoinPublicId,
+    treasureDraftReservedEmail,
+  ]);
+
+  const treasureDraftHttpsChangedVsSnapshot = useMemo(() => {
+    if (!committedTreasureSnapshot || !treasureDraftDirty) return false;
+    const s = committedTreasureSnapshot.form;
+    return ['logo_url', 'background_image_url', 'featured_asset_url'].some((key) => {
+      const cur = formData[key as keyof InviteDraftFormInput];
+      const was = s[key as keyof InviteDraftFormInput];
+      return typeof cur === 'string' && cur.startsWith('https://') && cur !== was;
+    });
+  }, [committedTreasureSnapshot, formData, treasureDraftDirty]);
+
+  const pickDraftUploadFile = useCallback((kind: 'logo' | 'background' | 'featured') => {
+    pendingDraftUploadKindRef.current = kind;
+    draftMediaFileRef.current?.click();
+  }, []);
+
+  const handleDraftUploadFileChosen = useCallback(
+    async (e: React.ChangeEvent<HTMLInputElement>) => {
+      const kind = pendingDraftUploadKindRef.current;
+      pendingDraftUploadKindRef.current = null;
+      const file = e.target.files?.[0];
+      e.target.value = '';
+      if (!kind || !file) return;
+
+      const coinId = treasureDraftCoinPublicId?.trim();
+      if (!coinId) {
+        showToast('Save draft first to get a coin ID, then upload media.', 'error');
+        return;
+      }
+      if (!getDidToken) {
+        showToast('Wallet not configured for upload.', 'error');
+        return;
+      }
+
+      setTreasureBusy('upload');
+      try {
+        const token = await getDidToken();
+        if (!token) {
+          showToast('Sign in required for draft upload.', 'error');
+          return;
+        }
+
+        const form = new FormData();
+        form.append('coin_public_id', coinId);
+        form.append('kind', kind);
+        form.append('file', file);
+
+        const res = await fetch('/api/invite/draft-upload', {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}` },
+          body: form,
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          showToast(typeof data.error === 'string' ? data.error : 'Draft upload failed', 'error');
+          return;
+        }
+        const url = typeof data.url === 'string' ? data.url : '';
+        if (!url.startsWith('https://')) {
+          showToast('Upload did not return an HTTPS URL', 'error');
+          return;
+        }
+
+        setFormData((prev) => ({
+          ...prev,
+          ...(kind === 'logo' ? { logo_url: url } : {}),
+          ...(kind === 'background' ? { background_image_url: url } : {}),
+          ...(kind === 'featured' ? { featured_asset_url: url } : {}),
+        }));
+
+        setLogoPreview((prev) => {
+          if (kind !== 'logo') return prev;
+          if (prev?.startsWith('blob:')) URL.revokeObjectURL(prev);
+          return url;
+        });
+        setBackgroundPreview((prev) => {
+          if (kind !== 'background') return prev;
+          if (prev?.startsWith('blob:')) URL.revokeObjectURL(prev);
+          return url;
+        });
+
+        showToast(
+          `${kind === 'featured' ? 'Featured asset' : kind} staged — Save Treasure Draft to commit.`,
+          'info',
+        );
+      } catch {
+        showToast('Draft upload failed', 'error');
+      } finally {
+        setTreasureBusy('idle');
+      }
+    },
+    [getDidToken, showToast, treasureDraftCoinPublicId],
+  );
+
+  const handleLoadTreasureDraft = useCallback(async () => {
+    const coinRaw = loadTreasureDraftCoinQuery.trim();
+    if (!coinRaw) {
+      showToast('Enter coin_public_id', 'error');
+      return;
+    }
+    if (!getDidToken) {
+      showToast('Wallet not configured', 'error');
+      return;
+    }
+    setTreasureBusy('load');
+    try {
+      const token = await getDidToken();
+      if (!token) {
+        showToast('Sign in required', 'error');
+        return;
+      }
+
+      const res = await fetch(`/api/invite/admin-draft?coin=${encodeURIComponent(coinRaw)}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      const data = await res.json().catch(() => ({}));
+
+      if (res.status === 409) {
+        const st = typeof data.status === 'string' ? data.status : 'non-draft';
+        showToast(`${st}: ${data.error || 'not a draft invite'}`, 'error');
+        return;
+      }
+
+      if (!res.ok) {
+        showToast(typeof data.error === 'string' ? data.error : `Load failed (${res.status})`, 'error');
+        return;
+      }
+
+      const slug = typeof data.artist_slug === 'string' ? data.artist_slug : '';
+      const coin = typeof data.coin_public_id === 'string' ? data.coin_public_id : coinRaw;
+
+      const draftPayload =
+        data.draft_payload && typeof data.draft_payload === 'object'
+          ? (data.draft_payload as Record<string, unknown>)
+          : {};
+
+      const base = createInviteFormBaseline(mode, ea);
+      const merged = applyInviteDraftPayloadToForm(base, draftPayload);
+      setFormData(merged);
+      const dn = merged.displayname?.trim?.() || merged.tokenName?.trim?.() || '';
+      if (dn) onArtistNameChange(dn);
+
+      setTreasureDraftCoinPublicId(coin);
+      if (slug && coin) {
+        setTreasureDraftTreasureUrl(clientTreasureUrlForInvite(slug, coin));
+      } else if (coin) {
+        setTreasureDraftTreasureUrl(null);
+      }
+
+      setLogoPreview((prev) => {
+        if (prev?.startsWith('blob:')) URL.revokeObjectURL(prev);
+        if (merged.logo_url?.startsWith('https://')) return merged.logo_url;
+        return merged.logo_url === null ? null : prev;
+      });
+      setBackgroundPreview((prev) => {
+        if (prev?.startsWith('blob:')) URL.revokeObjectURL(prev);
+        if (merged.background_image_url?.startsWith('https://')) return merged.background_image_url;
+        return merged.background_image_url === null ? null : prev;
+      });
+
+      setCommittedTreasureSnapshot({
+        form: cloneInviteDraftForm(merged),
+        coinPublicId: coin,
+        reservedEmail: '',
+      });
+
+      showToast(`Loaded draft ${coin}`, 'success');
+    } catch {
+      showToast('Load draft failed', 'error');
+    } finally {
+      setTreasureBusy('idle');
+    }
+  }, [ea, getDidToken, loadTreasureDraftCoinQuery, mode, onArtistNameChange, showToast]);
+
+  const handleRevertTreasureDraft = useCallback(() => {
+    if (!committedTreasureSnapshot) {
+      setFormData(createInviteFormBaseline(mode, ea));
+      setTreasureDraftCoinPublicId(null);
+      setTreasureDraftReservedEmail('');
+      setLoadTreasureDraftCoinQuery('');
+      setTreasureDraftTreasureUrl(null);
+      if (logoPreview?.startsWith('blob:')) URL.revokeObjectURL(logoPreview);
+      if (backgroundPreview?.startsWith('blob:')) URL.revokeObjectURL(backgroundPreview);
+      setLogoPreview(null);
+      setBackgroundPreview(null);
+      setLogoFile(null);
+      setBackgroundFile(null);
+      onArtistNameChange('WELCOME, ARTIST!');
+      showToast('Treasure workshop cleared to defaults.', 'info');
+      return;
+    }
+    const s = committedTreasureSnapshot;
+    const rest = cloneInviteDraftForm(s.form);
+    setFormData(rest);
+    setTreasureDraftCoinPublicId(s.coinPublicId);
+    setTreasureDraftReservedEmail(s.reservedEmail);
+    setLogoPreview((prev) => {
+      if (prev?.startsWith('blob:')) URL.revokeObjectURL(prev);
+      if (rest.logo_url?.startsWith('https://')) return rest.logo_url;
+      return null;
+    });
+    setBackgroundPreview((prev) => {
+      if (prev?.startsWith('blob:')) URL.revokeObjectURL(prev);
+      if (rest.background_image_url?.startsWith('https://')) return rest.background_image_url;
+      return null;
+    });
+
+    if (s.coinPublicId && rest.displayname.trim()) {
+      try {
+        const slugGuess = clientSlugFromDisplayName(rest.displayname);
+        setTreasureDraftTreasureUrl(clientTreasureUrlForInvite(slugGuess, s.coinPublicId));
+      } catch {
+        setTreasureDraftTreasureUrl(null);
+      }
+    } else {
+      setTreasureDraftTreasureUrl(null);
+    }
+
+    const nm = rest.displayname?.trim?.() || rest.tokenName?.trim?.() || '';
+    onArtistNameChange(nm.trim() ? nm : 'WELCOME, ARTIST!');
+
+    showToast('Reverted to last committed treasure draft.', 'info');
+  }, [
+    backgroundPreview,
+    committedTreasureSnapshot,
+    ea,
+    logoPreview,
+    mode,
+    onArtistNameChange,
+    showToast,
+  ]);
+
+  const handleSaveTreasureDraft = useCallback(async () => {
+    if (!formData.displayname.trim() || !formData.tokenName.trim()) {
+      showToast('Display name and token symbol are required', 'error');
+      return;
+    }
+    const coinTrim = treasureDraftCoinPublicId?.trim() || null;
+    if (!coinTrim && !treasureDraftReservedEmail.trim()) {
+      showToast('Reserved email required to create the first draft', 'error');
+      return;
+    }
+    if (!getDidToken) {
+      showToast('Wallet not configured', 'error');
+      return;
+    }
+    setTreasureBusy('save');
+    try {
+      const draft_payload = buildInviteDraftPayloadV1(formData);
+      const token = await getDidToken();
+      if (!token) {
+        showToast('Sign in required', 'error');
+        return;
+      }
+
+      const bodyObj: Record<string, unknown> = { draft_payload };
+      if (coinTrim) bodyObj.coin_public_id = coinTrim;
+      else bodyObj.reserved_email = treasureDraftReservedEmail.trim();
+
+      const res = await fetch('/api/invite/save-draft', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(bodyObj),
+      });
+      const data = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        showToast(
+          typeof data.error === 'string'
+            ? data.error
+            : `${typeof data.message === 'string' ? data.message : 'Save draft failed'} (${res.status})`,
+          'error',
+        );
+        return;
+      }
+
+      const nextCoin =
+        typeof data.coin_public_id === 'string' ? data.coin_public_id : coinTrim ?? null;
+      const tu = typeof data.treasure_url === 'string' ? data.treasure_url : '';
+
+      setTreasureDraftCoinPublicId(nextCoin);
+      if (tu) setTreasureDraftTreasureUrl(tu);
+
+      setCommittedTreasureSnapshot({
+        form: cloneInviteDraftForm(formData),
+        coinPublicId: nextCoin,
+        reservedEmail: nextCoin ? '' : treasureDraftReservedEmail.trim(),
+      });
+
+      showToast(`Treasure draft saved${nextCoin ? ` (${nextCoin})` : ''}`, 'success');
+    } catch {
+      showToast('Save draft failed', 'error');
+    } finally {
+      setTreasureBusy('idle');
+    }
+  }, [
+    formData,
+    getDidToken,
+    showToast,
+    treasureDraftCoinPublicId,
+    treasureDraftReservedEmail,
+  ]);
+
+  const copyTreasureDraftText = useCallback(
+    async (label: string, text: string) => {
+      if (!text) {
+        showToast(`No ${label} to copy`, 'error');
+        return;
+      }
+      try {
+        await navigator.clipboard.writeText(text);
+        showToast(`${label} copied`, 'success');
+      } catch {
+        showToast(`${label}: copy blocked — select and copy manually`, 'error');
+      }
+    },
+    [showToast],
+  );
 
   return (
     <div className="onboarding-panel bg-gray-800 bg-opacity-90 rounded-lg p-6 mt-8 max-w-2xl mx-auto backdrop-blur-sm border border-gray-600" style={{
@@ -300,6 +775,172 @@ const OnboardingPanel: React.FC<OnboardingPanelProps> = ({
           ✕
         </button>
       </div>
+
+      {isAdmin && mode === 'onboarding' && getDidToken && (
+        <>
+          <input
+            ref={draftMediaFileRef}
+            type="file"
+            className="hidden"
+            accept="image/*,video/*,audio/*"
+            aria-hidden="true"
+            onChange={handleDraftUploadFileChosen}
+          />
+
+          <div className="mb-6 rounded-lg border border-amber-500/50 bg-amber-950/40 p-4 space-y-3">
+            <h3 className="text-lg font-semibold text-amber-200">Treasure draft (admin)</h3>
+
+            {(treasureDraftDirty || treasureDraftHttpsChangedVsSnapshot) && (
+              <div className="flex flex-col gap-1 text-xs">
+                <span className="font-semibold uppercase tracking-wide text-amber-400">
+                  Unsaved changes
+                </span>
+                {treasureDraftHttpsChangedVsSnapshot ? (
+                  <span className="text-amber-100/90">
+                    Media uploaded to preview — click Save Treasure Draft to write URLs into{' '}
+                    <code className="text-amber-200">draft_payload</code>.
+                  </span>
+                ) : (
+                  <span className="text-amber-100/70">Form differs from last saved / loaded snapshot.</span>
+                )}
+              </div>
+            )}
+
+            <div className="grid gap-2 text-sm">
+              <label className="text-gray-300">
+                Reserved email (first create only — claim target)
+              </label>
+              <input
+                type="email"
+                placeholder="collector@..."
+                disabled={Boolean(treasureDraftCoinPublicId)}
+                value={treasureDraftReservedEmail}
+                onChange={(e) => setTreasureDraftReservedEmail(e.target.value)}
+                className="w-full p-2 bg-gray-800 text-white rounded border border-gray-600 disabled:opacity-50"
+              />
+
+              <div className="flex gap-2 items-end flex-wrap mt-2">
+                <input
+                  type="text"
+                  placeholder="coin_public_id to load draft"
+                  value={loadTreasureDraftCoinQuery}
+                  onChange={(e) => setLoadTreasureDraftCoinQuery(e.target.value)}
+                  className="flex-1 min-w-[10rem] p-2 bg-gray-800 text-white rounded border border-gray-600"
+                />
+                <button
+                  type="button"
+                  disabled={treasureBusy !== 'idle'}
+                  onClick={handleLoadTreasureDraft}
+                  className="px-3 py-2 bg-blue-700 text-white rounded hover:bg-blue-600 disabled:opacity-50 whitespace-nowrap"
+                >
+                  {treasureBusy === 'load' ? 'Loading…' : 'Load draft'}
+                </button>
+              </div>
+            </div>
+
+            {(treasureDraftCoinPublicId || treasureDraftTreasureUrl) && (
+              <div className="rounded bg-gray-900/60 border border-gray-700 p-3 text-xs font-mono break-all space-y-2">
+                {treasureDraftCoinPublicId && (
+                  <div className="flex flex-col gap-1 sm:flex-row sm:items-center">
+                    <span className="text-gray-400 shrink-0 mr-2">coin_public_id</span>
+                    <span className="text-white mr-auto">{treasureDraftCoinPublicId}</span>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        copyTreasureDraftText('coin_public_id', treasureDraftCoinPublicId)
+                      }
+                      className="text-amber-300 hover:text-amber-100 whitespace-nowrap"
+                    >
+                      Copy
+                    </button>
+                  </div>
+                )}
+                {treasureDraftTreasureUrl && (
+                  <div className="flex flex-col gap-1 sm:flex-row sm:items-center">
+                    <span className="text-gray-400 shrink-0 mr-2">treasure_url</span>
+                    <span className="text-white mr-auto">{treasureDraftTreasureUrl}</span>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        copyTreasureDraftText('treasure URL', treasureDraftTreasureUrl)
+                      }
+                      className="text-amber-300 hover:text-amber-100 whitespace-nowrap"
+                    >
+                      Copy
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {treasureDraftCoinPublicId && (
+              <div className="space-y-2">
+                <p className="text-xs text-gray-400">
+                  Stage uploads (HTTPS only in saved draft — Save commits to JSON).
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {(['logo', 'background', 'featured'] as const).map((k) => (
+                    <button
+                      key={k}
+                      type="button"
+                      disabled={treasureBusy !== 'idle'}
+                      onClick={() => pickDraftUploadFile(k)}
+                      className="px-3 py-1.5 text-sm bg-gray-700 text-white rounded border border-gray-500 hover:bg-gray-600 disabled:opacity-50"
+                    >
+                      Upload {k}
+                    </button>
+                  ))}
+                </div>
+
+                {formData.featured_asset_url?.startsWith('https') && (
+                  <div className="mt-2 border border-gray-600 rounded overflow-hidden bg-black/30 max-h-40">
+                    {/\.(mp4|webm|mov|ogg)(\?|$)/i.test(formData.featured_asset_url) ? (
+                      <video
+                        src={formData.featured_asset_url}
+                        className="w-full max-h-40 object-contain"
+                        controls
+                        muted
+                        playsInline
+                      />
+                    ) : /\.(mp3|wav|ogg|m4a)(\?|$)/i.test(formData.featured_asset_url) ? (
+                      <audio
+                        src={formData.featured_asset_url}
+                        controls
+                        className="w-full p-2"
+                      />
+                    ) : (
+                      <img
+                        src={formData.featured_asset_url}
+                        alt=""
+                        className="w-full max-h-40 object-contain"
+                      />
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                disabled={treasureBusy !== 'idle'}
+                onClick={handleSaveTreasureDraft}
+                className="flex-1 min-w-[8rem] px-4 py-2 bg-emerald-700 text-white font-semibold rounded hover:bg-emerald-600 disabled:opacity-50"
+              >
+                {treasureBusy === 'save' ? 'Saving…' : 'Save Treasure Draft'}
+              </button>
+              <button
+                type="button"
+                disabled={treasureBusy !== 'idle'}
+                onClick={handleRevertTreasureDraft}
+                className="px-4 py-2 bg-gray-700 text-white rounded border border-gray-500 hover:bg-gray-600 disabled:opacity-50"
+              >
+                Revert
+              </button>
+            </div>
+          </div>
+        </>
+      )}
 
       {/* Artist Identity Section - Only show for new artists */}
       {mode === 'onboarding' && (

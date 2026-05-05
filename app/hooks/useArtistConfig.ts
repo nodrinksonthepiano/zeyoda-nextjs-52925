@@ -18,10 +18,17 @@ interface UseArtistConfigReturn {
   refreshConfig: () => Promise<void>;
 }
 
-const useArtistConfig = (): UseArtistConfigReturn => {
+/**
+ * @param artistIdOverride When set (e.g. canonical slug from coin resolve), fetch this slug instead of `?artist=`.
+ */
+const useArtistConfig = (artistIdOverride?: string | null): UseArtistConfigReturn => {
   const { registry, isLoading: isRegistryLoading, error: registryError } = useArtistRegistryContext();
   const searchParams = useSearchParams();
-  const artistId = searchParams.get('artist');
+  const artistIdFromSearch = searchParams.get('artist');
+  const artistId =
+    artistIdOverride !== undefined && artistIdOverride !== null
+      ? artistIdOverride
+      : artistIdFromSearch;
 
   const [artistConfig, setArtistConfig] = useState<ArtistConfig | null>(null);
   const [allArtistsConfig, setAllArtistsConfig] = useState<{[key: string]: ArtistConfig} | null>(null);

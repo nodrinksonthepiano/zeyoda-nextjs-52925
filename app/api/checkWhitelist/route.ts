@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { normalizeReservedEmail } from '@/app/utils/server/normalizeReservedEmail';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -29,7 +30,36 @@ export async function POST(request: NextRequest) {
       throw new Error('Whitelist check failed');
     }
 
-    const isWhitelisted = !!whitelistData;
+    let isWhitelisted = !!whitelistData;
+
+    // Allow Magic sessions for active treasure invites (reserved or claimed artist email),
+    // even if they are not in whitelist_emails yet — claim API still enforces per-coin matching.
+    if (!isWhitelisted && email && typeof email === 'string') {
+      const norm = normalizeReservedEmail(email);
+
+      const { data: draftRow } = await serviceSupabase
+        .from('artist_invites')
+        .select('id')
+        .in('status', ['draft', 'claimed'])
+        .eq('reserved_email_normalized', norm)
+        .maybeSingle();
+
+      const { data: claimedRow } =
+        draftRow == null
+          ? await serviceSupabase
+              .from('artist_invites')
+              .select('id')
+              .eq('status', 'claimed')
+              .eq('claimed_by_email', norm)
+              .maybeSingle()
+          : { data: null };
+
+      if (draftRow ?? claimedRow) {
+        isWhitelisted = true;
+        console.log('✅ Treasure invite bypass for curated artist email session');
+      }
+    }
+
     console.log(`${isWhitelisted ? '✅' : '❌'} Email ${email} ${isWhitelisted ? 'is' : 'is not'} whitelisted`);
 
     // 2. Log the attempt (whether whitelisted or not)
