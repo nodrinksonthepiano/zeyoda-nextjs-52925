@@ -24,6 +24,19 @@ interface OnboardingPanelProps {
   inviteLaunchCoinPublicId?: string | null;
   /** Workshop draft orbit: parent registers loader to call same hydrate path as paste+Load. */
   onRegisterLoadTreasureDraftByCoin?: (loadByCoin: (coin: string) => Promise<void>) => void;
+  /** Admin workshop: sync coin to parent so hero featured upload can gate on draft-upload. */
+  onTreasureDraftCoinPublicIdChange?: (coinPublicId: string | null) => void;
+  /** Mirror persisted HTTPS featured URL for hero when local File preview is cleared. */
+  onWorkshopFeaturedHttpsChange?: (url: string | null) => void;
+  /** Before revert / baseline restore: clear parent hero staged File + blob preview. */
+  onClearWorkshopHeroStaging?: () => void;
+  /** Parent registers hero featured draft-upload + clear (admin onboarding only). */
+  onRegisterWorkshopFeaturedHandlers?: (
+    handlers: {
+      uploadFeatured: (file: File) => Promise<boolean>;
+      clearFeatured: () => void;
+    } | null,
+  ) => void;
 }
 
 type TreasureCommittedSnapshot = {
@@ -247,6 +260,10 @@ const OnboardingPanel: React.FC<OnboardingPanelProps> = ({
   getDidToken,
   inviteLaunchCoinPublicId = null,
   onRegisterLoadTreasureDraftByCoin,
+  onTreasureDraftCoinPublicIdChange,
+  onWorkshopFeaturedHttpsChange,
+  onClearWorkshopHeroStaging,
+  onRegisterWorkshopFeaturedHandlers,
 }) => {
   const { showToast } = useToast();
   const ea = existingArtist as Record<string, unknown> | undefined;
@@ -264,8 +281,6 @@ const OnboardingPanel: React.FC<OnboardingPanelProps> = ({
   const [committedTreasureSnapshot, setCommittedTreasureSnapshot] =
     useState<TreasureCommittedSnapshot | null>(null);
   const [treasureBusy, setTreasureBusy] = useState<'idle' | 'upload' | 'save' | 'load'>('idle');
-  const draftMediaFileRef = useRef<HTMLInputElement>(null);
-  const pendingDraftUploadKindRef = useRef<'logo' | 'background' | 'featured' | null>(null);
 
   const [logoFile, setLogoFile] = useState<File | null>(null);
   const [backgroundFile, setBackgroundFile] = useState<File | null>(null);
@@ -323,7 +338,21 @@ const OnboardingPanel: React.FC<OnboardingPanelProps> = ({
         /* non-fatal — URL omitted until save/load echo */
       }
     }
-  }, [ea, initialInviteDraft, inviteLaunchCoinPublicId, mode, onArtistNameChange]);
+
+    if (isAdmin) {
+      onWorkshopFeaturedHttpsChange?.(
+        merged.featured_asset_url?.startsWith('https://') ? merged.featured_asset_url : null,
+      );
+    }
+  }, [
+    ea,
+    initialInviteDraft,
+    inviteLaunchCoinPublicId,
+    isAdmin,
+    mode,
+    onArtistNameChange,
+    onWorkshopFeaturedHttpsChange,
+  ]);
 
   // Initialize halo with current primary color
   useEffect(() => {
@@ -492,35 +521,18 @@ const OnboardingPanel: React.FC<OnboardingPanelProps> = ({
     });
   }, [committedTreasureSnapshot, formData, treasureDraftDirty]);
 
-  const pickDraftUploadFile = useCallback((kind: 'logo' | 'background' | 'featured') => {
-    pendingDraftUploadKindRef.current = kind;
-    draftMediaFileRef.current?.click();
-  }, []);
-
-  const handleDraftUploadFileChosen = useCallback(
-    async (e: React.ChangeEvent<HTMLInputElement>) => {
-      const kind = pendingDraftUploadKindRef.current;
-      pendingDraftUploadKindRef.current = null;
-      const file = e.target.files?.[0];
-      e.target.value = '';
-      if (!kind || !file) return;
-
+  /** Admin treasure drafts only: POST draft-upload and merge HTTPS URL into formData + previews. */
+  const uploadTreasureDraftMedia = useCallback(
+    async (kind: 'logo' | 'background', file: File): Promise<boolean> => {
       const coinId = treasureDraftCoinPublicId?.trim();
-      if (!coinId) {
-        showToast('Save draft first to get a coin ID, then upload media.', 'error');
-        return;
-      }
-      if (!getDidToken) {
-        showToast('Wallet not configured for upload.', 'error');
-        return;
-      }
+      if (!coinId || !getDidToken) return false;
 
       setTreasureBusy('upload');
       try {
         const token = await getDidToken();
         if (!token) {
           showToast('Sign in required for draft upload.', 'error');
-          return;
+          return false;
         }
 
         const form = new FormData();
@@ -536,44 +548,124 @@ const OnboardingPanel: React.FC<OnboardingPanelProps> = ({
         const data = await res.json().catch(() => ({}));
         if (!res.ok) {
           showToast(typeof data.error === 'string' ? data.error : 'Draft upload failed', 'error');
-          return;
+          return false;
         }
         const url = typeof data.url === 'string' ? data.url : '';
         if (!url.startsWith('https://')) {
           showToast('Upload did not return an HTTPS URL', 'error');
-          return;
+          return false;
         }
 
-        setFormData((prev) => ({
-          ...prev,
-          ...(kind === 'logo' ? { logo_url: url } : {}),
-          ...(kind === 'background' ? { background_image_url: url } : {}),
-          ...(kind === 'featured' ? { featured_asset_url: url } : {}),
-        }));
-
-        setLogoPreview((prev) => {
-          if (kind !== 'logo') return prev;
-          if (prev?.startsWith('blob:')) URL.revokeObjectURL(prev);
-          return url;
-        });
-        setBackgroundPreview((prev) => {
-          if (kind !== 'background') return prev;
-          if (prev?.startsWith('blob:')) URL.revokeObjectURL(prev);
-          return url;
-        });
+        if (kind === 'logo') {
+          setFormData((prev) => ({ ...prev, logo_url: url }));
+          setLogoPreview((prev) => {
+            if (prev?.startsWith('blob:')) URL.revokeObjectURL(prev);
+            return url;
+          });
+        } else {
+          setFormData((prev) => ({ ...prev, background_image_url: url }));
+          setBackgroundPreview((prev) => {
+            if (prev?.startsWith('blob:')) URL.revokeObjectURL(prev);
+            return url;
+          });
+        }
 
         showToast(
-          `${kind === 'featured' ? 'Featured asset' : kind} staged — Save Treasure Draft to commit.`,
+          `${kind === 'logo' ? 'Logo' : 'Background'} staged — Save Treasure Draft to commit.`,
           'info',
         );
+        return true;
       } catch {
         showToast('Draft upload failed', 'error');
+        return false;
       } finally {
         setTreasureBusy('idle');
       }
     },
     [getDidToken, showToast, treasureDraftCoinPublicId],
   );
+
+  const uploadFeaturedViaDraft = useCallback(
+    async (file: File): Promise<boolean> => {
+      const coinId = treasureDraftCoinPublicId?.trim();
+      if (!coinId || !getDidToken) return false;
+
+      setTreasureBusy('upload');
+      try {
+        const token = await getDidToken();
+        if (!token) {
+          showToast('Sign in required for draft upload.', 'error');
+          return false;
+        }
+
+        const form = new FormData();
+        form.append('coin_public_id', coinId);
+        form.append('kind', 'featured');
+        form.append('file', file);
+
+        const res = await fetch('/api/invite/draft-upload', {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}` },
+          body: form,
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          showToast(typeof data.error === 'string' ? data.error : 'Draft upload failed', 'error');
+          return false;
+        }
+        const url = typeof data.url === 'string' ? data.url : '';
+        if (!url.startsWith('https://')) {
+          showToast('Upload did not return an HTTPS URL', 'error');
+          return false;
+        }
+
+        setFormData((prev) => ({ ...prev, featured_asset_url: url }));
+        onWorkshopFeaturedHttpsChange?.(url);
+        showToast('Featured asset staged — Save Treasure Draft to commit.', 'info');
+        return true;
+      } catch {
+        showToast('Draft upload failed', 'error');
+        return false;
+      } finally {
+        setTreasureBusy('idle');
+      }
+    },
+    [getDidToken, onWorkshopFeaturedHttpsChange, showToast, treasureDraftCoinPublicId],
+  );
+
+  const clearWorkshopFeatured = useCallback(() => {
+    setFormData((prev) => ({ ...prev, featured_asset_url: null }));
+    onWorkshopFeaturedHttpsChange?.(null);
+  }, [onWorkshopFeaturedHttpsChange]);
+
+  useEffect(() => {
+    if (!isAdmin || mode !== 'onboarding') {
+      onTreasureDraftCoinPublicIdChange?.(null);
+      return;
+    }
+    onTreasureDraftCoinPublicIdChange?.(treasureDraftCoinPublicId);
+  }, [isAdmin, mode, treasureDraftCoinPublicId, onTreasureDraftCoinPublicIdChange]);
+
+  useEffect(() => {
+    if (!onRegisterWorkshopFeaturedHandlers || !isAdmin || mode !== 'onboarding' || !getDidToken) {
+      onRegisterWorkshopFeaturedHandlers?.(null);
+      return;
+    }
+    onRegisterWorkshopFeaturedHandlers({
+      uploadFeatured: uploadFeaturedViaDraft,
+      clearFeatured: clearWorkshopFeatured,
+    });
+    return () => {
+      onRegisterWorkshopFeaturedHandlers?.(null);
+    };
+  }, [
+    clearWorkshopFeatured,
+    getDidToken,
+    isAdmin,
+    mode,
+    onRegisterWorkshopFeaturedHandlers,
+    uploadFeaturedViaDraft,
+  ]);
 
   const loadTreasureDraftByCoinId = useCallback(
     async (coinRawInput: string) => {
@@ -654,6 +746,12 @@ const OnboardingPanel: React.FC<OnboardingPanelProps> = ({
           applyWorkshopVisualsFromInviteDraftForm(merged);
         }
 
+        if (isAdmin) {
+          onWorkshopFeaturedHttpsChange?.(
+            merged.featured_asset_url?.startsWith('https://') ? merged.featured_asset_url : null,
+          );
+        }
+
         showToast(`Loaded draft ${coin}`, 'success');
       } catch {
         showToast('Load draft failed', 'error');
@@ -661,7 +759,7 @@ const OnboardingPanel: React.FC<OnboardingPanelProps> = ({
         setTreasureBusy('idle');
       }
     },
-    [ea, getDidToken, mode, onArtistNameChange, showToast],
+    [ea, getDidToken, isAdmin, mode, onArtistNameChange, onWorkshopFeaturedHttpsChange, showToast],
   );
 
   useEffect(() => {
@@ -674,6 +772,8 @@ const OnboardingPanel: React.FC<OnboardingPanelProps> = ({
   }, [loadTreasureDraftByCoinId, loadTreasureDraftCoinQuery]);
 
   const handleRevertTreasureDraft = useCallback(() => {
+    onClearWorkshopHeroStaging?.();
+
     if (!committedTreasureSnapshot) {
       setFormData(createInviteFormBaseline(mode, ea));
       setTreasureDraftCoinPublicId(null);
@@ -687,6 +787,7 @@ const OnboardingPanel: React.FC<OnboardingPanelProps> = ({
       setLogoFile(null);
       setBackgroundFile(null);
       onArtistNameChange('WELCOME, ARTIST!');
+      onWorkshopFeaturedHttpsChange?.(null);
       showToast('Treasure workshop cleared to defaults.', 'info');
       return;
     }
@@ -720,6 +821,10 @@ const OnboardingPanel: React.FC<OnboardingPanelProps> = ({
     const nm = rest.displayname?.trim?.() || rest.tokenName?.trim?.() || '';
     onArtistNameChange(nm.trim() ? nm : 'WELCOME, ARTIST!');
 
+    onWorkshopFeaturedHttpsChange?.(
+      rest.featured_asset_url?.startsWith('https://') ? rest.featured_asset_url : null,
+    );
+
     showToast('Reverted to last committed treasure draft.', 'info');
   }, [
     backgroundPreview,
@@ -728,6 +833,8 @@ const OnboardingPanel: React.FC<OnboardingPanelProps> = ({
     logoPreview,
     mode,
     onArtistNameChange,
+    onClearWorkshopHeroStaging,
+    onWorkshopFeaturedHttpsChange,
     showToast,
   ]);
 
@@ -841,17 +948,7 @@ const OnboardingPanel: React.FC<OnboardingPanelProps> = ({
       </div>
 
       {isAdmin && mode === 'onboarding' && getDidToken && (
-        <>
-          <input
-            ref={draftMediaFileRef}
-            type="file"
-            className="hidden"
-            accept="image/*,video/*,audio/*"
-            aria-hidden="true"
-            onChange={handleDraftUploadFileChosen}
-          />
-
-          <div className="mb-6 rounded-lg border border-amber-500/50 bg-amber-950/40 p-4 space-y-3">
+        <div className="mb-6 rounded-lg border border-amber-500/50 bg-amber-950/40 p-4 space-y-3">
             <h3 className="text-lg font-semibold text-amber-200">Treasure draft (admin)</h3>
 
             {(treasureDraftDirty || treasureDraftHttpsChangedVsSnapshot) && (
@@ -937,52 +1034,10 @@ const OnboardingPanel: React.FC<OnboardingPanelProps> = ({
               </div>
             )}
 
-            {treasureDraftCoinPublicId && (
-              <div className="space-y-2">
-                <p className="text-xs text-gray-400">
-                  Stage uploads (HTTPS only in saved draft — Save commits to JSON).
-                </p>
-                <div className="flex flex-wrap gap-2">
-                  {(['logo', 'background', 'featured'] as const).map((k) => (
-                    <button
-                      key={k}
-                      type="button"
-                      disabled={treasureBusy !== 'idle'}
-                      onClick={() => pickDraftUploadFile(k)}
-                      className="px-3 py-1.5 text-sm bg-gray-700 text-white rounded border border-gray-500 hover:bg-gray-600 disabled:opacity-50"
-                    >
-                      Upload {k}
-                    </button>
-                  ))}
-                </div>
-
-                {formData.featured_asset_url?.startsWith('https') && (
-                  <div className="mt-2 border border-gray-600 rounded overflow-hidden bg-black/30 max-h-40">
-                    {/\.(mp4|webm|mov|ogg)(\?|$)/i.test(formData.featured_asset_url) ? (
-                      <video
-                        src={formData.featured_asset_url}
-                        className="w-full max-h-40 object-contain"
-                        controls
-                        muted
-                        playsInline
-                      />
-                    ) : /\.(mp3|wav|ogg|m4a)(\?|$)/i.test(formData.featured_asset_url) ? (
-                      <audio
-                        src={formData.featured_asset_url}
-                        controls
-                        className="w-full p-2"
-                      />
-                    ) : (
-                      <img
-                        src={formData.featured_asset_url}
-                        alt=""
-                        className="w-full max-h-40 object-contain"
-                      />
-                    )}
-                  </div>
-                )}
-              </div>
-            )}
+            <p className="text-xs text-gray-400">
+              Media: use Logo / Background / Featured Content below. Save Treasure Draft writes HTTPS URLs into{' '}
+              <code className="text-amber-200/90">draft_payload</code>.
+            </p>
 
             <div className="flex flex-wrap gap-2">
               <button
@@ -1003,7 +1058,6 @@ const OnboardingPanel: React.FC<OnboardingPanelProps> = ({
               </button>
             </div>
           </div>
-        </>
       )}
 
       {/* Artist Identity Section - Only show for new artists */}
@@ -1218,29 +1272,66 @@ const OnboardingPanel: React.FC<OnboardingPanelProps> = ({
           onChange={(e) => {
             const file = e.target.files?.[0];
             if (!file) return;
-            
-            // Validate file type
+
             if (!file.type.startsWith('image/')) {
               alert('Please upload an image file (JPG, PNG, SVG, or WebP)');
               return;
             }
-            
-            // Validate file size (5MB max)
+
             if (file.size > 5 * 1024 * 1024) {
               alert('File size must be less than 5MB');
               return;
             }
-            
+
+            const adminTreasureMedia =
+              isAdmin && mode === 'onboarding' && Boolean(getDidToken);
+
+            if (adminTreasureMedia) {
+              if (!treasureDraftCoinPublicId?.trim()) {
+                showToast(
+                  'Save Treasure Draft first to create a coin, then upload media.',
+                  'error',
+                );
+                e.target.value = '';
+                return;
+              }
+              setLogoFile(file);
+              if (logoPreview && logoPreview.startsWith('blob:')) {
+                URL.revokeObjectURL(logoPreview);
+              }
+              const preview = URL.createObjectURL(file);
+              setLogoPreview(preview);
+              setFormData((prev) => ({ ...prev, logo_url: preview }));
+              if (formData.logo_use_background) {
+                setTimeout(() => {
+                  document.body.style.backgroundImage = `url(${preview})`;
+                  document.body.style.backgroundSize = 'cover';
+                  document.body.style.backgroundPosition = 'center';
+                  document.body.style.backgroundRepeat = 'no-repeat';
+                }, 0);
+              }
+              void uploadTreasureDraftMedia('logo', file).then((ok) => {
+                if (!ok) {
+                  setLogoPreview((p) => {
+                    if (p?.startsWith('blob:')) URL.revokeObjectURL(p);
+                    return null;
+                  });
+                  setLogoFile(null);
+                  setFormData((prev) => ({ ...prev, logo_url: null }));
+                }
+              });
+              e.target.value = '';
+              return;
+            }
+
             setLogoFile(file);
-            // Revoke old preview URL
             if (logoPreview && logoPreview.startsWith('blob:')) {
               URL.revokeObjectURL(logoPreview);
             }
             const preview = URL.createObjectURL(file);
             setLogoPreview(preview);
-            setFormData(prev => ({ ...prev, logo_url: preview }));
-            
-            // Apply if checkbox is checked
+            setFormData((prev) => ({ ...prev, logo_url: preview }));
+
             if (formData.logo_use_background) {
               setTimeout(() => {
                 document.body.style.backgroundImage = `url(${preview})`;
@@ -1349,8 +1440,7 @@ const OnboardingPanel: React.FC<OnboardingPanelProps> = ({
           onChange={(e) => {
             const file = e.target.files?.[0];
             if (!file) return;
-            
-            // Same validation as logo
+
             if (!file.type.startsWith('image/')) {
               alert('Please upload an image file (JPG, PNG, SVG, or WebP)');
               return;
@@ -1359,17 +1449,56 @@ const OnboardingPanel: React.FC<OnboardingPanelProps> = ({
               alert('File size must be less than 5MB');
               return;
             }
-            
+
+            const adminTreasureMedia =
+              isAdmin && mode === 'onboarding' && Boolean(getDidToken);
+
+            if (adminTreasureMedia) {
+              if (!treasureDraftCoinPublicId?.trim()) {
+                showToast(
+                  'Save Treasure Draft first to create a coin, then upload media.',
+                  'error',
+                );
+                e.target.value = '';
+                return;
+              }
+              setBackgroundFile(file);
+              if (backgroundPreview && backgroundPreview.startsWith('blob:')) {
+                URL.revokeObjectURL(backgroundPreview);
+              }
+              const preview = URL.createObjectURL(file);
+              setBackgroundPreview(preview);
+              setFormData((prev) => ({ ...prev, background_image_url: preview }));
+              if (formData.background_use_image) {
+                setTimeout(() => {
+                  document.body.style.backgroundImage = `url(${preview})`;
+                  document.body.style.backgroundSize = 'cover';
+                  document.body.style.backgroundPosition = 'center';
+                  document.body.style.backgroundRepeat = 'no-repeat';
+                }, 0);
+              }
+              void uploadTreasureDraftMedia('background', file).then((ok) => {
+                if (!ok) {
+                  setBackgroundPreview((p) => {
+                    if (p?.startsWith('blob:')) URL.revokeObjectURL(p);
+                    return null;
+                  });
+                  setBackgroundFile(null);
+                  setFormData((prev) => ({ ...prev, background_image_url: null }));
+                }
+              });
+              e.target.value = '';
+              return;
+            }
+
             setBackgroundFile(file);
-            // Revoke old preview URL
             if (backgroundPreview && backgroundPreview.startsWith('blob:')) {
               URL.revokeObjectURL(backgroundPreview);
             }
             const preview = URL.createObjectURL(file);
             setBackgroundPreview(preview);
-            setFormData(prev => ({ ...prev, background_image_url: preview }));
-            
-            // Apply if checkbox is checked
+            setFormData((prev) => ({ ...prev, background_image_url: preview }));
+
             if (formData.background_use_image) {
               setTimeout(() => {
                 document.body.style.backgroundImage = `url(${preview})`;
@@ -1546,8 +1675,41 @@ const OnboardingPanel: React.FC<OnboardingPanelProps> = ({
               
               {/* Change button */}
               <button
+                type="button"
                 onClick={onUploadClick}
                 className="px-3 py-1 bg-blue-600 text-white rounded text-xs hover:bg-blue-700"
+              >
+                Change
+              </button>
+            </div>
+          ) : formData.featured_asset_url?.startsWith('https') ? (
+            <div className="flex items-center gap-3 p-3 bg-gray-700 rounded-lg border border-gray-600">
+              <div className="w-16 h-16 rounded-lg overflow-hidden border border-gray-500 flex-shrink-0 bg-black/40">
+                {/\.(mp4|webm|mov|ogg)(\?|$)/i.test(formData.featured_asset_url) ? (
+                  <video
+                    src={formData.featured_asset_url}
+                    className="w-full h-full object-cover"
+                    muted
+                    preload="metadata"
+                  />
+                ) : /\.(mp3|wav|ogg|m4a)(\?|$)/i.test(formData.featured_asset_url) ? (
+                  <div className="w-full h-full flex items-center justify-center text-2xl">🎵</div>
+                ) : (
+                  <img
+                    src={formData.featured_asset_url}
+                    alt=""
+                    className="w-full h-full object-cover"
+                  />
+                )}
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="text-white text-xs font-mono truncate">{formData.featured_asset_url}</div>
+                <div className="text-gray-400 text-xs mt-1">Staged featured asset — Save Treasure Draft to commit.</div>
+              </div>
+              <button
+                type="button"
+                onClick={onUploadClick}
+                className="px-3 py-1 bg-blue-600 text-white rounded text-xs hover:bg-blue-700 shrink-0"
               >
                 Change
               </button>

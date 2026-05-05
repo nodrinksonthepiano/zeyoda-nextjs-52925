@@ -62,6 +62,13 @@ interface PriceDetails {
   investorShare: number;
 }
 
+/** Classify HTTPS featured_asset_url for workshop hero when local File preview is absent */
+function workshopFeaturedUrlMediaKind(url: string): 'video' | 'audio' | 'image' {
+  if (/\.(mp4|webm|mov|ogg)(\?|$)/i.test(url)) return 'video';
+  if (/\.(mp3|wav|ogg|m4a)(\?|$)/i.test(url)) return 'audio';
+  return 'image';
+}
+
 /** Safe row from GET /api/invite/admin-drafts */
 interface AdminInviteDraftListRow {
   coin_public_id: string;
@@ -135,6 +142,12 @@ const ArtistPageContent: React.FC<{
   // Admin state (for feedback inbox)
   const [isAdmin, setIsAdmin] = useState(false);
   const [adminInviteDraftRows, setAdminInviteDraftRows] = useState<AdminInviteDraftListRow[]>([]);
+  const [workshopTreasureCoinId, setWorkshopTreasureCoinId] = useState<string | null>(null);
+  const [workshopFeaturedHttpsUrl, setWorkshopFeaturedHttpsUrl] = useState<string | null>(null);
+  const workshopFeaturedHandlersRef = useRef<{
+    uploadFeatured: (file: File) => Promise<boolean>;
+    clearFeatured: () => void;
+  } | null>(null);
 
   useEffect(() => {
     if (!user) {
@@ -515,24 +528,84 @@ const ArtistPageContent: React.FC<{
   const isOrbitAnimationPaused = useRef(false);
   const lastShakeRequestRef = useRef<number>(0);
 
+  const registerWorkshopFeaturedHandlers = useCallback(
+    (
+      handlers: {
+        uploadFeatured: (file: File) => Promise<boolean>;
+        clearFeatured: () => void;
+      } | null,
+    ) => {
+      workshopFeaturedHandlersRef.current = handlers;
+    },
+    [],
+  );
+
+  const handleTreasureDraftCoinPublicIdChange = useCallback((coin: string | null) => {
+    const c = typeof coin === 'string' ? coin.trim() : '';
+    setWorkshopTreasureCoinId(c || null);
+  }, []);
+
+  const handleWorkshopFeaturedHttpsChange = useCallback((url: string | null) => {
+    setWorkshopFeaturedHttpsUrl(url?.startsWith('https://') ? url : null);
+  }, []);
+
+  const handleClearWorkshopHeroStaging = useCallback(() => {
+    setUploadedFile(null);
+    setFilePreviewUrl((prev) => {
+      if (prev) URL.revokeObjectURL(prev);
+      return null;
+    });
+    setOnboardingAspectRatio(null);
+  }, []);
+
   // File upload handlers
   const [filePreviewUrl, setFilePreviewUrl] = useState<string | null>(null);
   
   const handleFileSelect = useCallback((file: File) => {
-    // Clean up previous preview URL
+    if (user && isAdmin && appMode === 'onboarding') {
+      if (!workshopTreasureCoinId?.trim()) {
+        showToast('Save Treasure Draft first to create a coin, then upload media.', 'error');
+        return;
+      }
+      if (filePreviewUrl) {
+        URL.revokeObjectURL(filePreviewUrl);
+      }
+      const previewUrl = URL.createObjectURL(file);
+      setFilePreviewUrl(previewUrl);
+      setUploadedFile(file);
+      setOnboardingData((prev) => ({ ...prev, uploadedFile: file }));
+
+      void (async () => {
+        const uploadFn = workshopFeaturedHandlersRef.current?.uploadFeatured;
+        if (!uploadFn) {
+          showToast('Featured staging unavailable — sign in as admin and open workshop.', 'error');
+          return;
+        }
+        const ok = await uploadFn(file);
+        if (ok) {
+          setUploadedFile(null);
+          setFilePreviewUrl((prev) => {
+            if (prev) URL.revokeObjectURL(prev);
+            return null;
+          });
+          setOnboardingAspectRatio(null);
+        }
+      })();
+      return;
+    }
+
     if (filePreviewUrl) {
       URL.revokeObjectURL(filePreviewUrl);
     }
-    
-    // Create new preview URL
+
     const previewUrl = URL.createObjectURL(file);
     setFilePreviewUrl(previewUrl);
-    
+
     setUploadedFile(file);
-    setOnboardingData(prev => ({ ...prev, uploadedFile: file }));
+    setOnboardingData((prev) => ({ ...prev, uploadedFile: file }));
     console.log('File selected:', file.name, file.type, file.size);
-  }, [filePreviewUrl]);
-  
+  }, [appMode, filePreviewUrl, isAdmin, showToast, user, workshopTreasureCoinId]);
+
   // Cleanup preview URL when component unmounts
   useEffect(() => {
     return () => {
@@ -1289,11 +1362,19 @@ const ArtistPageContent: React.FC<{
   const handleExitOnboarding = useCallback(() => {
     // Clear onboarding mode flag
     (window as any).onboardingMode = false;
-    
+
     setAppMode('normal');
     setOnboardingArtistName('WELCOME, ARTIST!');
     setOnboardingData({});
     setUploadedFile(null);
+    setFilePreviewUrl((prev) => {
+      if (prev) URL.revokeObjectURL(prev);
+      return null;
+    });
+    setOnboardingAspectRatio(null);
+    setWorkshopTreasureCoinId(null);
+    setWorkshopFeaturedHttpsUrl(null);
+    workshopFeaturedHandlersRef.current = null;
     setUploadAssetData({ title: '', price: 5, description: '' });
     showToast(appMode === 'upload-asset' ? 'Upload cancelled' : 'Onboarding cancelled', 'info');
   }, [showToast, appMode]);
@@ -2303,6 +2384,99 @@ const ArtistPageContent: React.FC<{
                                 ✕
                               </button>
                             </>
+                          ) : user &&
+                            isAdmin &&
+                            appMode === 'onboarding' &&
+                            workshopFeaturedHttpsUrl ? (
+                            <>
+                              {workshopFeaturedUrlMediaKind(workshopFeaturedHttpsUrl) === 'image' ? (
+                                <img
+                                  src={workshopFeaturedHttpsUrl}
+                                  alt=""
+                                  style={{
+                                    width: '100%',
+                                    height: '100%',
+                                    objectFit: 'contain',
+                                    borderRadius: 14,
+                                    background: 'transparent',
+                                  }}
+                                  onLoad={(e) => {
+                                    const img = e.currentTarget as HTMLImageElement;
+                                    if (img.naturalWidth && img.naturalHeight) {
+                                      setOnboardingAspectRatio(img.naturalWidth / img.naturalHeight);
+                                    }
+                                  }}
+                                />
+                              ) : workshopFeaturedUrlMediaKind(workshopFeaturedHttpsUrl) === 'video' ? (
+                                <video
+                                  src={workshopFeaturedHttpsUrl}
+                                  style={{
+                                    width: '100%',
+                                    height: '100%',
+                                    objectFit: 'contain',
+                                    borderRadius: 14,
+                                    background: 'transparent',
+                                  }}
+                                  controls
+                                  muted
+                                  preload="metadata"
+                                  playsInline
+                                  onLoadedMetadata={(e) => {
+                                    const v = e.currentTarget as HTMLVideoElement;
+                                    if (v.videoWidth && v.videoHeight) {
+                                      setOnboardingAspectRatio(v.videoWidth / v.videoHeight);
+                                    }
+                                  }}
+                                />
+                              ) : (
+                                <div
+                                  style={{
+                                    width: '100%',
+                                    height: '100%',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    padding: '1rem',
+                                  }}
+                                >
+                                  <audio
+                                    controls
+                                    src={workshopFeaturedHttpsUrl}
+                                    style={{ width: '100%', maxWidth: 560 }}
+                                  />
+                                </div>
+                              )}
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  workshopFeaturedHandlersRef.current?.clearFeatured();
+                                  setOnboardingAspectRatio(null);
+                                }}
+                                style={{
+                                  position: 'absolute',
+                                  right: 12,
+                                  top: 12,
+                                  background: 'rgba(0,0,0,0.4)',
+                                  color: '#fff',
+                                  border: '1px solid rgba(255,255,255,0.6)',
+                                  borderRadius: 8,
+                                  padding: '6px 8px',
+                                  fontSize: 12,
+                                  cursor: 'pointer',
+                                  height: 28,
+                                  lineHeight: 1,
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  width: 28,
+                                  zIndex: 100,
+                                }}
+                                aria-label="Remove featured asset"
+                              >
+                                ✕
+                              </button>
+                            </>
                           ) : (
                             // Show upload prompt - centered over halo
                             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center', padding: '2rem' }}>
@@ -2574,6 +2748,10 @@ const ArtistPageContent: React.FC<{
               getDidToken={getDidToken}
               inviteLaunchCoinPublicId={inviteLaunchBridge?.coinPublicId ?? null}
               onRegisterLoadTreasureDraftByCoin={registerLoadTreasureDraftByCoin}
+              onTreasureDraftCoinPublicIdChange={handleTreasureDraftCoinPublicIdChange}
+              onWorkshopFeaturedHttpsChange={handleWorkshopFeaturedHttpsChange}
+              onClearWorkshopHeroStaging={handleClearWorkshopHeroStaging}
+              onRegisterWorkshopFeaturedHandlers={registerWorkshopFeaturedHandlers}
             />
           )}
 
