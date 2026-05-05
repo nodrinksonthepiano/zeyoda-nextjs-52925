@@ -1,8 +1,29 @@
 "use client";
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useMemo } from 'react';
 import Link from 'next/link';
 import { ArtistConfig, RenderableToken } from '../../types/artist-types';
-import { OrbitToken } from '../hooks/useOrbitTokens'; 
+import { OrbitToken } from '../hooks/useOrbitTokens';
+
+export type SupplementalDraftOrbitToken = {
+  coinPublicId: string;
+  label: string;
+  /** From draft_payload.theme — chip uses draft artist branding, not host page. */
+  theme?: {
+    primaryColor: string;
+    accentColor: string;
+    fontFamily: string;
+  } | null;
+};
+
+type OrbitSlotToken = RenderableToken & {
+  draftCoinPublicId?: string;
+  chipLabel?: string;
+  draftChipTheme?: {
+    primaryColor: string;
+    accentColor: string;
+    fontFamily: string;
+  };
+};
 
 interface ThemeOrbitRendererProps {
   artistConfig: ArtistConfig | null;
@@ -10,6 +31,15 @@ interface ThemeOrbitRendererProps {
   videoContainerRef: React.RefObject<HTMLDivElement | null>;
   isOrbitAnimationPaused: React.MutableRefObject<boolean>;
   allArtistsConfig: { [key: string]: ArtistConfig } | null;
+  /** Workshop draft chips — click only; never artist navigation. */
+  supplementalDraftOrbitTokens?: SupplementalDraftOrbitToken[];
+  onSupplementalDraftClick?: (coinPublicId: string) => void;
+  /** When true, `artistConfig.orbitalTokens` are omitted (draft-only workshop ring). */
+  omitArtistOrbitalTokens?: boolean;
+  /** Tighter ring for small heroes (e.g. workshop). Default 1. */
+  orbitRadiusScale?: number;
+  /** When true, only `.orbit-token` elements receive pointer events (workshop drop zone stays clickable). */
+  orbitPointerEventsOnTokensOnly?: boolean;
 }
 
 const ORBIT_SPEED = 0.3; // natural radians/sec
@@ -25,6 +55,11 @@ const ThemeOrbitRenderer: React.FC<ThemeOrbitRendererProps> = ({
   videoContainerRef,
   isOrbitAnimationPaused,
   allArtistsConfig,
+  supplementalDraftOrbitTokens,
+  onSupplementalDraftClick,
+  omitArtistOrbitalTokens = false,
+  orbitRadiusScale = 1,
+  orbitPointerEventsOnTokensOnly = false,
 }) => {
   const tokenElementRefs = useRef<(HTMLElement | null)[]>([]);
   const animationFrameIdRef = useRef<number | null>(null);
@@ -80,6 +115,28 @@ const ThemeOrbitRenderer: React.FC<ThemeOrbitRendererProps> = ({
     setPreviewConfig(null);
   }, [artistConfig?.id, artistConfig?.name]);
 
+  const orbitSlotTokens = useMemo((): OrbitSlotToken[] => {
+    if (!artistConfig) return [];
+    const fromConfig = omitArtistOrbitalTokens ? [] : (artistConfig.orbitalTokens || []);
+    const fromOrbit = orbitTokens.map((token) => ({
+      name: token.displayName,
+      angle: 0,
+      artistId: token.artistId,
+    }));
+    const merged: OrbitSlotToken[] = [...fromConfig, ...fromOrbit].filter(
+      (token, index, self) => token.name && self.findIndex((t) => t.name === token.name) === index,
+    );
+    const supplementalSlots: OrbitSlotToken[] = (supplementalDraftOrbitTokens ?? []).map((d) => ({
+      name: d.coinPublicId,
+      angle: 0,
+      artistId: artistConfig.name,
+      draftCoinPublicId: d.coinPublicId,
+      chipLabel: d.label,
+      draftChipTheme: d.theme ?? undefined,
+    }));
+    return [...merged, ...supplementalSlots];
+  }, [artistConfig, orbitTokens, supplementalDraftOrbitTokens, omitArtistOrbitalTokens]);
+
   useEffect(() => {
     const videoElement = videoContainerRef.current;
     if (!artistConfig || !videoElement) {
@@ -90,13 +147,7 @@ const ThemeOrbitRenderer: React.FC<ThemeOrbitRendererProps> = ({
         return;
     }
 
-    const combinedTokens = [...(artistConfig?.orbitalTokens || []), ...orbitTokens.map(token => ({
-      name: token.displayName,
-      angle: 0, // Will be recalculated below
-      artistId: token.artistId
-    }))].filter((token, index, self) => 
-        token.name && self.findIndex(t => t.name === token.name) === index
-    );
+    const combinedTokens = orbitSlotTokens;
 
     // Distribute angles evenly across all tokens with offset
     const allTokens = combinedTokens.map((token, index) => ({
@@ -139,8 +190,9 @@ const ThemeOrbitRenderer: React.FC<ThemeOrbitRendererProps> = ({
         centerRef.current = { cx: window.innerWidth / 2, cy: window.innerHeight / 2 };
       }
 
-      const radiusX = (contentWidth / 2) + 60;
-      const radiusY = (contentHeight / 2) + 40;
+      const scale = orbitRadiusScale;
+      const radiusX = ((contentWidth / 2) + 60) * scale;
+      const radiusY = ((contentHeight / 2) + 40) * scale;
       const currentGlobalAngleOffset = naturalOffsetRef.current + userOffsetRef.current;
       
       allTokens.forEach((tokenData, index) => {
@@ -374,26 +426,29 @@ const ThemeOrbitRenderer: React.FC<ThemeOrbitRendererProps> = ({
       window.removeEventListener('carousel:stable', onStable);
       try { (onStable as any).cleanup?.(); } catch {}
     };
-  }, [artistConfig, orbitTokens, orbitAngleOffset, isOrbitAnimationPaused, videoContainerRef]);
+  }, [artistConfig, orbitSlotTokens, orbitAngleOffset, isOrbitAnimationPaused, videoContainerRef, orbitRadiusScale]);
 
   if (!artistConfig) return null;
 
   return (
-    <div className="orbit-theme">
+    <div
+      className="orbit-theme"
+      style={orbitPointerEventsOnTokensOnly ? { pointerEvents: 'none' } : undefined}
+    >
       <div 
         className="orbital-tokens"
         ref={orbitContainerRef}
         onMouseEnter={() => { /* pause handled on token hover */ }}
         onMouseLeave={() => { if (!isInteractingRef.current) isOrbitAnimationPaused.current = false; }}
-        style={{ touchAction: 'none', overscrollBehavior: 'contain' as any }}
+        style={{
+          touchAction: 'none',
+          overscrollBehavior: 'contain' as any,
+          ...(orbitPointerEventsOnTokensOnly ? { pointerEvents: 'none' } : {}),
+        }}
       >
-        {(([...(artistConfig?.orbitalTokens || []), ...orbitTokens.map(token => ({
-          name: token.displayName,
-          angle: 0,
-          artistId: token.artistId
-        }))] as RenderableToken[])
-          .filter((token, index, self) => token.name && self.findIndex(t => t.name === token.name) === index)
-          .map((token: RenderableToken, index: number) => {
+        {orbitSlotTokens.map((token, index) => {
+            const isDraftChip = Boolean(token.draftCoinPublicId && onSupplementalDraftClick);
+            const chipText = token.chipLabel ?? token.name;
             // CRITICAL: Merged lookup for live coin color updates
             // During editing: uses previewConfig (from ProfileEditPanel event) for immediate updates
             // After save: uses artistConfig (updated state) for persistence
@@ -412,13 +467,78 @@ const ThemeOrbitRenderer: React.FC<ThemeOrbitRendererProps> = ({
               // Other artists: use allArtistsConfig (from hook, updates on refresh)
               return allArtistsConfig?.[aid]?.theme;
             };
-            
-            const aid = token.artistId ? token.artistId.toLowerCase() : undefined as string | undefined;
-            const tokenTheme = getTokenTheme(token.artistId);
+
+            const isDraftOrbitChip = Boolean(token.draftCoinPublicId);
+            const tokenTheme = isDraftOrbitChip
+              ? token.draftChipTheme
+                ? {
+                    primaryColor: token.draftChipTheme.primaryColor,
+                    accentColor: token.draftChipTheme.accentColor,
+                    fontFamily: token.draftChipTheme.fontFamily,
+                  }
+                : undefined
+              : getTokenTheme(token.artistId);
             const bg = tokenTheme?.primaryColor || '#0a1230';
             const fg = tokenTheme?.accentColor || '#1e5cff';
             const ff = tokenTheme?.fontFamily || 'Bungee, cursive';
-            
+
+            const commonStyle: React.CSSProperties = {
+              willChange: 'transform, opacity',
+              opacity: 1,
+              transform: 'var(--orbit-pos, translate(-50%, -50%))',
+              background: bg,
+              color: fg,
+              border: `2px solid ${fg}`,
+              fontFamily: ff,
+              cursor: 'grab',
+              ...(orbitPointerEventsOnTokensOnly ? { pointerEvents: 'auto' as const } : {}),
+            };
+
+            const commonHandlers = {
+              onMouseEnter: (e: React.MouseEvent<HTMLElement>) => { e.currentTarget.setAttribute('data-hovered', 'true'); isHoveringRef.current = true; if (hoverPauseTimerRef.current) window.clearTimeout(hoverPauseTimerRef.current); isOrbitAnimationPaused.current = true; },
+              onMouseLeave: (e: React.MouseEvent<HTMLElement>) => { e.currentTarget.setAttribute('data-hovered', 'false'); isHoveringRef.current = false; if (hoverPauseTimerRef.current) window.clearTimeout(hoverPauseTimerRef.current); hoverPauseTimerRef.current = window.setTimeout(()=>{ if (!isInteractingRef.current) isOrbitAnimationPaused.current = false; }, 200) as unknown as number; },
+              onDragStart: (e: React.DragEvent<HTMLElement>) => { e.preventDefault(); },
+              onPointerDown: (e: React.PointerEvent<HTMLElement>)=>{ try { (e.currentTarget as any).setPointerCapture?.(e.pointerId); } catch {}; activePointerIdRef.current = e.pointerId; isInteractingRef.current = true; draggingTokenRef.current = false; downXYRef.current = { x: e.clientX, y: e.clientY }; downTsRef.current = (typeof performance!=='undefined'?performance.now():Date.now()); const { cx, cy } = centerRef.current; lastAngleRef.current = Math.atan2(e.clientY - cy, e.clientX - cx); suppressClickRef.current = false; (e.currentTarget.style as any).cursor = 'grabbing'; },
+              onPointerMove: (e: React.PointerEvent<HTMLElement>)=>{ if (activePointerIdRef.current !== e.pointerId || lastAngleRef.current===null) return; const dx = e.clientX - (downXYRef.current?.x||e.clientX); const dy = e.clientY - (downXYRef.current?.y||e.clientY); if (!draggingTokenRef.current && (dx*dx+dy*dy) > 36) { draggingTokenRef.current = true; suppressClickRef.current = true; } const now = (typeof performance!=='undefined'?performance.now():Date.now()); const dt = Math.max(8, Math.min(80, now - (lastEventTsRef.current||now))) * 0.001; const { cx, cy } = centerRef.current; const ang = Math.atan2(e.clientY - cy, e.clientX - cx); let d = ang - (lastAngleRef.current||ang); if (d > Math.PI) d -= 2*Math.PI; else if (d < -Math.PI) d += 2*Math.PI; userOffsetRef.current += d; userVelocityRef.current = 0.6*userVelocityRef.current + 0.4 * (d/dt); lastAngleRef.current = ang; lastEventTsRef.current = now; },
+              onPointerUp: (e: React.PointerEvent<HTMLElement>)=>{ if (activePointerIdRef.current !== null) { try { (e.currentTarget as any).releasePointerCapture?.(activePointerIdRef.current); } catch {} } activePointerIdRef.current = null; isInteractingRef.current = false; draggingTokenRef.current = false; lastAngleRef.current = null; (e.currentTarget.style as any).cursor = 'grab'; if (hoverPauseTimerRef.current) window.clearTimeout(hoverPauseTimerRef.current); hoverPauseTimerRef.current = window.setTimeout(()=>{ isOrbitAnimationPaused.current = false; }, 120) as unknown as number; setTimeout(()=>{ suppressClickRef.current = false; }, 30); },
+              onClickCapture: (e: React.MouseEvent<HTMLElement>)=>{ if (suppressClickRef.current) { e.preventDefault(); e.stopPropagation(); } },
+            };
+
+            if (isDraftChip) {
+              return (
+                <button
+                  type="button"
+                  key={`orbit-draft-${token.draftCoinPublicId}-${index}`}
+                  className="orbit-token"
+                  data-draft-coin={token.draftCoinPublicId}
+                  ref={(el: HTMLElement | null) => {
+                    tokenElementRefs.current[index] = el;
+                  }}
+                  style={{
+                    ...commonStyle,
+                    appearance: 'none',
+                    WebkitAppearance: 'none',
+                    margin: 0,
+                  }}
+                  draggable={false}
+                  {...commonHandlers}
+                  onPointerDown={(e) => {
+                    e.stopPropagation();
+                    commonHandlers.onPointerDown(e);
+                  }}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    if (suppressClickRef.current) return;
+                    onSupplementalDraftClick!(token.draftCoinPublicId!);
+                  }}
+                  title={`Load draft ${chipText}`}
+                >
+                  {chipText}
+                </button>
+              );
+            }
+
             return (
               <Link 
                 key={`orbit-${token.name}-${token.artistId || 'standalone'}-${index}`}
@@ -428,31 +548,21 @@ const ThemeOrbitRenderer: React.FC<ThemeOrbitRendererProps> = ({
                 ref={(el: HTMLElement | null) => {
                   tokenElementRefs.current[index] = el;
                 }}
-                style={{
-                  willChange: 'transform, opacity',
-                  opacity: 1, // Always visible, positionOnce handles initial placement
-                  transform: 'var(--orbit-pos, translate(-50%, -50%))',
-                  background: bg,
-                  color: fg,
-                  border: `2px solid ${fg}`,
-                  fontFamily: ff,
-                  cursor: 'grab'
-                }}
-                onMouseEnter={(e) => { e.currentTarget.setAttribute('data-hovered', 'true'); isHoveringRef.current = true; if (hoverPauseTimerRef.current) window.clearTimeout(hoverPauseTimerRef.current); isOrbitAnimationPaused.current = true; }}
-                onMouseLeave={(e) => { e.currentTarget.setAttribute('data-hovered', 'false'); isHoveringRef.current = false; if (hoverPauseTimerRef.current) window.clearTimeout(hoverPauseTimerRef.current); hoverPauseTimerRef.current = window.setTimeout(()=>{ if (!isInteractingRef.current) isOrbitAnimationPaused.current = false; }, 200) as unknown as number; }}
-                onDragStart={(e) => { e.preventDefault(); }}
+                style={commonStyle}
+                onMouseEnter={commonHandlers.onMouseEnter}
+                onMouseLeave={commonHandlers.onMouseLeave}
+                onDragStart={commonHandlers.onDragStart}
                 draggable={false}
-                onPointerDown={(e)=>{ try { (e.currentTarget as any).setPointerCapture?.(e.pointerId); } catch {}; activePointerIdRef.current = e.pointerId; isInteractingRef.current = true; draggingTokenRef.current = false; downXYRef.current = { x: e.clientX, y: e.clientY }; downTsRef.current = (typeof performance!=='undefined'?performance.now():Date.now()); const { cx, cy } = centerRef.current; lastAngleRef.current = Math.atan2(e.clientY - cy, e.clientX - cx); suppressClickRef.current = false; (e.currentTarget.style as any).cursor = 'grabbing'; }}
-                onPointerMove={(e)=>{ if (activePointerIdRef.current !== e.pointerId || lastAngleRef.current===null) return; const dx = e.clientX - (downXYRef.current?.x||e.clientX); const dy = e.clientY - (downXYRef.current?.y||e.clientY); if (!draggingTokenRef.current && (dx*dx+dy*dy) > 36) { draggingTokenRef.current = true; suppressClickRef.current = true; } const now = (typeof performance!=='undefined'?performance.now():Date.now()); const dt = Math.max(8, Math.min(80, now - (lastEventTsRef.current||now))) * 0.001; const { cx, cy } = centerRef.current; const ang = Math.atan2(e.clientY - cy, e.clientX - cx); let d = ang - (lastAngleRef.current||ang); if (d > Math.PI) d -= 2*Math.PI; else if (d < -Math.PI) d += 2*Math.PI; userOffsetRef.current += d; userVelocityRef.current = 0.6*userVelocityRef.current + 0.4 * (d/dt); lastAngleRef.current = ang; lastEventTsRef.current = now; }}
-                onPointerUp={(e)=>{ if (activePointerIdRef.current !== null) { try { (e.currentTarget as any).releasePointerCapture?.(activePointerIdRef.current); } catch {} } activePointerIdRef.current = null; isInteractingRef.current = false; draggingTokenRef.current = false; lastAngleRef.current = null; (e.currentTarget.style as any).cursor = 'grab'; if (hoverPauseTimerRef.current) window.clearTimeout(hoverPauseTimerRef.current); hoverPauseTimerRef.current = window.setTimeout(()=>{ isOrbitAnimationPaused.current = false; }, 120) as unknown as number; setTimeout(()=>{ suppressClickRef.current = false; }, 30); }}
-                onClickCapture={(e)=>{ if (suppressClickRef.current) { e.preventDefault(); e.stopPropagation(); } }}
+                onPointerDown={commonHandlers.onPointerDown}
+                onPointerMove={commonHandlers.onPointerMove}
+                onPointerUp={commonHandlers.onPointerUp}
+                onClickCapture={commonHandlers.onClickCapture}
                 title={token.artistId ? `Explore ${allArtistsConfig?.[token.artistId]?.displayName || token.name}` : token.name}
               >
                 {token.name}
               </Link>
             );
-          }))
-        }
+          })}
       </div>
     </div>
   );

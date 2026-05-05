@@ -62,6 +62,23 @@ interface PriceDetails {
   investorShare: number;
 }
 
+/** Safe row from GET /api/invite/admin-drafts */
+interface AdminInviteDraftListRow {
+  coin_public_id: string;
+  artist_slug: string;
+  status: 'draft';
+  updated_at: string;
+  displayname: string | null;
+  tokenName: string | null;
+  logo_url: string | null;
+  featured_asset_url: string | null;
+  theme: {
+    primaryColor: string;
+    accentColor: string;
+    fontFamily: string;
+  } | null;
+}
+
 const ArtistPageContent: React.FC<{
   artistConfig: ArtistConfig;
   allArtistsConfig: { [key: string]: ArtistConfig } | null;
@@ -117,6 +134,7 @@ const ArtistPageContent: React.FC<{
 
   // Admin state (for feedback inbox)
   const [isAdmin, setIsAdmin] = useState(false);
+  const [adminInviteDraftRows, setAdminInviteDraftRows] = useState<AdminInviteDraftListRow[]>([]);
 
   useEffect(() => {
     if (!user) {
@@ -142,6 +160,36 @@ const ArtistPageContent: React.FC<{
     })();
     return () => { cancelled = true; };
   }, [user, getDidToken]);
+
+  useEffect(() => {
+    if (!user || !isAdmin || appMode !== 'onboarding') {
+      setAdminInviteDraftRows([]);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const token = await getDidToken();
+        if (!token || cancelled) return;
+        const res = await fetch('/api/invite/admin-drafts', {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const data = await res.json().catch(() => ({}));
+        if (cancelled) return;
+        if (!res.ok) {
+          setAdminInviteDraftRows([]);
+          return;
+        }
+        const drafts = Array.isArray(data.drafts) ? data.drafts : [];
+        setAdminInviteDraftRows(drafts as AdminInviteDraftListRow[]);
+      } catch {
+        if (!cancelled) setAdminInviteDraftRows([]);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [user, isAdmin, appMode, getDidToken]);
 
   useEffect(() => {
     if (!inviteLaunchBridge) return;
@@ -463,6 +511,7 @@ const ArtistPageContent: React.FC<{
 
   const videoContainerRef = useRef<HTMLDivElement>(null);
   const onboardingContainerRef = useRef<HTMLDivElement>(null);
+  const loadDraftByCoinRef = useRef<((coin: string) => Promise<void>) | null>(null);
   const isOrbitAnimationPaused = useRef(false);
   const lastShakeRequestRef = useRef<number>(0);
 
@@ -1296,6 +1345,28 @@ const ArtistPageContent: React.FC<{
 
   // Use the new orbit tokens hook with includeUnowned for orbit display
   const orbitTokens = useOrbitTokens(userTokenBalances, allArtistsConfig, { includeUnowned: true });
+
+  const workshopSupplementalOrbitTokens = useMemo(
+    () =>
+      adminInviteDraftRows.map((d) => ({
+        coinPublicId: d.coin_public_id,
+        label:
+          d.displayname?.trim() || d.tokenName?.trim() || d.coin_public_id.slice(0, 8),
+        theme: d.theme ?? null,
+      })),
+    [adminInviteDraftRows],
+  );
+
+  const showWorkshopDraftOrbit =
+    Boolean(user) && isAdmin && appMode === 'onboarding' && workshopSupplementalOrbitTokens.length > 0;
+
+  const registerLoadTreasureDraftByCoin = useCallback((fn: (coin: string) => Promise<void>) => {
+    loadDraftByCoinRef.current = fn;
+  }, []);
+
+  const handleWorkshopDraftOrbitClick = useCallback((coinPublicId: string) => {
+    void loadDraftByCoinRef.current?.(coinPublicId);
+  }, []);
 
 
 
@@ -2136,7 +2207,16 @@ const ArtistPageContent: React.FC<{
                         }}
                         onDragOver={handleDragOver}
                         onDrop={handleDrop}
-                        onClick={!uploadedFile ? handleUploadClick : undefined}
+                        onClick={
+                          !uploadedFile
+                            ? (e) => {
+                                if ((e.target as HTMLElement).closest?.('[data-draft-coin]')) {
+                                  return;
+                                }
+                                handleUploadClick();
+                              }
+                            : undefined
+                        }
                       >
                         {/* Halo for onboarding - behind content */}
                         {appMode === 'onboarding' && (
@@ -2242,6 +2322,29 @@ const ArtistPageContent: React.FC<{
                             </div>
                           )}
                         </div>
+                        {showWorkshopDraftOrbit && (
+                          <div
+                            style={{
+                              position: 'absolute',
+                              inset: 0,
+                              zIndex: 15,
+                              pointerEvents: 'none',
+                            }}
+                          >
+                            <ThemeOrbitRenderer
+                              artistConfig={artistConfig}
+                              orbitTokens={[]}
+                              supplementalDraftOrbitTokens={workshopSupplementalOrbitTokens}
+                              onSupplementalDraftClick={handleWorkshopDraftOrbitClick}
+                              omitArtistOrbitalTokens
+                              orbitRadiusScale={0.72}
+                              orbitPointerEventsOnTokensOnly
+                              videoContainerRef={onboardingContainerRef}
+                              isOrbitAnimationPaused={isOrbitAnimationPaused}
+                              allArtistsConfig={allArtistsConfig}
+                            />
+                          </div>
+                        )}
                       </div>
                     </>
                   ) : (
@@ -2470,6 +2573,7 @@ const ArtistPageContent: React.FC<{
               isAdmin={isAdmin}
               getDidToken={getDidToken}
               inviteLaunchCoinPublicId={inviteLaunchBridge?.coinPublicId ?? null}
+              onRegisterLoadTreasureDraftByCoin={registerLoadTreasureDraftByCoin}
             />
           )}
 

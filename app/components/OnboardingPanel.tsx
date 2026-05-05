@@ -22,6 +22,8 @@ interface OnboardingPanelProps {
   getDidToken?: () => Promise<string | null>;
   /** When opening onboarding from claim handoff, carry coin id for draft workshop + snapshot. */
   inviteLaunchCoinPublicId?: string | null;
+  /** Workshop draft orbit: parent registers loader to call same hydrate path as paste+Load. */
+  onRegisterLoadTreasureDraftByCoin?: (loadByCoin: (coin: string) => Promise<void>) => void;
 }
 
 type TreasureCommittedSnapshot = {
@@ -91,6 +93,50 @@ function clientSlugFromDisplayName(displayname: string): string {
   const out = s.slice(0, 80);
   if (!out) throw new Error('Invalid artist name for slug');
   return out;
+}
+
+/** After admin-draft hydrate: mirror handleFieldChange DOM effects so workshop canvas/halo match form. */
+function applyWorkshopVisualsFromInviteDraftForm(form: InviteDraftFormInput) {
+  if (typeof document === 'undefined') return;
+
+  const bgHttps =
+    typeof form.background_image_url === 'string' && form.background_image_url.startsWith('https://')
+      ? form.background_image_url
+      : null;
+  const logoHttps =
+    typeof form.logo_url === 'string' && form.logo_url.startsWith('https://') ? form.logo_url : null;
+
+  if (form.background_use_image && bgHttps) {
+    document.body.style.backgroundImage = `url(${bgHttps})`;
+    document.body.style.backgroundSize = 'cover';
+    document.body.style.backgroundPosition = 'center';
+    document.body.style.backgroundRepeat = 'no-repeat';
+  } else if (form.logo_use_background && logoHttps) {
+    document.body.style.backgroundImage = `url(${logoHttps})`;
+    document.body.style.backgroundSize = 'cover';
+    document.body.style.backgroundPosition = 'center';
+    document.body.style.backgroundRepeat = 'no-repeat';
+  } else {
+    document.body.style.backgroundImage = 'none';
+    document.body.style.background = form.theme.primaryColor;
+  }
+
+  window.dispatchEvent(
+    new CustomEvent('primaryColorChange', { detail: { color: form.theme.primaryColor } }),
+  );
+
+  document.documentElement.style.setProperty('--primary-color', form.theme.primaryColor);
+  document.documentElement.style.setProperty('--accent-color', form.theme.accentColor);
+  document.documentElement.style.setProperty('--gradient-start', form.theme.gradientStart);
+  document.documentElement.style.setProperty('--gradient-middle', form.theme.gradientMiddle);
+  document.documentElement.style.setProperty('--gradient-end', form.theme.gradientEnd);
+
+  const headerElement = document.querySelector('h1');
+  if (headerElement) {
+    headerElement.style.color = form.theme.accentColor;
+    headerElement.style.fontFamily = form.theme.fontFamily;
+  }
+  document.body.style.fontFamily = form.theme.fontFamily;
 }
 
 const COLOR_PRESETS = {
@@ -200,6 +246,7 @@ const OnboardingPanel: React.FC<OnboardingPanelProps> = ({
   isAdmin = false,
   getDidToken,
   inviteLaunchCoinPublicId = null,
+  onRegisterLoadTreasureDraftByCoin,
 }) => {
   const { showToast } = useToast();
   const ea = existingArtist as Record<string, unknown> | undefined;
@@ -528,86 +575,103 @@ const OnboardingPanel: React.FC<OnboardingPanelProps> = ({
     [getDidToken, showToast, treasureDraftCoinPublicId],
   );
 
+  const loadTreasureDraftByCoinId = useCallback(
+    async (coinRawInput: string) => {
+      const coinRaw = coinRawInput.trim();
+      if (!coinRaw) {
+        showToast('Enter coin_public_id', 'error');
+        return;
+      }
+      if (!getDidToken) {
+        showToast('Wallet not configured', 'error');
+        return;
+      }
+      setTreasureBusy('load');
+      try {
+        const token = await getDidToken();
+        if (!token) {
+          showToast('Sign in required', 'error');
+          return;
+        }
+
+        const res = await fetch(`/api/invite/admin-draft?coin=${encodeURIComponent(coinRaw)}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+
+        const data = await res.json().catch(() => ({}));
+
+        if (res.status === 409) {
+          const st = typeof data.status === 'string' ? data.status : 'non-draft';
+          showToast(`${st}: ${data.error || 'not a draft invite'}`, 'error');
+          return;
+        }
+
+        if (!res.ok) {
+          showToast(typeof data.error === 'string' ? data.error : `Load failed (${res.status})`, 'error');
+          return;
+        }
+
+        const slug = typeof data.artist_slug === 'string' ? data.artist_slug : '';
+        const coin = typeof data.coin_public_id === 'string' ? data.coin_public_id : coinRaw;
+
+        const draftPayload =
+          data.draft_payload && typeof data.draft_payload === 'object'
+            ? (data.draft_payload as Record<string, unknown>)
+            : {};
+
+        const base = createInviteFormBaseline(mode, ea);
+        const merged = applyInviteDraftPayloadToForm(base, draftPayload);
+        setFormData(merged);
+        const dn = merged.displayname?.trim?.() || merged.tokenName?.trim?.() || '';
+        if (dn) onArtistNameChange(dn);
+
+        setTreasureDraftCoinPublicId(coin);
+        setLoadTreasureDraftCoinQuery(coin);
+        if (slug && coin) {
+          setTreasureDraftTreasureUrl(clientTreasureUrlForInvite(slug, coin));
+        } else if (coin) {
+          setTreasureDraftTreasureUrl(null);
+        }
+
+        setLogoPreview((prev) => {
+          if (prev?.startsWith('blob:')) URL.revokeObjectURL(prev);
+          if (merged.logo_url?.startsWith('https://')) return merged.logo_url;
+          return merged.logo_url === null ? null : prev;
+        });
+        setBackgroundPreview((prev) => {
+          if (prev?.startsWith('blob:')) URL.revokeObjectURL(prev);
+          if (merged.background_image_url?.startsWith('https://')) return merged.background_image_url;
+          return merged.background_image_url === null ? null : prev;
+        });
+
+        setCommittedTreasureSnapshot({
+          form: cloneInviteDraftForm(merged),
+          coinPublicId: coin,
+          reservedEmail: '',
+        });
+
+        if (mode === 'onboarding') {
+          applyWorkshopVisualsFromInviteDraftForm(merged);
+        }
+
+        showToast(`Loaded draft ${coin}`, 'success');
+      } catch {
+        showToast('Load draft failed', 'error');
+      } finally {
+        setTreasureBusy('idle');
+      }
+    },
+    [ea, getDidToken, mode, onArtistNameChange, showToast],
+  );
+
+  useEffect(() => {
+    if (!onRegisterLoadTreasureDraftByCoin) return;
+    onRegisterLoadTreasureDraftByCoin(loadTreasureDraftByCoinId);
+  }, [onRegisterLoadTreasureDraftByCoin, loadTreasureDraftByCoinId]);
+
   const handleLoadTreasureDraft = useCallback(async () => {
-    const coinRaw = loadTreasureDraftCoinQuery.trim();
-    if (!coinRaw) {
-      showToast('Enter coin_public_id', 'error');
-      return;
-    }
-    if (!getDidToken) {
-      showToast('Wallet not configured', 'error');
-      return;
-    }
-    setTreasureBusy('load');
-    try {
-      const token = await getDidToken();
-      if (!token) {
-        showToast('Sign in required', 'error');
-        return;
-      }
-
-      const res = await fetch(`/api/invite/admin-draft?coin=${encodeURIComponent(coinRaw)}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-
-      const data = await res.json().catch(() => ({}));
-
-      if (res.status === 409) {
-        const st = typeof data.status === 'string' ? data.status : 'non-draft';
-        showToast(`${st}: ${data.error || 'not a draft invite'}`, 'error');
-        return;
-      }
-
-      if (!res.ok) {
-        showToast(typeof data.error === 'string' ? data.error : `Load failed (${res.status})`, 'error');
-        return;
-      }
-
-      const slug = typeof data.artist_slug === 'string' ? data.artist_slug : '';
-      const coin = typeof data.coin_public_id === 'string' ? data.coin_public_id : coinRaw;
-
-      const draftPayload =
-        data.draft_payload && typeof data.draft_payload === 'object'
-          ? (data.draft_payload as Record<string, unknown>)
-          : {};
-
-      const base = createInviteFormBaseline(mode, ea);
-      const merged = applyInviteDraftPayloadToForm(base, draftPayload);
-      setFormData(merged);
-      const dn = merged.displayname?.trim?.() || merged.tokenName?.trim?.() || '';
-      if (dn) onArtistNameChange(dn);
-
-      setTreasureDraftCoinPublicId(coin);
-      if (slug && coin) {
-        setTreasureDraftTreasureUrl(clientTreasureUrlForInvite(slug, coin));
-      } else if (coin) {
-        setTreasureDraftTreasureUrl(null);
-      }
-
-      setLogoPreview((prev) => {
-        if (prev?.startsWith('blob:')) URL.revokeObjectURL(prev);
-        if (merged.logo_url?.startsWith('https://')) return merged.logo_url;
-        return merged.logo_url === null ? null : prev;
-      });
-      setBackgroundPreview((prev) => {
-        if (prev?.startsWith('blob:')) URL.revokeObjectURL(prev);
-        if (merged.background_image_url?.startsWith('https://')) return merged.background_image_url;
-        return merged.background_image_url === null ? null : prev;
-      });
-
-      setCommittedTreasureSnapshot({
-        form: cloneInviteDraftForm(merged),
-        coinPublicId: coin,
-        reservedEmail: '',
-      });
-
-      showToast(`Loaded draft ${coin}`, 'success');
-    } catch {
-      showToast('Load draft failed', 'error');
-    } finally {
-      setTreasureBusy('idle');
-    }
-  }, [ea, getDidToken, loadTreasureDraftCoinQuery, mode, onArtistNameChange, showToast]);
+    await loadTreasureDraftByCoinId(loadTreasureDraftCoinQuery.trim());
+  }, [loadTreasureDraftByCoinId, loadTreasureDraftCoinQuery]);
 
   const handleRevertTreasureDraft = useCallback(() => {
     if (!committedTreasureSnapshot) {
