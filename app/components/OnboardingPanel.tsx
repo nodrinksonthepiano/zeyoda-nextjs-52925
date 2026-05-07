@@ -1035,8 +1035,9 @@ const OnboardingPanel: React.FC<OnboardingPanelProps> = ({
             )}
 
             <p className="text-xs text-gray-400">
-              Media: use Logo / Background / Featured Content below. Save Treasure Draft writes HTTPS URLs into{' '}
-              <code className="text-amber-200/90">draft_payload</code>.
+              Previews work immediately (same as normal onboarding). After the first Save creates a{' '}
+              <code className="text-amber-200/90">coin_public_id</code>, uploads also stage HTTPS URLs so{' '}
+              Save Treasure Draft can persist media in <code className="text-amber-200/90">draft_payload</code>.
             </p>
 
             <div className="flex flex-wrap gap-2">
@@ -1287,14 +1288,6 @@ const OnboardingPanel: React.FC<OnboardingPanelProps> = ({
               isAdmin && mode === 'onboarding' && Boolean(getDidToken);
 
             if (adminTreasureMedia) {
-              if (!treasureDraftCoinPublicId?.trim()) {
-                showToast(
-                  'Save Treasure Draft first to create a coin, then upload media.',
-                  'error',
-                );
-                e.target.value = '';
-                return;
-              }
               setLogoFile(file);
               if (logoPreview && logoPreview.startsWith('blob:')) {
                 URL.revokeObjectURL(logoPreview);
@@ -1310,16 +1303,18 @@ const OnboardingPanel: React.FC<OnboardingPanelProps> = ({
                   document.body.style.backgroundRepeat = 'no-repeat';
                 }, 0);
               }
-              void uploadTreasureDraftMedia('logo', file).then((ok) => {
-                if (!ok) {
-                  setLogoPreview((p) => {
-                    if (p?.startsWith('blob:')) URL.revokeObjectURL(p);
-                    return null;
-                  });
-                  setLogoFile(null);
-                  setFormData((prev) => ({ ...prev, logo_url: null }));
-                }
-              });
+              if (treasureDraftCoinPublicId?.trim()) {
+                void uploadTreasureDraftMedia('logo', file).then((ok) => {
+                  if (!ok) {
+                    setLogoPreview((p) => {
+                      if (p?.startsWith('blob:')) URL.revokeObjectURL(p);
+                      return null;
+                    });
+                    setLogoFile(null);
+                    setFormData((prev) => ({ ...prev, logo_url: null }));
+                  }
+                });
+              }
               e.target.value = '';
               return;
             }
@@ -1454,14 +1449,6 @@ const OnboardingPanel: React.FC<OnboardingPanelProps> = ({
               isAdmin && mode === 'onboarding' && Boolean(getDidToken);
 
             if (adminTreasureMedia) {
-              if (!treasureDraftCoinPublicId?.trim()) {
-                showToast(
-                  'Save Treasure Draft first to create a coin, then upload media.',
-                  'error',
-                );
-                e.target.value = '';
-                return;
-              }
               setBackgroundFile(file);
               if (backgroundPreview && backgroundPreview.startsWith('blob:')) {
                 URL.revokeObjectURL(backgroundPreview);
@@ -1477,16 +1464,18 @@ const OnboardingPanel: React.FC<OnboardingPanelProps> = ({
                   document.body.style.backgroundRepeat = 'no-repeat';
                 }, 0);
               }
-              void uploadTreasureDraftMedia('background', file).then((ok) => {
-                if (!ok) {
-                  setBackgroundPreview((p) => {
-                    if (p?.startsWith('blob:')) URL.revokeObjectURL(p);
-                    return null;
-                  });
-                  setBackgroundFile(null);
-                  setFormData((prev) => ({ ...prev, background_image_url: null }));
-                }
-              });
+              if (treasureDraftCoinPublicId?.trim()) {
+                void uploadTreasureDraftMedia('background', file).then((ok) => {
+                  if (!ok) {
+                    setBackgroundPreview((p) => {
+                      if (p?.startsWith('blob:')) URL.revokeObjectURL(p);
+                      return null;
+                    });
+                    setBackgroundFile(null);
+                    setFormData((prev) => ({ ...prev, background_image_url: null }));
+                  }
+                });
+              }
               e.target.value = '';
               return;
             }

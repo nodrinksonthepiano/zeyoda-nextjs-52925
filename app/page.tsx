@@ -562,25 +562,22 @@ const ArtistPageContent: React.FC<{
   const [filePreviewUrl, setFilePreviewUrl] = useState<string | null>(null);
   
   const handleFileSelect = useCallback((file: File) => {
-    if (user && isAdmin && appMode === 'onboarding') {
-      if (!workshopTreasureCoinId?.trim()) {
-        showToast('Save Treasure Draft first to create a coin, then upload media.', 'error');
-        return;
-      }
-      if (filePreviewUrl) {
-        URL.revokeObjectURL(filePreviewUrl);
-      }
-      const previewUrl = URL.createObjectURL(file);
-      setFilePreviewUrl(previewUrl);
-      setUploadedFile(file);
-      setOnboardingData((prev) => ({ ...prev, uploadedFile: file }));
+    // Same live blob preview for everyone (including admin treasure workshop).
+    // After a draft coin exists, admin path also POSTs draft-upload to stage HTTPS for Save Treasure Draft.
+    if (filePreviewUrl) {
+      URL.revokeObjectURL(filePreviewUrl);
+    }
 
+    const previewUrl = URL.createObjectURL(file);
+    setFilePreviewUrl(previewUrl);
+    setUploadedFile(file);
+    setOnboardingData((prev) => ({ ...prev, uploadedFile: file }));
+    console.log('File selected:', file.name, file.type, file.size);
+
+    if (user && isAdmin && appMode === 'onboarding' && workshopTreasureCoinId?.trim()) {
       void (async () => {
         const uploadFn = workshopFeaturedHandlersRef.current?.uploadFeatured;
-        if (!uploadFn) {
-          showToast('Featured staging unavailable — sign in as admin and open workshop.', 'error');
-          return;
-        }
+        if (!uploadFn) return;
         const ok = await uploadFn(file);
         if (ok) {
           setUploadedFile(null);
@@ -591,20 +588,8 @@ const ArtistPageContent: React.FC<{
           setOnboardingAspectRatio(null);
         }
       })();
-      return;
     }
-
-    if (filePreviewUrl) {
-      URL.revokeObjectURL(filePreviewUrl);
-    }
-
-    const previewUrl = URL.createObjectURL(file);
-    setFilePreviewUrl(previewUrl);
-
-    setUploadedFile(file);
-    setOnboardingData((prev) => ({ ...prev, uploadedFile: file }));
-    console.log('File selected:', file.name, file.type, file.size);
-  }, [appMode, filePreviewUrl, isAdmin, showToast, user, workshopTreasureCoinId]);
+  }, [appMode, filePreviewUrl, isAdmin, user, workshopTreasureCoinId]);
 
   // Cleanup preview URL when component unmounts
   useEffect(() => {
