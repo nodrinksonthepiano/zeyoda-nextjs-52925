@@ -21,6 +21,7 @@ import { useAllArtistsDownloadAccess } from './hooks/useDownloadAccess';
 import OrbitPeekCarousel from './components/OrbitPeekCarousel';
 import OvalGlowBackdrop from './components/OvalGlowBackdrop';
 import ThemeOrbitRenderer from "./components/ThemeOrbitRenderer";
+import ArtistPortalTitle from './components/ArtistPortalTitle';
 import PurchaseFlow from "./components/PurchaseFlow";
 import OnboardingPanel from "./components/OnboardingPanel";
 import ProfileEditPanel from "./components/ProfileEditPanel";
@@ -2240,30 +2241,23 @@ const ArtistPageContent: React.FC<{
         <main className="app-main">
           <div className="text-center">
               <>
-                <h1 
-                  className="text-4xl md:text-5xl font-bold tracking-wider mt-1 md:mt-2 mb-3 md:mb-3 cursor-pointer hover:opacity-80 transition-opacity" 
-                  style={{ 
-                    fontFamily: appMode === 'onboarding' ? 'Bungee, cursive' : artistConfig.theme.fontFamily, 
-                    color: appMode === 'onboarding' ? '#B8860B' : artistConfig.theme.accentColor,
-                    position: 'relative',
-                    zIndex: 100,
-                    pointerEvents: 'none',
-                    maxWidth: '85%',
-                    margin: '0 auto',
-                    lineHeight: '1.1'
-                  }}
-                  onDoubleClick={() => {
-                    if (appMode === 'onboarding') {
-                      const input = document.querySelector('input[type="text"]') as HTMLInputElement;
-                      input?.focus();
-                    }
-                  }}
-                  title={appMode === 'onboarding' ? 'Double-click to edit' : ''}
+                <ArtistPortalTitle
+                  fontFamily={appMode === 'onboarding' ? 'Bungee, cursive' : artistConfig.theme.fontFamily}
+                  color={appMode === 'onboarding' ? '#B8860B' : artistConfig.theme.accentColor}
+                  title={appMode === 'onboarding' ? 'Double-click to edit' : undefined}
+                  onDoubleClick={
+                    appMode === 'onboarding'
+                      ? () => {
+                          const input = document.querySelector('input[type="text"]') as HTMLInputElement;
+                          input?.focus();
+                        }
+                      : undefined
+                  }
                 >
                   {appMode === 'onboarding' ? onboardingArtistName : 
                    appMode === 'upload-asset' ? `ADD NEW ASSET TO ${artistConfig.displayName}` : 
                    artistConfig.displayName}
-                </h1>
+                </ArtistPortalTitle>
   
                 <div className="relative w-full max-w-5xl mx-auto mt-6 md:mt-14 mb-12 md:mb-16">
                   {(appMode === 'onboarding' || appMode === 'upload-asset') ? (

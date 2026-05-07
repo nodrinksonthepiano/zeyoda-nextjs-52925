@@ -8,6 +8,7 @@ import type { ArtistAsset } from '@/app/hooks/useArtistAssets';
 import OvalGlowBackdrop from '@/app/components/OvalGlowBackdrop';
 import OrbitPeekCarousel from '@/app/components/OrbitPeekCarousel';
 import ThemeOrbitRenderer from '@/app/components/ThemeOrbitRenderer';
+import ArtistPortalTitle from '@/app/components/ArtistPortalTitle';
 import {
   CLAIM_CTA_LABEL,
   CLAIM_ERROR_ALREADY_CLAIMED,
@@ -362,18 +363,9 @@ export default function TreasureInviteShell({
 
       <main className="app-main">
         <div className="text-center">
-          <h1
-            className="text-4xl md:text-5xl font-bold tracking-wider mt-1 md:mt-2 mb-3 md:mb-3 cursor-pointer hover:opacity-80 transition-opacity"
-            style={{
-              fontFamily: stubConfig.theme.fontFamily,
-              color: stubConfig.theme.accentColor,
-              position: 'relative',
-              zIndex: 100,
-              pointerEvents: 'none',
-              maxWidth: '85%',
-              margin: '0 auto',
-              lineHeight: '1.1',
-            }}
+          <ArtistPortalTitle
+            fontFamily={stubConfig.theme.fontFamily}
+            color={stubConfig.theme.accentColor}
             title={
               treasure.tokenName
                 ? `${treasure.displayname} — ${treasure.tokenName}`
@@ -381,7 +373,7 @@ export default function TreasureInviteShell({
             }
           >
             {treasure.displayname}
-          </h1>
+          </ArtistPortalTitle>
 
           <div className="relative w-full max-w-5xl mx-auto mt-6 md:mt-14 mb-12 md:mb-16">
             {heroCarousel ? (
