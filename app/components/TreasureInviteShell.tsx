@@ -108,17 +108,32 @@ export default function TreasureInviteShell({
   const carouselAssets: ArtistAsset[] = useMemo(() => {
     if (!heroResolved || heroResolved.kind === 'audio') return [];
     if (heroResolved.kind !== 'image' && heroResolved.kind !== 'video') return [];
-    return [
-      {
-        id: `treasure-${envelope.coin_public_id}`,
-        artistId: stubConfig.name,
-        assetNumber: 0,
-        url: heroResolved.url,
-        type: heroResolved.kind,
-        title: treasure.artworktitle ?? treasure.displayname,
-      },
-    ];
-  }, [heroResolved, envelope.coin_public_id, stubConfig.name, treasure.artworktitle, treasure.displayname]);
+    const labelBase = treasure.artworktitle ?? treasure.displayname;
+    const yr = treasure.artworkyear;
+    const hasYear = yr !== undefined && yr !== null && yr !== '';
+    const labelYear = hasYear ? `${labelBase} · ${yr}` : labelBase;
+    const rawDesc = typeof treasure.description === 'string' ? treasure.description.trim() : '';
+    const asset: ArtistAsset = {
+      id: `treasure-${envelope.coin_public_id}`,
+      artistId: stubConfig.name,
+      assetNumber: 0,
+      url: heroResolved.url,
+      type: heroResolved.kind,
+      title: labelYear,
+    };
+    if (rawDesc) {
+      asset.metadata = { description: rawDesc };
+    }
+    return [asset];
+  }, [
+    heroResolved,
+    envelope.coin_public_id,
+    stubConfig.name,
+    treasure.artworktitle,
+    treasure.displayname,
+    treasure.artworkyear,
+    treasure.description,
+  ]);
 
   const [carouselIndex, setCarouselIndex] = useState(0);
   const videoContainerRef = useRef<HTMLDivElement>(null);
@@ -450,41 +465,63 @@ export default function TreasureInviteShell({
         </div>
 
         <div className="action-section text-center w-full max-w-lg mx-auto px-1 space-y-5">
-            {treasure.artworktitle && (
+            {!heroCarousel && treasure.artworktitle && (
               <p className="text-sm opacity-85">
                 {treasure.artworktitle}
                 {treasure.artworkyear != null ? ` · ${treasure.artworkyear}` : ''}
               </p>
             )}
 
-            {treasure.description && (
+            {!heroCarousel && treasure.description && (
               <p className="text-sm leading-relaxed opacity-90 whitespace-pre-wrap">{treasure.description}</p>
             )}
 
             {!user && envelope.status === 'draft' && (
-              <div
-                className={`rounded-xl bg-black/35 border border-white/20 p-5 text-left shadow-lg backdrop-blur-sm ${claimCtaShake ? 'shake' : ''}`}
-              >
-                <p className="text-sm mb-4 leading-relaxed opacity-95">{TREASURE_LOGIN_LEAD}</p>
-                <input
-                  ref={treasureEmailInputRef}
-                  type="email"
-                  value={loginEmail}
-                  placeholder={TREASURE_EMAIL_PLACEHOLDER}
-                  onChange={(e) => setLoginEmail(e.target.value)}
-                  className="w-full mb-3 rounded-lg px-3 py-3 bg-slate-900/90 border border-white/25 text-white placeholder:text-slate-500 min-h-[44px] text-base"
-                  autoComplete="email"
-                  inputMode="email"
-                />
-                <button
-                  type="button"
-                  onClick={handleClaimTreasureClick}
-                  disabled={busyLogin}
-                  className="custom-buy-button w-full py-3 rounded-xl font-bold disabled:opacity-50 min-h-[44px] text-base"
+              <>
+                {/* Same rhythm as PurchaseFlow guest primary CTA: hero → max-w-md button → supporting details */}
+                <div className="my-4 w-full max-w-md mx-auto">
+                  <button
+                    type="button"
+                    onClick={handleClaimTreasureClick}
+                    disabled={busyLogin}
+                    className="w-full font-bold py-3 px-6 rounded-lg text-lg shadow-md transition duration-150 ease-in-out transform hover:scale-105 bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-70 disabled:hover:scale-100 min-h-[44px]"
+                  >
+                    {busyLogin ? TREASURE_SENDING_CODE : CLAIM_CTA_LABEL}
+                  </button>
+                </div>
+                <div
+                  className={`rounded-xl bg-black/35 border border-white/20 p-5 text-left shadow-lg backdrop-blur-sm max-w-md mx-auto ${claimCtaShake ? 'shake' : ''}`}
                 >
-                  {busyLogin ? TREASURE_SENDING_CODE : CLAIM_CTA_LABEL}
-                </button>
-              </div>
+                  <p className="text-sm mb-4 leading-relaxed opacity-95">{TREASURE_LOGIN_LEAD}</p>
+                  <div className="flex items-center w-full">
+                    <input
+                      ref={treasureEmailInputRef}
+                      type="email"
+                      value={loginEmail}
+                      placeholder={TREASURE_EMAIL_PLACEHOLDER}
+                      onChange={(e) => setLoginEmail(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          handleClaimTreasureClick();
+                        }
+                      }}
+                      className="flex-grow min-w-0 p-3 border border-gray-600 rounded-l-lg bg-gray-900 bg-opacity-70 text-white placeholder:text-slate-500 focus:ring-2 focus:ring-accentColor focus:border-accentColor backdrop-blur-sm min-h-[44px] text-base"
+                      autoComplete="email"
+                      inputMode="email"
+                      aria-label="Email address input"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleClaimTreasureClick}
+                      disabled={busyLogin}
+                      className="shrink-0 p-3 min-h-[44px] bg-accentColor text-white rounded-r-lg hover:bg-opacity-80 focus:outline-none focus:ring-2 focus:ring-accentColor focus:ring-opacity-50 disabled:opacity-70"
+                    >
+                      {busyLogin ? TREASURE_SENDING_CODE : 'Continue'}
+                    </button>
+                  </div>
+                </div>
+              </>
             )}
 
             {envelope.status === 'draft' && user && !magicEmailNorm && (
