@@ -77,6 +77,48 @@ function cloneInviteDraftForm(f: InviteDraftFormInput): InviteDraftFormInput {
   return JSON.parse(JSON.stringify(f)) as InviteDraftFormInput;
 }
 
+function isDraftMediaHttps(url: string | null | undefined): boolean {
+  return typeof url === 'string' && url.startsWith('https://');
+}
+
+/** POST /api/invite/draft-upload — no React state or busy spinner (reuse for picker + Save flush). */
+async function postInviteDraftUpload(
+  getDidToken: () => Promise<string | null>,
+  coinId: string,
+  kind: 'logo' | 'background' | 'featured',
+  file: File,
+): Promise<{ ok: true; url: string } | { ok: false; error: string }> {
+  const token = await getDidToken();
+  if (!token) return { ok: false, error: 'Sign in required for draft upload.' };
+
+  const fd = new FormData();
+  fd.append('coin_public_id', coinId);
+  fd.append('kind', kind);
+  fd.append('file', file);
+
+  try {
+    const res = await fetch('/api/invite/draft-upload', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+      body: fd,
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      return {
+        ok: false,
+        error: typeof data.error === 'string' ? data.error : 'Draft upload failed',
+      };
+    }
+    const url = typeof data.url === 'string' ? data.url : '';
+    if (!url.startsWith('https://')) {
+      return { ok: false, error: 'Upload did not return an HTTPS URL' };
+    }
+    return { ok: true, url };
+  } catch {
+    return { ok: false, error: 'Draft upload failed' };
+  }
+}
+
 function clientTreasureUrlForInvite(artistSlug: string, coinPublicId: string): string {
   const base =
     process.env.NEXT_PUBLIC_INVITE_BASE_URL?.replace(/\/$/, '') ||
@@ -529,32 +571,12 @@ const OnboardingPanel: React.FC<OnboardingPanelProps> = ({
 
       setTreasureBusy('upload');
       try {
-        const token = await getDidToken();
-        if (!token) {
-          showToast('Sign in required for draft upload.', 'error');
+        const result = await postInviteDraftUpload(getDidToken, coinId, kind, file);
+        if (!result.ok) {
+          showToast(result.error, 'error');
           return false;
         }
-
-        const form = new FormData();
-        form.append('coin_public_id', coinId);
-        form.append('kind', kind);
-        form.append('file', file);
-
-        const res = await fetch('/api/invite/draft-upload', {
-          method: 'POST',
-          headers: { Authorization: `Bearer ${token}` },
-          body: form,
-        });
-        const data = await res.json().catch(() => ({}));
-        if (!res.ok) {
-          showToast(typeof data.error === 'string' ? data.error : 'Draft upload failed', 'error');
-          return false;
-        }
-        const url = typeof data.url === 'string' ? data.url : '';
-        if (!url.startsWith('https://')) {
-          showToast('Upload did not return an HTTPS URL', 'error');
-          return false;
-        }
+        const url = result.url;
 
         if (kind === 'logo') {
           setFormData((prev) => ({ ...prev, logo_url: url }));
@@ -575,9 +597,6 @@ const OnboardingPanel: React.FC<OnboardingPanelProps> = ({
           'info',
         );
         return true;
-      } catch {
-        showToast('Draft upload failed', 'error');
-        return false;
       } finally {
         setTreasureBusy('idle');
       }
@@ -592,40 +611,17 @@ const OnboardingPanel: React.FC<OnboardingPanelProps> = ({
 
       setTreasureBusy('upload');
       try {
-        const token = await getDidToken();
-        if (!token) {
-          showToast('Sign in required for draft upload.', 'error');
+        const result = await postInviteDraftUpload(getDidToken, coinId, 'featured', file);
+        if (!result.ok) {
+          showToast(result.error, 'error');
           return false;
         }
-
-        const form = new FormData();
-        form.append('coin_public_id', coinId);
-        form.append('kind', 'featured');
-        form.append('file', file);
-
-        const res = await fetch('/api/invite/draft-upload', {
-          method: 'POST',
-          headers: { Authorization: `Bearer ${token}` },
-          body: form,
-        });
-        const data = await res.json().catch(() => ({}));
-        if (!res.ok) {
-          showToast(typeof data.error === 'string' ? data.error : 'Draft upload failed', 'error');
-          return false;
-        }
-        const url = typeof data.url === 'string' ? data.url : '';
-        if (!url.startsWith('https://')) {
-          showToast('Upload did not return an HTTPS URL', 'error');
-          return false;
-        }
+        const url = result.url;
 
         setFormData((prev) => ({ ...prev, featured_asset_url: url }));
         onWorkshopFeaturedHttpsChange?.(url);
         showToast('Featured asset staged — Save Treasure Draft to commit.', 'info');
         return true;
-      } catch {
-        showToast('Draft upload failed', 'error');
-        return false;
       } finally {
         setTreasureBusy('idle');
       }
@@ -852,16 +848,20 @@ const OnboardingPanel: React.FC<OnboardingPanelProps> = ({
       showToast('Wallet not configured', 'error');
       return;
     }
+
+    const formAtClick = cloneInviteDraftForm(formData);
+    let workingForm = formAtClick;
+
     setTreasureBusy('save');
     try {
-      const draft_payload = buildInviteDraftPayloadV1(formData);
       const token = await getDidToken();
       if (!token) {
         showToast('Sign in required', 'error');
         return;
       }
 
-      const bodyObj: Record<string, unknown> = { draft_payload };
+      const draft_payload_primary = buildInviteDraftPayloadV1(workingForm);
+      const bodyObj: Record<string, unknown> = { draft_payload: draft_payload_primary };
       if (coinTrim) bodyObj.coin_public_id = coinTrim;
       else bodyObj.reserved_email = treasureDraftReservedEmail.trim();
 
@@ -885,31 +885,157 @@ const OnboardingPanel: React.FC<OnboardingPanelProps> = ({
         return;
       }
 
-      const nextCoin =
+      const nextCoinRaw =
         typeof data.coin_public_id === 'string' ? data.coin_public_id : coinTrim ?? null;
+      const nextCoin = typeof nextCoinRaw === 'string' ? nextCoinRaw.trim() || null : null;
       const tu = typeof data.treasure_url === 'string' ? data.treasure_url : '';
+
+      const flushEligible =
+        isAdmin &&
+        mode === 'onboarding' &&
+        typeof getDidToken === 'function' &&
+        Boolean(nextCoin);
+
+      const coin = nextCoin?.trim() ?? '';
+      const hadFlushAttempt =
+        flushEligible &&
+        Boolean(coin) &&
+        (Boolean(logoFile && !isDraftMediaHttps(formAtClick.logo_url)) ||
+          Boolean(backgroundFile && !isDraftMediaHttps(formAtClick.background_image_url)) ||
+          Boolean(uploadedFile && !isDraftMediaHttps(formAtClick.featured_asset_url)));
+
+      const failures: string[] = [];
+      let anyUploadSuccess = false;
+      let didAttemptSecondSave = false;
+      let secondSaveOk = true;
+
+      if (flushEligible && coin) {
+        const pendingLogo = Boolean(logoFile && !isDraftMediaHttps(workingForm.logo_url));
+        const pendingBg = Boolean(backgroundFile && !isDraftMediaHttps(workingForm.background_image_url));
+        const pendingFeatured = Boolean(uploadedFile && !isDraftMediaHttps(workingForm.featured_asset_url));
+
+        if (pendingLogo && logoFile) {
+          const r = await postInviteDraftUpload(getDidToken, coin, 'logo', logoFile);
+          if (r.ok) {
+            workingForm = { ...workingForm, logo_url: r.url };
+            anyUploadSuccess = true;
+          } else failures.push(`Logo: ${r.error}`);
+        }
+
+        if (pendingBg && backgroundFile) {
+          const r = await postInviteDraftUpload(getDidToken, coin, 'background', backgroundFile);
+          if (r.ok) {
+            workingForm = { ...workingForm, background_image_url: r.url };
+            anyUploadSuccess = true;
+          } else failures.push(`Background: ${r.error}`);
+        }
+
+        if (pendingFeatured && uploadedFile) {
+          const r = await postInviteDraftUpload(getDidToken, coin, 'featured', uploadedFile);
+          if (r.ok) {
+            workingForm = { ...workingForm, featured_asset_url: r.url };
+            anyUploadSuccess = true;
+            onWorkshopFeaturedHttpsChange?.(r.url);
+            onClearWorkshopHeroStaging?.();
+          } else failures.push(`Featured: ${r.error}`);
+        }
+
+        if (anyUploadSuccess) {
+          didAttemptSecondSave = true;
+          const draft_payload_second = buildInviteDraftPayloadV1(workingForm);
+          const res2 = await fetch('/api/invite/save-draft', {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${token}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              draft_payload: draft_payload_second,
+              coin_public_id: coin,
+            }),
+          });
+          const data2 = await res2.json().catch(() => ({}));
+          secondSaveOk = res2.ok;
+          if (!res2.ok) {
+            const base =
+              typeof data2.error === 'string'
+                ? data2.error
+                : 'Could not save media URLs to draft.';
+            const extra = failures.length ? ` ${failures.join('; ')}` : '';
+            showToast(`${base} Click Save Treasure Draft again.${extra}`, 'error');
+          }
+        }
+      }
 
       setTreasureDraftCoinPublicId(nextCoin);
       if (tu) setTreasureDraftTreasureUrl(tu);
 
+      setFormData(workingForm);
+
+      setLogoPreview((prev) => {
+        if (isDraftMediaHttps(workingForm.logo_url)) {
+          if (prev?.startsWith('blob:')) URL.revokeObjectURL(prev);
+          return workingForm.logo_url!;
+        }
+        return prev;
+      });
+      setBackgroundPreview((prev) => {
+        if (isDraftMediaHttps(workingForm.background_image_url)) {
+          if (prev?.startsWith('blob:')) URL.revokeObjectURL(prev);
+          return workingForm.background_image_url!;
+        }
+        return prev;
+      });
+
+      if (mode === 'onboarding' && flushEligible && anyUploadSuccess) {
+        applyWorkshopVisualsFromInviteDraftForm(workingForm);
+      }
+
+      const committedForm =
+        didAttemptSecondSave && !secondSaveOk ? formAtClick : cloneInviteDraftForm(workingForm);
+
       setCommittedTreasureSnapshot({
-        form: cloneInviteDraftForm(formData),
+        form: committedForm,
         coinPublicId: nextCoin,
         reservedEmail: nextCoin ? '' : treasureDraftReservedEmail.trim(),
       });
 
-      showToast(`Treasure draft saved${nextCoin ? ` (${nextCoin})` : ''}`, 'success');
+      if (didAttemptSecondSave && !secondSaveOk) {
+        /* second-save error toast already shown */
+      } else if (failures.length > 0 && anyUploadSuccess && secondSaveOk) {
+        showToast(
+          `Treasure draft saved. Some media failed: ${failures.join('; ')}. Click Save Treasure Draft again to retry.`,
+          'info',
+        );
+      } else if (failures.length > 0 && !anyUploadSuccess && hadFlushAttempt) {
+        showToast(
+          `Draft saved but media upload failed: ${failures.join('; ')}. Click Save Treasure Draft again to retry.`,
+          'error',
+        );
+      } else if (
+        failures.length === 0 &&
+        (!didAttemptSecondSave || secondSaveOk)
+      ) {
+        showToast(`Treasure draft saved${nextCoin ? ` (${nextCoin})` : ''}`, 'success');
+      }
     } catch {
       showToast('Save draft failed', 'error');
     } finally {
       setTreasureBusy('idle');
     }
   }, [
+    backgroundFile,
     formData,
     getDidToken,
+    isAdmin,
+    logoFile,
+    mode,
+    onClearWorkshopHeroStaging,
+    onWorkshopFeaturedHttpsChange,
     showToast,
     treasureDraftCoinPublicId,
     treasureDraftReservedEmail,
+    uploadedFile,
   ]);
 
   const copyTreasureDraftText = useCallback(
