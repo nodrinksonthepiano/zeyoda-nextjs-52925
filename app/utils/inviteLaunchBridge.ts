@@ -1,6 +1,7 @@
 import type { InviteResolveTreasureBody } from '@/types/treasure-invite';
 
 import type { ArtistConfig, OrbitalToken } from '@/types/artist-types';
+import { isSentinelOrEmptyVideosrc } from '@/app/utils/buildInviteDraftPayloadV1';
 
 export type InviteLaunchBridge = {
   coinPublicId: string;
@@ -88,10 +89,18 @@ export function buildStubArtistConfigFromDraft(draft: Record<string, unknown>): 
     gradientEnd: typeof themeRaw?.gradientEnd === 'string' ? themeRaw.gradientEnd : '#F5F5DC',
     fontFamily: typeof themeRaw?.fontFamily === 'string' ? themeRaw.fontFamily : 'Bungee, cursive',
   };
-  let videoSrc =
-    typeof draft.videosrc === 'string' && draft.videosrc.trim()
-      ? draft.videosrc
-      : '/assets/placeholder.mp4';
+  const rawVs = typeof draft.videosrc === 'string' ? draft.videosrc.trim() : '';
+  const featuredHttps =
+    typeof draft.featured_asset_url === 'string' && draft.featured_asset_url.trim().startsWith('https://')
+      ? draft.featured_asset_url.trim()
+      : '';
+
+  let videoSrc = '';
+  if (rawVs && !isSentinelOrEmptyVideosrc(rawVs)) {
+    videoSrc = rawVs;
+  } else if (featuredHttps) {
+    videoSrc = featuredHttps;
+  }
 
   let artworkYear =
     draft.artworkyear !== undefined && draft.artworkyear !== null ? String(draft.artworkyear) : '2025';

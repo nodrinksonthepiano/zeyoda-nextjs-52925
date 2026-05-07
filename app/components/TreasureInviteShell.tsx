@@ -15,6 +15,7 @@ import {
   CONTINUE_LAUNCH_SETUP,
 } from '@/app/constants/treasureCopy';
 import { authenticatedFetch } from '@/app/utils/authenticatedFetch';
+import { isSentinelOrEmptyVideosrc } from '@/app/utils/buildInviteDraftPayloadV1';
 
 import { useWallet } from '@/app/components/MagicProvider';
 import { useToast } from '@/app/contexts/ToastContext';
@@ -42,7 +43,8 @@ function TreasureMediaHero(props: {
   videosrc: string | null | undefined;
   featured_asset_url: string | null | undefined;
 }) {
-  const vs = typeof props.videosrc === 'string' ? props.videosrc.trim() : '';
+  const rawVs = typeof props.videosrc === 'string' ? props.videosrc.trim() : '';
+  const vs = isSentinelOrEmptyVideosrc(rawVs) ? '' : rawVs;
   const fa = typeof props.featured_asset_url === 'string' ? props.featured_asset_url.trim() : '';
 
   let url = '';
@@ -87,9 +89,15 @@ function TreasureMediaHero(props: {
 interface Props {
   envelope: InviteResolveTreasureBody;
   onContinueLaunch: () => void;
+  /** Refetch GET /api/invite/resolve after successful claim — updates envelope to claimed without race-prone reload. */
+  onInviteClaimedRefetch?: () => Promise<void>;
 }
 
-export default function TreasureInviteShell({ envelope, onContinueLaunch }: Props) {
+export default function TreasureInviteShell({
+  envelope,
+  onContinueLaunch,
+  onInviteClaimedRefetch,
+}: Props) {
   const { showToast } = useToast();
   const { user, magic, getDidToken } = useWallet();
   const treasure = envelope.treasure;
@@ -236,9 +244,16 @@ export default function TreasureInviteShell({ envelope, onContinueLaunch }: Prop
 
         const j = await res.json().catch(() => ({}));
 
-        if (!cancelled && res.ok) {
+        if (res.ok) {
           showToast('Treasure claimed.', 'success');
-          setTimeout(() => window.location.reload(), 650);
+          try {
+            await onInviteClaimedRefetch?.();
+          } catch {
+            /* non-fatal */
+          }
+          if (!cancelled) {
+            setClaimPhase('idle');
+          }
           return;
         }
 
@@ -276,6 +291,7 @@ export default function TreasureInviteShell({ envelope, onContinueLaunch }: Prop
     getDidToken,
     magicEmailNorm,
     showToast,
+    onInviteClaimedRefetch,
   ]);
 
   const gradStart = treasure.theme?.gradientStart || treasure.theme?.primaryColor || '#1e1e2e';

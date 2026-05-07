@@ -46,10 +46,25 @@ function sanitizeHttpsMediaField(v: string | null | undefined): string | null {
   return t.startsWith('https://') ? t : null;
 }
 
-/** videosrc allows https:// or /assets/... per draftPayloadValidation */
-export function normalizeVideosrcForDraft(videosrc: string): string {
+/**
+ * Empty, null, legacy `/assets/placeholder.mp4` draft filler — treat as “no hero video”; use featured_asset_url instead.
+ */
+export function isSentinelOrEmptyVideosrc(v: string | null | undefined): boolean {
+  if (v === null || v === undefined) return true;
+  const raw = typeof v === 'string' ? v.trim() : '';
+  if (!raw) return true;
+  const pathOnly = raw.split('?')[0].split('#')[0].trim().toLowerCase();
+  return (
+    pathOnly === '/assets/placeholder.mp4' ||
+    pathOnly === 'assets/placeholder.mp4' ||
+    pathOnly.endsWith('/assets/placeholder.mp4')
+  );
+}
+
+/** Persist https:// or /assets/... only; omit empty / sentinel placeholder (validation allows omitted/null videosrc). */
+export function normalizeVideosrcForDraft(videosrc: string): string | null {
   const t = (videosrc ?? '').trim();
-  if (!t) return '/assets/placeholder.mp4';
+  if (isSentinelOrEmptyVideosrc(t)) return null;
   if (t.startsWith('https://')) return t;
   if (t.startsWith('/assets/')) return t;
   if (t.startsWith('assets/')) return `/${t}`;
@@ -60,7 +75,7 @@ export function buildInviteDraftPayloadV1(input: InviteDraftFormInput): Record<s
   const logo_url = sanitizeHttpsMediaField(input.logo_url);
   const background_image_url = sanitizeHttpsMediaField(input.background_image_url);
   const featured_asset_url = sanitizeHttpsMediaField(input.featured_asset_url);
-  const videosrc = normalizeVideosrcForDraft(input.videosrc);
+  const videosrcNorm = normalizeVideosrcForDraft(input.videosrc);
 
   const artworkyearParsed = /^-?\d+$/.test(String(input.artworkyear).trim())
     ? parseInt(String(input.artworkyear).trim(), 10)
@@ -76,7 +91,7 @@ export function buildInviteDraftPayloadV1(input: InviteDraftFormInput): Record<s
     description: input.description,
     logo_use_background: input.logo_use_background,
     background_use_image: input.background_use_image,
-    videosrc,
+    ...(videosrcNorm !== null ? { videosrc: videosrcNorm } : {}),
     logo_url,
     background_image_url,
     featured_asset_url,
@@ -122,12 +137,15 @@ export function applyInviteDraftPayloadToForm(prev: InviteDraftFormInput, d: Rec
     typeof vy === 'string' || typeof vy === 'number' ? String(vy) : prev.artworkyear;
 
   const vs = d.videosrc;
-  const videosrc =
-    typeof vs === 'string' && vs.trim()
-      ? vs.trim()
-      : typeof vs === 'string'
-        ? prev.videosrc
-        : prev.videosrc;
+  let videosrc: string;
+  if (vs === null || vs === undefined) {
+    videosrc = '';
+  } else if (typeof vs === 'string') {
+    const t = vs.trim();
+    videosrc = isSentinelOrEmptyVideosrc(t) ? '' : t;
+  } else {
+    videosrc = prev.videosrc;
+  }
 
   return {
     ...prev,

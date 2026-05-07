@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 
 import BurialWizard from '@/app/components/BurialWizard';
@@ -28,11 +28,14 @@ function TreasureInviteOrLiveGate({
   envelope,
   RenderLivePortal,
   onContinueLaunch,
+  onInviteClaimedRefetch,
 }: {
   slug: string;
   envelope: InviteResolveTreasureBody;
   RenderLivePortal: React.ComponentType<LiveProps>;
   onContinueLaunch: () => void;
+  /** After successful auto-claim, refetches resolve JSON so envelope becomes claimed without full page reload. */
+  onInviteClaimedRefetch?: () => Promise<void>;
 }) {
   const { artistConfig, isLoading } = useArtistConfig(slug);
 
@@ -44,7 +47,13 @@ function TreasureInviteOrLiveGate({
     return <RenderLivePortal />;
   }
 
-  return <TreasureInviteShell envelope={envelope} onContinueLaunch={onContinueLaunch} />;
+  return (
+    <TreasureInviteShell
+      envelope={envelope}
+      onContinueLaunch={onContinueLaunch}
+      onInviteClaimedRefetch={onInviteClaimedRefetch}
+    />
+  );
 }
 
 export default function TreasureAwareHome({ RenderLivePortal }: Props) {
@@ -67,6 +76,49 @@ export default function TreasureAwareHome({ RenderLivePortal }: Props) {
   const [resolveBody, setResolveBody] = useState<InviteResolveOkBody | null>(null);
   const [resolveBusy, setResolveBusy] = useState(!effectiveBridge);
   const [resolveHttpError, setResolveHttpError] = useState(false);
+
+  const applyResolveNavigation = useCallback(
+    (body: InviteResolveOkBody) => {
+      const status = body.status;
+
+      if (status === 'draft' || status === 'claimed') {
+        const canon = body.artist_slug;
+        if (canon && artistParam !== canon) {
+          const qs = new URLSearchParams(searchParams.toString());
+          qs.set('artist', canon);
+          qs.set('coin', coin);
+          router.replace(`/?${qs.toString()}`, { scroll: false });
+        }
+      }
+
+      if (status === 'launched') {
+        const url = typeof window !== 'undefined' ? new URL(window.location.href) : null;
+        if (url) {
+          url.pathname = '/';
+          url.hash = '';
+          url.searchParams.set('artist', body.artist_slug);
+          url.searchParams.delete('coin');
+          router.replace(`${url.pathname}${url.search}`, { scroll: false });
+        }
+      }
+    },
+    [router, artistParam, searchParams, coin],
+  );
+
+  /** Silent refetch — avoids full-screen "Loading treasure" flash after claim. */
+  const refetchInviteAfterClaim = useCallback(async (): Promise<void> => {
+    if (!coin.trim()) return;
+    try {
+      const res = await fetch(`/api/invite/resolve?coin=${encodeURIComponent(coin)}`);
+      const j = (await res.json()) as InviteResolveOkBody | { status?: string };
+      if (!res.ok || (j as { status?: string }).status === 'error') return;
+      const body = j as InviteResolveOkBody;
+      setResolveBody(body);
+      applyResolveNavigation(body);
+    } catch {
+      /* non-fatal */
+    }
+  }, [coin, applyResolveNavigation]);
 
   useEffect(() => {
     let cancelled = false;
@@ -101,32 +153,7 @@ export default function TreasureAwareHome({ RenderLivePortal }: Props) {
         const body = j as InviteResolveOkBody;
         setResolveBody(body);
 
-        const status = body.status;
-
-        if (status === 'draft' || status === 'claimed' || status === 'launched') {
-          const canon = body.artist_slug;
-          if (
-            canon &&
-            artistParam !== canon
-          ) {
-            const qs = new URLSearchParams(searchParams.toString());
-            qs.set('artist', canon);
-            qs.set('coin', coin);
-            router.replace(`/?${qs.toString()}`, { scroll: false });
-          }
-        }
-
-        if (status === 'launched') {
-          const url =
-            typeof window !== 'undefined' ? new URL(window.location.href) : null;
-          if (url) {
-            url.pathname = '/';
-            url.hash = '';
-            url.searchParams.set('artist', body.artist_slug);
-            url.searchParams.delete('coin');
-            router.replace(`${url.pathname}${url.search}`, { scroll: false });
-          }
-        }
+        applyResolveNavigation(body);
       } catch {
         if (!cancelled) setResolveHttpError(true);
       } finally {
@@ -139,7 +166,7 @@ export default function TreasureAwareHome({ RenderLivePortal }: Props) {
     return () => {
       cancelled = true;
     };
-  }, [coin, router, artistParam, searchParams, effectiveBridge]);
+  }, [coin, effectiveBridge, applyResolveNavigation]);
 
   if (!coin) return null;
 
@@ -187,6 +214,7 @@ export default function TreasureAwareHome({ RenderLivePortal }: Props) {
         envelope={envelope}
         RenderLivePortal={RenderLivePortal}
         onContinueLaunch={onContinueLaunch}
+        onInviteClaimedRefetch={refetchInviteAfterClaim}
       />
     );
   }

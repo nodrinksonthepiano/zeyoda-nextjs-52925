@@ -56,7 +56,7 @@ function createInviteFormBaseline(
     artworkyear: '2025',
     downloadPrice: 1.0,
     description: '',
-    videosrc: 'assets/placeholder.mp4',
+    videosrc: '',
     logo_url: null,
     background_image_url: null,
     featured_asset_url: null,
@@ -381,10 +381,15 @@ const OnboardingPanel: React.FC<OnboardingPanelProps> = ({
       }
     }
 
-    if (isAdmin) {
-      onWorkshopFeaturedHttpsChange?.(
-        merged.featured_asset_url?.startsWith('https://') ? merged.featured_asset_url : null,
-      );
+    if (mode === 'onboarding') {
+      applyWorkshopVisualsFromInviteDraftForm(merged);
+    }
+
+    const featuredHttps = merged.featured_asset_url?.startsWith('https://')
+      ? merged.featured_asset_url
+      : null;
+    if (featuredHttps && (isAdmin || coinFromBridge)) {
+      onWorkshopFeaturedHttpsChange?.(featuredHttps);
     }
   }, [
     ea,
@@ -396,10 +401,11 @@ const OnboardingPanel: React.FC<OnboardingPanelProps> = ({
     onWorkshopFeaturedHttpsChange,
   ]);
 
-  // Initialize halo with current primary color
+  // Halo init: baseline workshop color — skip when merging an invite-handoff draft so seed + applyWorkshopVisuals stays authoritative (avoids #FAF0E6 overwriting livePrimaryColor).
   useEffect(() => {
+    if (initialInviteDraft) return;
     window.dispatchEvent(new CustomEvent('primaryColorChange', { detail: { color: formData.theme.primaryColor } }));
-  }, []);
+  }, [initialInviteDraft]);
 
   const handleFieldChange = useCallback((field: string, value: any) => {
     // Handle artist name change separately to avoid React render error
@@ -416,10 +422,22 @@ const OnboardingPanel: React.FC<OnboardingPanelProps> = ({
         updated.tokenName = value.replace(/[^a-zA-Z0-9]/g, '').toUpperCase().substring(0, 8);
       } else if (field.startsWith('theme.')) {
         const themeField = field.replace('theme.', '');
-        updated.theme = { ...updated.theme, [themeField]: value };
-        
+        updated.theme =
+          themeField === 'primaryColor'
+            ? {
+                ...updated.theme,
+                primaryColor: value,
+                gradientStart: value,
+                gradientMiddle: value,
+                gradientEnd: value,
+              }
+            : { ...updated.theme, [themeField]: value };
+
         // Apply live preview
         if (themeField === 'primaryColor') {
+          document.documentElement.style.setProperty('--gradient-start', value);
+          document.documentElement.style.setProperty('--gradient-middle', value);
+          document.documentElement.style.setProperty('--gradient-end', value);
           // Apply primary color only if no background image/logo is active
           if (!formData.background_use_image && !formData.logo_use_background) {
           document.body.style.background = value;
@@ -635,15 +653,39 @@ const OnboardingPanel: React.FC<OnboardingPanelProps> = ({
   }, [onWorkshopFeaturedHttpsChange]);
 
   useEffect(() => {
-    if (!isAdmin || mode !== 'onboarding') {
+    if (mode !== 'onboarding') {
       onTreasureDraftCoinPublicIdChange?.(null);
       return;
     }
-    onTreasureDraftCoinPublicIdChange?.(treasureDraftCoinPublicId);
-  }, [isAdmin, mode, treasureDraftCoinPublicId, onTreasureDraftCoinPublicIdChange]);
+    const bridgeCoin =
+      typeof inviteLaunchCoinPublicId === 'string' ? inviteLaunchCoinPublicId.trim() : '';
+    if (bridgeCoin) {
+      onTreasureDraftCoinPublicIdChange?.(bridgeCoin);
+      return;
+    }
+    if (isAdmin) {
+      onTreasureDraftCoinPublicIdChange?.(treasureDraftCoinPublicId);
+      return;
+    }
+    onTreasureDraftCoinPublicIdChange?.(treasureDraftCoinPublicId ?? null);
+  }, [
+    isAdmin,
+    mode,
+    treasureDraftCoinPublicId,
+    inviteLaunchCoinPublicId,
+    onTreasureDraftCoinPublicIdChange,
+  ]);
+
+  const inviteHandoffCoinActive =
+    typeof inviteLaunchCoinPublicId === 'string' && !!inviteLaunchCoinPublicId.trim();
 
   useEffect(() => {
-    if (!onRegisterWorkshopFeaturedHandlers || !isAdmin || mode !== 'onboarding' || !getDidToken) {
+    if (
+      !onRegisterWorkshopFeaturedHandlers ||
+      mode !== 'onboarding' ||
+      !getDidToken ||
+      !(isAdmin || inviteHandoffCoinActive)
+    ) {
       onRegisterWorkshopFeaturedHandlers?.(null);
       return;
     }
@@ -657,6 +699,7 @@ const OnboardingPanel: React.FC<OnboardingPanelProps> = ({
   }, [
     clearWorkshopFeatured,
     getDidToken,
+    inviteHandoffCoinActive,
     isAdmin,
     mode,
     onRegisterWorkshopFeaturedHandlers,

@@ -574,7 +574,7 @@ const ArtistPageContent: React.FC<{
     setOnboardingData((prev) => ({ ...prev, uploadedFile: file }));
     console.log('File selected:', file.name, file.type, file.size);
 
-    if (user && isAdmin && appMode === 'onboarding' && workshopTreasureCoinId?.trim()) {
+    if (user && appMode === 'onboarding' && workshopTreasureCoinId?.trim()) {
       void (async () => {
         const uploadFn = workshopFeaturedHandlersRef.current?.uploadFeatured;
         if (!uploadFn) return;
@@ -589,7 +589,7 @@ const ArtistPageContent: React.FC<{
         }
       })();
     }
-  }, [appMode, filePreviewUrl, isAdmin, user, workshopTreasureCoinId]);
+  }, [appMode, filePreviewUrl, user, workshopTreasureCoinId]);
 
   // Cleanup preview URL when component unmounts
   useEffect(() => {
@@ -1540,7 +1540,8 @@ const ArtistPageContent: React.FC<{
     checkOwnership();
   }, [user, artistConfig, magic]);
 
-  // Initialize onboarding theme once when entering onboarding mode (NEW ARTISTS ONLY)
+  // Initialize onboarding theme when entering onboarding mode:
+  // — blank new artist: linen canvas; — invite launch handoff: same stub as LiveArtistPortal / halo
   useEffect(() => {
     // CRITICAL: Never run onboarding cleanup during profile-edit mode
     // ProfileEditPanel handles its own background during editing
@@ -1552,16 +1553,32 @@ const ArtistPageContent: React.FC<{
     if (appMode === 'onboarding') {
       // Set global flag to suspend auto-refreshes
       (window as any).onboardingMode = true;
-      
-      // Apply initial onboarding theme (tan canvas for new artists)
-      document.documentElement.style.setProperty('--primary-color', '#FAF0E6');
-      document.documentElement.style.setProperty('--accent-color', '#B8860B');
-      document.documentElement.style.setProperty('--gradient-start', '#FAF0E6');
-      document.documentElement.style.setProperty('--gradient-middle', '#FDF5E6');
-      document.documentElement.style.setProperty('--gradient-end', '#F5F5DC');
-      document.body.style.background = 'linear-gradient(135deg, #FAF0E6 0%, #FDF5E6 50%, #F5F5DC 100%)';
-      document.body.style.fontFamily = 'Bungee, cursive';
-      console.log('[page.tsx] 🎨 Applied onboarding linen canvas background');
+
+      const handoffActive =
+        !!inviteLaunchBridge?.coinPublicId &&
+        inviteLaunchBridge.draft != null &&
+        typeof inviteLaunchBridge.draft === 'object';
+
+      if (handoffActive) {
+        const stub = buildStubArtistConfigFromDraft(
+          inviteLaunchBridge!.draft as Record<string, unknown>,
+        );
+        applyArtistBackground(stub);
+        window.dispatchEvent(
+          new CustomEvent('primaryColorChange', { detail: { color: stub.theme.primaryColor } }),
+        );
+        console.log('[page.tsx] 🎨 Onboarding canvas: invite handoff stub (draft theme, not linen)');
+      } else {
+        // Blank onboarding: tan/linen canvas for new artists
+        document.documentElement.style.setProperty('--primary-color', '#FAF0E6');
+        document.documentElement.style.setProperty('--accent-color', '#B8860B');
+        document.documentElement.style.setProperty('--gradient-start', '#FAF0E6');
+        document.documentElement.style.setProperty('--gradient-middle', '#FDF5E6');
+        document.documentElement.style.setProperty('--gradient-end', '#F5F5DC');
+        document.body.style.background = 'linear-gradient(135deg, #FAF0E6 0%, #FDF5E6 50%, #F5F5DC 100%)';
+        document.body.style.fontFamily = 'Bungee, cursive';
+        console.log('[page.tsx] 🎨 Applied onboarding linen canvas background');
+      }
     } else {
       // Clear onboarding flag when exiting onboarding mode
       (window as any).onboardingMode = false;
@@ -1571,11 +1588,11 @@ const ArtistPageContent: React.FC<{
       console.log('[page.tsx] 🧹 Onboarding mode exited, theme effect will restore correct background');
       // DO NOT clear background styles here - let the theme effect do it atomically
     }
-  }, [appMode]); // ONLY depend on appMode - never run during profile-edit
+  }, [appMode, inviteLaunchBridge]);
   
   // Separate useEffect for normal theme application - NEVER runs during onboarding or profile-edit
   useEffect(() => {
-    // COMPLETELY SKIP if in onboarding mode (new artists get tan canvas)
+    // SKIP in onboarding — canvas handled by onboarding init (linen vs invite handoff stub)
     if (appMode === 'onboarding') {
       console.log('[page.tsx] 🚫 Skipping theme application - onboarding mode active');
       return;
@@ -2370,9 +2387,9 @@ const ArtistPageContent: React.FC<{
                               </button>
                             </>
                           ) : user &&
-                            isAdmin &&
                             appMode === 'onboarding' &&
-                            workshopFeaturedHttpsUrl ? (
+                            workshopFeaturedHttpsUrl &&
+                            (isAdmin || inviteLaunchBridge?.coinPublicId) ? (
                             <>
                               {workshopFeaturedUrlMediaKind(workshopFeaturedHttpsUrl) === 'image' ? (
                                 <img
