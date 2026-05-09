@@ -2239,7 +2239,8 @@ const ArtistPageContent: React.FC<{
         </header>
 
         <main className="app-main">
-          <div className="text-center">
+          {/* z-0: halo shadow bleeds past hero; keep below purchase/login chassis (matches TreasureInviteShell) */}
+          <div className="text-center relative z-0">
               <>
                 <ArtistPortalTitle
                   fontFamily={appMode === 'onboarding' ? 'Bungee, cursive' : artistConfig.theme.fontFamily}
@@ -2594,6 +2595,7 @@ const ArtistPageContent: React.FC<{
               </>
           </div>
 
+          <div className="relative z-10 w-full flex flex-col items-center">
           {isOwner && (
             <OwnerControls
               isMinting={isMinting}
@@ -3234,6 +3236,7 @@ const ArtistPageContent: React.FC<{
               </button>
               </div>
             </div>
+          </div>
           </div>
         </main>
 

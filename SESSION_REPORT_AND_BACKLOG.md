@@ -65,6 +65,7 @@
 |----|-------|-------------|----------|
 | T-002 | Refresh page after new asset upload | After upload, new asset doesn't appear until manual refresh | `app/page.tsx:1222` |
 | T-003 | Implement proper LP calculation in artist/balances | `lpWithdrawableUsd` is hardcoded to 0; LP calculation not implemented | `app/api/artist/balances/route.ts:87` |
+| T-011 | Treasure lower chassis parity with live portal | Mirror live post-hero regions (`login-prompts`, `unified-input`/lore strip) on `TreasureInviteShell` with **claim-first** copy and behavior — **no** full `PurchaseFlow`, **no** swap/marketplace. See Part 8. | `app/components/TreasureInviteShell.tsx`, `app/page.tsx` (reference only) |
 
 ### 🟡 Medium / Performance & Reliability
 
@@ -201,3 +202,47 @@ Add a `.cursor/rules/backlog.mdc` that references this file so agents know the b
 - Wallet should eventually support reload flows
 - Toppins per view should likely be metered internally and settled in batches
 - A grounded language model should eventually guide both ArtisTalks curriculum and portal navigation in founder voice
+
+---
+
+## Part 8: Phase 3B — Treasure invite vs live portal chassis (May 2026)
+
+### Product direction
+
+- **Treasure** (`?coin=…` nested invite) should feel like the **same portal** as **live** published artist pages: same mobile rhythm and hero/button layout; **different permissions** (claim / Magic / continue-to-launch vs purchase / wallet when allowed). Theme paint may differ.
+
+### Implemented (this workstream)
+
+| Area | Notes |
+|------|--------|
+| Treasure shell | Closer to `ArtistPageContent`: outer flex shell, `applyArtistBackground(stubConfig)`, hero stack `OvalGlowBackdrop` → `OrbitPeekCarousel` → `ThemeOrbitRenderer` (gift-scoped orbit), no extra sizing wrapper duplicating carousel on image/video path. |
+| Claim-first | Removed purchase-y “Download · $1” line; primary **`CLAIM_CTA_LABEL`**; empty-email click shakes/focuses (`.shake` in `globals.css`); **unchanged** claim API + auto-claim `useEffect`. |
+| Shared title | **`app/components/ArtistPortalTitle.tsx`**: `clamp` + wrap; used in **`app/page.tsx`** and **`TreasureInviteShell.tsx`**. |
+| Carousel story | Synthetic **`ArtistAsset`** sets **`metadata.description`** from `treasure.description` so **`OrbitPeekCarousel`** caret/expand matches live; title line includes **year** when present; under-hero duplicate title/description **only** when there is **no** image/video carousel (audio/placeholder). |
+| Post-hero rhythm | **Hero →** `my-4 w-full max-w-md mx-auto` **primary blue CTA** (guest styling aligned with `PurchaseFlow`) **→** supporting card (Magic lead + **email + Continue** row, `rounded-l` / `rounded-r`, `accentColor`). **No** `PurchaseFlow` import on treasure. |
+
+### Intentionally not touched
+
+- Claim routes, media persistence / draft-upload / save-draft, contracts, swap/tokenomics implementation, `useOrbitTokens` internals, ArtisTalks, new APIs.
+
+### Files touched
+
+- `app/components/TreasureInviteShell.tsx`
+- `app/components/ArtistPortalTitle.tsx` (new)
+- `app/page.tsx` (live title wiring only)
+
+### Next slice (see T-011)
+
+- Full **lower stack** parity: optional `login-prompts`-style block + future **unified input / lore** region — **claim copy only**, no swap slider, no marketplace noise.
+
+### QA before shipping / next PR
+
+- [ ] Long-name treasure + short-name live titles
+- [ ] Treasure with and without `description` (caret on overlay)
+- [ ] Audio or placeholder hero (text still under hero)
+- [ ] Empty email → shake + focus; filled email → OTP → auto-claim
+- [ ] Continue to launch after claim
+
+### Safe-area note
+
+- iPhone bottom padding deferred / watch-only unless QA shows repeat issues (Safari chrome collapse often sufficient).

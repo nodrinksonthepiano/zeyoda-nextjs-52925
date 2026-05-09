@@ -36,7 +36,11 @@ export const TREASURE_HERO_PLACEHOLDER = 'Featured treasure';
 export const TREASURE_LOGIN_LEAD =
   'Sign in with the same email this coin was made for. Magic link — no password.';
 
-export const TREASURE_EMAIL_PLACEHOLDER = 'artist@studio.com';
+/** Guest chassis headline — aligns with live `access-headline` pattern (claim vs purchase). */
+export const TREASURE_ACCESS_HEADLINE = 'Sign in to claim this treasure';
+
+/** Same placeholder as live guest `unified-input-container` for parity and focus/selectors. */
+export const TREASURE_EMAIL_PLACEHOLDER = 'Enter your email address to continue';
 
 export const TREASURE_SEND_CODE = 'Send login code';
 

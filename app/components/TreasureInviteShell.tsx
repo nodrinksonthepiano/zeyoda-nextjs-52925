@@ -20,6 +20,7 @@ import {
   CLAIM_SELF_BANNER,
   CLAIMED_PUBLIC_FOOTNOTE,
   CONTINUE_LAUNCH_SETUP,
+  TREASURE_ACCESS_HEADLINE,
   TREASURE_EMAIL_PLACEHOLDER,
   TREASURE_FETCHING_SESSION,
   TREASURE_HERO_PLACEHOLDER,
@@ -262,12 +263,17 @@ export default function TreasureInviteShell({
     }
   };
 
-  /** Same UX as PurchaseFlow when logged out: shake + scroll/focus email, no submit until filled. */
+  /** Same UX as PurchaseFlow when logged out: shake login-prompts + unified strip, scroll/focus email. */
   function handleClaimTreasureClick() {
     if (busyLogin) return;
     if (!loginEmail.trim()) {
       setClaimCtaShake(true);
       setTimeout(() => setClaimCtaShake(false), 500);
+      const loginContainer = document.getElementById('login-prompts-container');
+      if (loginContainer) {
+        loginContainer.classList.add('shake');
+        setTimeout(() => loginContainer.classList.remove('shake'), 500);
+      }
       const el = treasureEmailInputRef.current;
       if (el) {
         el.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -377,7 +383,8 @@ export default function TreasureInviteShell({
       <div id="particles" className="cosmic-particles" />
 
       <main className="app-main">
-        <div className="text-center">
+        {/* z-0: halo shadow bleeds past the hero box; keep this subtree below the claim/login chassis */}
+        <div className="text-center relative z-0">
           <ArtistPortalTitle
             fontFamily={stubConfig.theme.fontFamily}
             color={stubConfig.theme.accentColor}
@@ -464,7 +471,7 @@ export default function TreasureInviteShell({
           </div>
         </div>
 
-        <div className="action-section text-center w-full max-w-lg mx-auto px-1 space-y-5">
+        <div className="action-section relative z-10 text-center mb-4 w-full max-w-lg mx-auto px-1 space-y-5">
             {!heroCarousel && treasure.artworktitle && (
               <p className="text-sm opacity-85">
                 {treasure.artworktitle}
@@ -478,7 +485,7 @@ export default function TreasureInviteShell({
 
             {!user && envelope.status === 'draft' && (
               <>
-                {/* Same rhythm as PurchaseFlow guest primary CTA: hero → max-w-md button → supporting details */}
+                {/* Same rhythm as PurchaseFlow guest: hero → primary CTA → login-prompts (live chassis) */}
                 <div className="my-4 w-full max-w-md mx-auto">
                   <button
                     type="button"
@@ -489,36 +496,45 @@ export default function TreasureInviteShell({
                     {busyLogin ? TREASURE_SENDING_CODE : CLAIM_CTA_LABEL}
                   </button>
                 </div>
-                <div
-                  className={`rounded-xl bg-black/35 border border-white/20 p-5 text-left shadow-lg backdrop-blur-sm max-w-md mx-auto ${claimCtaShake ? 'shake' : ''}`}
-                >
-                  <p className="text-sm mb-4 leading-relaxed opacity-95">{TREASURE_LOGIN_LEAD}</p>
-                  <div className="flex items-center w-full">
-                    <input
-                      ref={treasureEmailInputRef}
-                      type="email"
-                      value={loginEmail}
-                      placeholder={TREASURE_EMAIL_PLACEHOLDER}
-                      onChange={(e) => setLoginEmail(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') {
-                          e.preventDefault();
-                          handleClaimTreasureClick();
-                        }
-                      }}
-                      className="flex-grow min-w-0 p-3 border border-gray-600 rounded-l-lg bg-gray-900 bg-opacity-70 text-white placeholder:text-slate-500 focus:ring-2 focus:ring-accentColor focus:border-accentColor backdrop-blur-sm min-h-[44px] text-base"
-                      autoComplete="email"
-                      inputMode="email"
-                      aria-label="Email address input"
-                    />
-                    <button
-                      type="button"
-                      onClick={handleClaimTreasureClick}
-                      disabled={busyLogin}
-                      className="shrink-0 p-3 min-h-[44px] bg-accentColor text-white rounded-r-lg hover:bg-opacity-80 focus:outline-none focus:ring-2 focus:ring-accentColor focus:ring-opacity-50 disabled:opacity-70"
-                    >
-                      {busyLogin ? TREASURE_SENDING_CODE : 'Continue'}
-                    </button>
+                <div id="login-prompts-container" className="login-prompts mt-6">
+                  <h3 id="accessHeadline" className="access-headline">
+                    {TREASURE_ACCESS_HEADLINE}
+                  </h3>
+                  <p className="text-sm mt-3 leading-relaxed opacity-95 max-w-md mx-auto">
+                    {TREASURE_LOGIN_LEAD}
+                  </p>
+                  <div className="social-login-container mt-3">
+                    <p className="login-separator">or continue with</p>
+                    <div className="social-buttons">
+                      <button
+                        type="button"
+                        className="login-btn twitter"
+                        onClick={() => alert('Twitter login coming soon!')}
+                      >
+                        X (Twitter)
+                      </button>
+                      <button
+                        type="button"
+                        className="login-btn gmail"
+                        onClick={() => alert('Gmail login coming soon!')}
+                      >
+                        Gmail
+                      </button>
+                      <button
+                        type="button"
+                        className="login-btn phone"
+                        onClick={() => alert('Phone login coming soon!')}
+                      >
+                        Phone
+                      </button>
+                      <button
+                        type="button"
+                        className="login-btn facebook"
+                        onClick={() => alert('Facebook login coming soon!')}
+                      >
+                        Facebook
+                      </button>
+                    </div>
                   </div>
                 </div>
               </>
@@ -577,6 +593,42 @@ export default function TreasureInviteShell({
               </div>
             )}
         </div>
+
+        {!user && envelope.status === 'draft' && (
+          <div
+            className={`unified-input-container relative z-10 mock-ui-section p-4 border-t-2 border-gray-700 mt-8 ${claimCtaShake ? 'shake' : ''}`}
+          >
+            <div className="flex flex-col items-center max-w-xl mx-auto gap-3">
+              <div className="flex items-center w-full chat-input-container relative">
+                <input
+                  ref={treasureEmailInputRef}
+                  type="email"
+                  value={loginEmail}
+                  placeholder={TREASURE_EMAIL_PLACEHOLDER}
+                  onChange={(e) => setLoginEmail(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      handleClaimTreasureClick();
+                    }
+                  }}
+                  className="flex-grow p-3 border border-gray-600 rounded-l-lg bg-gray-900 bg-opacity-70 text-white focus:ring-accentColor focus:border-accentColor backdrop-blur-sm"
+                  autoComplete="email"
+                  inputMode="email"
+                  aria-label="Email address input"
+                />
+                <button
+                  type="button"
+                  onClick={handleClaimTreasureClick}
+                  disabled={busyLogin}
+                  className="p-3 bg-accentColor text-white rounded-r-lg hover:bg-opacity-80 focus:outline-none focus:ring-2 focus:ring-accentColor focus:ring-opacity-50 disabled:opacity-70"
+                >
+                  {busyLogin ? TREASURE_SENDING_CODE : 'Continue'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </main>
     </div>
   );
