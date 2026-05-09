@@ -65,7 +65,8 @@
 |----|-------|-------------|----------|
 | T-002 | Refresh page after new asset upload | After upload, new asset doesn't appear until manual refresh | `app/page.tsx:1222` |
 | T-003 | Implement proper LP calculation in artist/balances | `lpWithdrawableUsd` is hardcoded to 0; LP calculation not implemented | `app/api/artist/balances/route.ts:87` |
-| T-011 | Treasure lower chassis parity with live portal | Mirror live post-hero regions (`login-prompts`, `unified-input`/lore strip) on `TreasureInviteShell` with **claim-first** copy and behavior — **no** full `PurchaseFlow`, **no** swap/marketplace. See Part 8. | `app/components/TreasureInviteShell.tsx`, `app/page.tsx` (reference only) |
+| T-011 | Treasure lower chassis parity with live portal | **Shipped (May 2026).** Guest stack on `TreasureInviteShell`: `login-prompts`, `access-headline` + claim copy (`treasureCopy.ts`), stub social grid (`login-btn` + same `alert` as live guest `page.tsx`), `unified-input-container` email + Continue (live classes). **No** `PurchaseFlow`, **no** swap/marketplace. Live portal: hero `relative z-0` + post-hero `main` content in `relative z-10` wrapper so `OvalGlowBackdrop` halo does not paint over CTAs. See Part 8. | `app/components/TreasureInviteShell.tsx`, `app/constants/treasureCopy.ts`, `app/page.tsx` |
+| T-012 | Treasure lore / unified chat strip | **Future slice.** Clue / lore / chat-style input (or extend unified strip) on the treasure invite flow — **claim-first**, no marketplace, no swap. | `app/components/TreasureInviteShell.tsx` |
 
 ### 🟡 Medium / Performance & Reliability
 
@@ -219,7 +220,8 @@ Add a `.cursor/rules/backlog.mdc` that references this file so agents know the b
 | Claim-first | Removed purchase-y “Download · $1” line; primary **`CLAIM_CTA_LABEL`**; empty-email click shakes/focuses (`.shake` in `globals.css`); **unchanged** claim API + auto-claim `useEffect`. |
 | Shared title | **`app/components/ArtistPortalTitle.tsx`**: `clamp` + wrap; used in **`app/page.tsx`** and **`TreasureInviteShell.tsx`**. |
 | Carousel story | Synthetic **`ArtistAsset`** sets **`metadata.description`** from `treasure.description` so **`OrbitPeekCarousel`** caret/expand matches live; title line includes **year** when present; under-hero duplicate title/description **only** when there is **no** image/video carousel (audio/placeholder). |
-| Post-hero rhythm | **Hero →** `my-4 w-full max-w-md mx-auto` **primary blue CTA** (guest styling aligned with `PurchaseFlow`) **→** supporting card (Magic lead + **email + Continue** row, `rounded-l` / `rounded-r`, `accentColor`). **No** `PurchaseFlow` import on treasure. |
+| Post-hero rhythm | **Hero →** primary Claim CTA (`PurchaseFlow`-aligned guest blue button) **→** `login-prompts` + stub social grid **→** **`unified-input-container`** (Magic email + Continue, live classes). **No** `PurchaseFlow` on treasure. |
+| Halo stacking | Treasure + live: hero column **`z-0`**, chassis (and live: all post-hero `main` content) **`z-10`** so halo `box-shadow` bleed stays underneath CTAs. |
 
 ### Intentionally not touched
 
@@ -229,11 +231,12 @@ Add a `.cursor/rules/backlog.mdc` that references this file so agents know the b
 
 - `app/components/TreasureInviteShell.tsx`
 - `app/components/ArtistPortalTitle.tsx` (new)
-- `app/page.tsx` (live title wiring only)
+- `app/constants/treasureCopy.ts` (`TREASURE_ACCESS_HEADLINE`, guest email placeholder)
+- `app/page.tsx` (live title wiring; post-hero `z-10` wrapper for stacking parity)
 
-### Next slice (see T-011)
+### Next slice (T-012)
 
-- Full **lower stack** parity: optional `login-prompts`-style block + future **unified input / lore** region — **claim copy only**, no swap slider, no marketplace noise.
+- **Lore / clue / chat-style** region on treasure invite — see **T-012** in Part 3. Lower chassis (**T-011**) is shipped.
 
 ### QA before shipping / next PR
 
@@ -242,6 +245,8 @@ Add a `.cursor/rules/backlog.mdc` that references this file so agents know the b
 - [ ] Audio or placeholder hero (text still under hero)
 - [ ] Empty email → shake + focus; filled email → OTP → auto-claim
 - [ ] Continue to launch after claim
+- [ ] Treasure: social buttons stub-only (`alert`), no accidental form submit
+- [ ] Treasure + live: primary CTA + email strip fully above halo (mobile + desktop)
 
 ### Safe-area note
 
