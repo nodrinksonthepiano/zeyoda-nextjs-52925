@@ -17,8 +17,12 @@ export async function authenticatedFetch(
   // Build headers
   const headers = new Headers(options.headers);
 
-  // Add Content-Type if not present and body exists
-  if (options.body && !headers.has('Content-Type')) {
+  // Add Content-Type if not present and body exists (never override multipart FormData)
+  if (
+    options.body &&
+    !headers.has('Content-Type') &&
+    !(typeof FormData !== 'undefined' && options.body instanceof FormData)
+  ) {
     headers.set('Content-Type', 'application/json');
   }
 

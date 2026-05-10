@@ -39,6 +39,37 @@ export const TREASURE_LOGIN_LEAD =
 /** Guest chassis headline — aligns with live `access-headline` pattern (claim vs purchase). */
 export const TREASURE_ACCESS_HEADLINE = 'Sign in to claim this treasure';
 
+/** Claimed coin, guest — login-prompts headline */
+export const TREASURE_CLAIMED_ACCESS_HEADLINE = 'This treasure has already been claimed';
+
+/** Claimed coin, guest — login-prompts lead */
+export const TREASURE_CLAIMED_LOGIN_LEAD =
+  'Log in with the email connected to this coin to continue your launch.';
+
+/** Claimed coin, guest — primary blue CTA (same handler as email continue) */
+export const TREASURE_CLAIMED_PRIMARY_CTA = 'Log in to continue';
+
+/** Claimed coin, guest — email field placeholder */
+export const TREASURE_CLAIMED_EMAIL_PLACEHOLDER = 'Enter the email connected to this coin';
+
+/** Wrong Magic account on a claimed coin */
+export const TREASURE_WRONG_ACCOUNT_HEADLINE = 'This treasure is connected to a different email.';
+
+export const TREASURE_WRONG_ACCOUNT_LEAD =
+  'Sign out and log in with the email this coin was made for, or leave a clue so we can help.';
+
+export const TREASURE_SIGN_OUT_USE_OTHER_EMAIL = 'Sign out and use a different email';
+
+/** Clue mode — guest or wrong-account */
+export const TREASURE_CLUE_PLACEHOLDER = 'Who sent you? Enter a clue here…';
+
+export const TREASURE_CLUE_SUBMIT_LABEL = 'Submit Clue 🏴‍☠️';
+
+/** Guest clue mode — email used for checkWhitelist is shown above the clue field */
+export const TREASURE_CLUE_EMAIL_LABEL = 'Using this email with your clue:';
+
+export const TREASURE_USE_DIFFERENT_EMAIL = 'Use a different email';
+
 /** Same placeholder as live guest `unified-input-container` for parity and focus/selectors. */
 export const TREASURE_EMAIL_PLACEHOLDER = 'Enter your email address to continue';
 

@@ -1,17 +1,14 @@
 import { ArtistConfig } from '../../types/artist-types';
 
 /**
- * Get the download price for an artist's featured asset
- * @param featuredAsset - The featured asset object with price_usd property
- * @returns The download price in USD (defaults to $5)
+ * Resolved download price from featured asset row. No default — unknown returns null so UI cannot silently show $5.
  */
-export const getDownloadPrice = (featuredAsset?: any): number => {
-  // Ensure price_usd is a number, default to 5 if missing/null/undefined
+export const getDownloadPrice = (featuredAsset?: any): number | null => {
   const price = featuredAsset?.price_usd;
-  if (typeof price === 'number' && price >= 0) {
+  if (typeof price === 'number' && price > 0) {
     return price;
   }
-  return 5; // Default to $5 instead of $1
+  return null;
 };
 
 /**
@@ -35,7 +32,8 @@ export const isDownloadAvailable = (
  * @returns Formatted price string (e.g., "$5.00")
  */
 export const formatDownloadPrice = (featuredAsset?: any): string => {
-  return `$${getDownloadPrice(featuredAsset).toFixed(2)}`;
+  const p = getDownloadPrice(featuredAsset);
+  return p == null ? '—' : `$${p.toFixed(2)}`;
 };
 
 /**
@@ -48,7 +46,8 @@ export const formatDownloadPrice = (featuredAsset?: any): string => {
 export const createDownloadMintPayload = (
   artistConfig: ArtistConfig,
   userAddress: string,
-  swapTxHash: string
+  swapTxHash: string,
+  downloadPriceUsd: number
 ) => {
   return {
     artistId: artistConfig.name?.toLowerCase() || '',
@@ -56,6 +55,6 @@ export const createDownloadMintPayload = (
     assetId: 1, // Featured asset is always #1
     txHash: swapTxHash,
     amount: 1,
-    downloadPrice: getDownloadPrice(artistConfig) // Include price for server logs
+    downloadPrice: downloadPriceUsd,
   };
 }; 

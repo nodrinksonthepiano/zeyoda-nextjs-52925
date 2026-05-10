@@ -30,3 +30,40 @@ export async function getMagicEmailFromBearer(request: NextRequest): Promise<str
     return null;
   }
 }
+
+export interface MagicBearerAuth {
+  email: string | null;
+  issuer: string | null;
+  publicAddress: string | null;
+}
+
+/**
+ * Validates Authorization Bearer DID token and returns the Magic identity metadata
+ * needed for server-side authorization decisions.
+ */
+export async function getMagicAuthFromBearer(request: NextRequest): Promise<MagicBearerAuth | null> {
+  const authHeader = request.headers.get('authorization');
+  if (!authHeader?.startsWith('Bearer ')) return null;
+
+  const didToken = authHeader.substring(7).trim();
+  if (!didToken) return null;
+
+  try {
+    await magicAdmin.token.validate(didToken);
+    const userMetadata = await magicAdmin.users.getMetadataByToken(didToken);
+    if (!userMetadata) return null;
+
+    const rawEmail = typeof userMetadata.email === 'string' ? userMetadata.email : null;
+    const rawIssuer = typeof userMetadata.issuer === 'string' ? userMetadata.issuer : null;
+    const rawPublicAddress =
+      typeof userMetadata.publicAddress === 'string' ? userMetadata.publicAddress : null;
+
+    return {
+      email: rawEmail ? rawEmail.trim().toLowerCase() : null,
+      issuer: rawIssuer ? rawIssuer.trim() : null,
+      publicAddress: rawPublicAddress ? rawPublicAddress.trim().toLowerCase() : null,
+    };
+  } catch {
+    return null;
+  }
+}

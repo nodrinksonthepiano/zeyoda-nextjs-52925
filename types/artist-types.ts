@@ -56,6 +56,8 @@ export interface ArtistDatabaseEntry {
   logo_use_background?: boolean;
   background_image_url?: string | null;
   background_use_image?: boolean;
+  /** Draft launch gate: when true, the public live portal must not render commerce. */
+  paused?: boolean | null;
 }
 
 // Application types

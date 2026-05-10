@@ -193,6 +193,7 @@ const useArtistConfig = (artistIdOverride?: string | null): UseArtistConfigRetur
             name: artistData.name,
             displayName: artistData.displayname,
             tokenName: artistData.tokenName,
+            paused: artistData.paused === true,
             artworkTitle: artistData.artworktitle,
             artworkYear: artistData.artworkyear,
             tokenPrice: artistData.tokenprice,

@@ -17,6 +17,14 @@ export async function POST(request: NextRequest) {
     const artistData = await request.json();
     console.log('🎨 Creating artist via API:', artistData.name);
 
+    const downloadPriceNum = Number(artistData.downloadPrice);
+    if (!Number.isFinite(downloadPriceNum) || downloadPriceNum <= 0) {
+      return NextResponse.json(
+        { error: 'downloadPrice must be a number greater than 0' },
+        { status: 400 },
+      );
+    }
+
     /**
      * When `coin_public_id` is sent, invite-driven launch requires a successful registry insert before
      * marking the NFC invite as launched (no warn-only shortcut). Omit `coin_public_id` to keep legacy
@@ -33,7 +41,7 @@ export async function POST(request: NextRequest) {
       tokenName: artistData.tokenName || artistData.name,
       artworktitle: artistData.artworktitle,
       artworkyear: artistData.artworkyear,
-      tokenprice: artistData.downloadPrice || 1,
+      tokenprice: downloadPriceNum,
       videosrc: artistData.contentUrl,
       contract: artistData.tokenAddress,
       download_address: artistData.downloadsAddress,
@@ -49,7 +57,7 @@ export async function POST(request: NextRequest) {
         fontFamily: artistData.fontFamily,
       },
       orbitaltokens: artistData.orbitaltokens || [],
-      paused: false,
+      paused: true,
     };
 
     const { data: artistResult, error: artistError } = await supabaseAdmin

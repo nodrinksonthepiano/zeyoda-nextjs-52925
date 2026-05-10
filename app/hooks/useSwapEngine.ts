@@ -47,14 +47,14 @@ export const useSwapEngine = (artistConfig: ArtistConfig | null) => {
   // Effect to calculate the total purchase price (legacy - for backward compatibility)
   useEffect(() => {
     const fromAmount = parseFloat(swapFromAmount || '0');
-    const downloadCost = includeDownload ? getDownloadPrice(artistConfig) : 0;
+    const downloadCost = includeDownload ? (getDownloadPrice(undefined) ?? 0) : 0;
     setTotalPurchasePrice(fromAmount + downloadCost);
   }, [swapFromAmount, includeDownload, artistConfig]);
 
   // Effect to calculate the total USD amount including download
   useEffect(() => {
     const fromAmount = parseFloat(swapFromAmount || '0');
-    const downloadCost = includeDownload ? getDownloadPrice(artistConfig) : 0;
+    const downloadCost = includeDownload ? (getDownloadPrice(undefined) ?? 0) : 0;
     setTotalUsdIncludingDownload(fromAmount + downloadCost);
   }, [swapFromAmount, includeDownload, artistConfig]);
 

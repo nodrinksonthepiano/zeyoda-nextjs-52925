@@ -67,6 +67,10 @@ const Wallet: React.FC<WalletProps> = ({
   const [isQuoting, setIsQuoting] = useState<boolean>(false);
   const [isWithdrawing, setIsWithdrawing] = useState<boolean>(false);
   const [showCashPanel, setShowCashPanel] = useState<boolean>(false);
+  const [showSendEthPanel, setShowSendEthPanel] = useState<boolean>(false);
+  const [sendEthTo, setSendEthTo] = useState<string>('');
+  const [sendEthAmount, setSendEthAmount] = useState<string>('');
+  const [isSendingEth, setIsSendingEth] = useState<boolean>(false);
   const [cashPct, setCashPct] = useState<number>(0);
   const [cashAmount, setCashAmount] = useState<string>('0.00');
   const [feedbackList, setFeedbackList] = useState<FeedbackItem[]>([]);
@@ -344,6 +348,7 @@ const Wallet: React.FC<WalletProps> = ({
     }
 
     try {
+      setShowSendEthPanel(false);
       // Copy wallet address to clipboard
       await navigator.clipboard.writeText(userAddress);
       showToast('Wallet address copied to clipboard!', 'success');
@@ -468,6 +473,66 @@ const Wallet: React.FC<WalletProps> = ({
     
     return combined;
   }, [userTokenBalances, realTimeBalances]);
+
+  /** Native ETH transfer on Base Sepolia via Magic signer (e.g. fund MetaMask deployer). */
+  const handleSendNativeEth = async () => {
+    if (!magic?.rpcProvider) {
+      showToast('Wallet not ready', 'error');
+      return;
+    }
+    const to = sendEthTo.trim();
+    if (!to || !ethers.isAddress(to)) {
+      showToast('Enter a valid recipient address (0x…)', 'error');
+      return;
+    }
+    const amtStr = sendEthAmount.trim();
+    let value: bigint;
+    try {
+      value = ethers.parseEther(amtStr === '' ? '0' : amtStr);
+    } catch {
+      showToast('Invalid ETH amount', 'error');
+      return;
+    }
+    if (value <= 0n) {
+      showToast('Amount must be greater than zero', 'error');
+      return;
+    }
+
+    const bal = combinedBalances['ETH'] ?? BigInt(0);
+    if (value > bal) {
+      showToast('Amount exceeds balance. Leave ETH for gas.', 'error');
+      return;
+    }
+
+    try {
+      setIsSendingEth(true);
+      const provider = new ethers.BrowserProvider(magic.rpcProvider as ethers.Eip1193Provider);
+      const signer = await provider.getSigner();
+      const from = await signer.getAddress();
+      if (userAddress && from.toLowerCase() !== userAddress.toLowerCase()) {
+        showToast('Signer does not match connected address', 'error');
+        return;
+      }
+      const tx = await signer.sendTransaction({
+        to: ethers.getAddress(to),
+        value,
+      });
+      showToast('Transaction sent…', 'info');
+      await tx.wait();
+      showToast(`Sent ${ethers.formatEther(value)} ETH (Base Sepolia)`, 'success');
+      setShowSendEthPanel(false);
+      setSendEthTo('');
+      setSendEthAmount('');
+      window.dispatchEvent(new CustomEvent('balanceUpdate'));
+      await refreshBalances();
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      console.error('Send ETH error:', e);
+      showToast(msg.length > 120 ? `${msg.slice(0, 120)}…` : msg, 'error');
+    } finally {
+      setIsSendingEth(false);
+    }
+  };
 
   if (!showAssetsPanel) {
     return null;
@@ -740,19 +805,86 @@ const Wallet: React.FC<WalletProps> = ({
                 
                 {/* Cash Action Buttons */}
                 {showUsdBalance && (
-                  <div className="flex gap-2 mt-3">
+                  <div className="flex flex-col gap-2 mt-3">
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={handleDeposit}
+                        className="flex-1 py-1 px-3 bg-green-600 hover:bg-green-500 text-white text-xs rounded transition-colors"
+                      >
+                        Deposit
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowSendEthPanel(false);
+                          setShowCashPanel(true);
+                          setCashPct(0);
+                          setCashAmount('0.00');
+                        }}
+                        className="flex-1 py-1 px-3 bg-gray-600 hover:bg-gray-500 text-white text-xs rounded transition-colors"
+                      >
+                        Withdraw Cash
+                      </button>
+                    </div>
                     <button
-                      onClick={handleDeposit}
-                      className="flex-1 py-1 px-3 bg-green-600 hover:bg-green-500 text-white text-xs rounded transition-colors"
+                      type="button"
+                      onClick={() => {
+                        setShowCashPanel(false);
+                        setShowSendEthPanel((v) => !v);
+                      }}
+                      className="w-full py-1 px-3 bg-blue-700 hover:bg-blue-600 text-white text-xs rounded transition-colors"
                     >
-                      Deposit
+                      {showSendEthPanel ? 'Close send' : 'Send ETH (Base Sepolia)'}
                     </button>
-                    <button
-                      onClick={() => { setShowCashPanel(true); setCashPct(0); setCashAmount('0.00'); }}
-                      className="flex-1 py-1 px-3 bg-gray-600 hover:bg-gray-500 text-white text-xs rounded transition-colors"
-                    >
-                      Withdraw Cash
-                    </button>
+                  </div>
+                )}
+
+                {showSendEthPanel && showUsdBalance && (
+                  <div className="mt-3 p-3 bg-gray-700 bg-opacity-50 rounded border border-blue-400 border-opacity-40">
+                    <div className="text-gray-300 text-xs mb-2">
+                      Send native ETH from this Magic wallet. Same network as the app (Base Sepolia). Leave
+                      extra ETH for gas.
+                    </div>
+                    <input
+                      type="text"
+                      value={sendEthTo}
+                      onChange={(e) => setSendEthTo(e.target.value)}
+                      placeholder="Recipient 0x…"
+                      className="w-full mb-2 px-2 py-1 bg-gray-800 text-white text-xs rounded border border-gray-600 font-mono"
+                      autoComplete="off"
+                      spellCheck={false}
+                    />
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      value={sendEthAmount}
+                      onChange={(e) => setSendEthAmount(e.target.value)}
+                      placeholder="Amount (ETH), e.g. 0.04"
+                      className="w-full mb-3 px-2 py-1 bg-gray-800 text-white text-xs rounded border border-gray-600"
+                      autoComplete="off"
+                    />
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowSendEthPanel(false);
+                          setSendEthTo('');
+                          setSendEthAmount('');
+                        }}
+                        className="flex-1 py-1 px-3 bg-gray-600 hover:bg-gray-500 text-white text-xs rounded transition-colors"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleSendNativeEth}
+                        disabled={isSendingEth}
+                        className="flex-1 py-1 px-3 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-xs rounded transition-colors"
+                      >
+                        {isSendingEth ? 'Sending…' : 'Send'}
+                      </button>
+                    </div>
                   </div>
                 )}
                 

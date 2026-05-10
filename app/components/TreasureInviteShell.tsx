@@ -21,12 +21,23 @@ import {
   CLAIMED_PUBLIC_FOOTNOTE,
   CONTINUE_LAUNCH_SETUP,
   TREASURE_ACCESS_HEADLINE,
+  TREASURE_CLAIMED_ACCESS_HEADLINE,
+  TREASURE_CLAIMED_EMAIL_PLACEHOLDER,
+  TREASURE_CLAIMED_LOGIN_LEAD,
+  TREASURE_CLAIMED_PRIMARY_CTA,
+  TREASURE_CLUE_EMAIL_LABEL,
+  TREASURE_CLUE_PLACEHOLDER,
+  TREASURE_CLUE_SUBMIT_LABEL,
   TREASURE_EMAIL_PLACEHOLDER,
   TREASURE_FETCHING_SESSION,
   TREASURE_HERO_PLACEHOLDER,
   TREASURE_LOGIN_LEAD,
   TREASURE_RETRY_CLAIM,
   TREASURE_SENDING_CODE,
+  TREASURE_SIGN_OUT_USE_OTHER_EMAIL,
+  TREASURE_USE_DIFFERENT_EMAIL,
+  TREASURE_WRONG_ACCOUNT_HEADLINE,
+  TREASURE_WRONG_ACCOUNT_LEAD,
   TOAST_CLAIM_SUCCESS,
   TOAST_LOGIN_FAILED,
   TOAST_SIGNED_IN,
@@ -151,6 +162,8 @@ export default function TreasureInviteShell({
   const [loginEmail, setLoginEmail] = useState('');
   const [busyLogin, setBusyLogin] = useState(false);
   const [claimCtaShake, setClaimCtaShake] = useState(false);
+  const [showClueInput, setShowClueInput] = useState(false);
+  const [clueMessage, setClueMessage] = useState('');
   const treasureEmailInputRef = useRef<HTMLInputElement>(null);
 
   const giftAllArtistsConfig = useMemo(
@@ -230,25 +243,34 @@ export default function TreasureInviteShell({
     };
   }, [getDidToken, envelope.coin_public_id, envelope.status, user]);
 
-  const checkWhitelist = useCallback(async (emailToCheck: string) => {
-    const response = await authenticatedFetch(
-      '/api/checkWhitelist',
-      {
-        method: 'POST',
-        body: JSON.stringify({ email: emailToCheck }),
-      },
-      getDidToken,
-      true,
-    );
-    return response.json();
-  }, [getDidToken]);
+  const checkWhitelist = useCallback(
+    async (emailToCheck: string, clue?: string) => {
+      const response = await authenticatedFetch(
+        '/api/checkWhitelist',
+        {
+          method: 'POST',
+          body: JSON.stringify({ email: emailToCheck, ...(clue ? { clue } : {}) }),
+        },
+        getDidToken,
+        true,
+      );
+      const data = (await response.json().catch(() => ({}))) as { isWhitelisted?: boolean };
+      return { ok: response.ok, data };
+    },
+    [getDidToken],
+  );
 
   const loginFlow = async () => {
     if (!magic || !loginEmail.trim()) return;
     setBusyLogin(true);
     try {
-      const wl = await checkWhitelist(loginEmail.trim());
+      const { ok, data: wl } = await checkWhitelist(loginEmail.trim());
+      if (!ok) {
+        showToast(TOAST_LOGIN_FAILED, 'error');
+        return;
+      }
       if (!wl?.isWhitelisted) {
+        setShowClueInput(true);
         showToast(TOAST_WHITELIST_HINT, 'info');
         return;
       }
@@ -263,9 +285,76 @@ export default function TreasureInviteShell({
     }
   };
 
+  const submitClueGuest = async () => {
+    if (!loginEmail.trim()) {
+      showToast('Please enter an email first.', 'error');
+      return;
+    }
+    if (!clueMessage.trim()) {
+      showToast('Please enter a clue message.', 'error');
+      return;
+    }
+    setBusyLogin(true);
+    try {
+      const { ok } = await checkWhitelist(loginEmail.trim(), clueMessage.trim());
+      if (!ok) {
+        showToast(CLAIM_ERROR_NETWORK, 'error');
+        return;
+      }
+      setShowClueInput(false);
+      setClueMessage('');
+      showToast('Thank you! Keep looking out for treasure… 🏴‍☠️', 'success');
+    } catch {
+      showToast(CLAIM_ERROR_NETWORK, 'error');
+    } finally {
+      setBusyLogin(false);
+    }
+  };
+
+  const submitClueWrongUser = async () => {
+    if (!magicEmailNorm) return;
+    if (!clueMessage.trim()) {
+      showToast('Please enter a clue message.', 'error');
+      return;
+    }
+    setBusyLogin(true);
+    try {
+      const { ok } = await checkWhitelist(magicEmailNorm, clueMessage.trim());
+      if (!ok) {
+        showToast(CLAIM_ERROR_NETWORK, 'error');
+        return;
+      }
+      setClueMessage('');
+      showToast('Thank you! Keep looking out for treasure… 🏴‍☠️', 'success');
+    } catch {
+      showToast(CLAIM_ERROR_NETWORK, 'error');
+    } finally {
+      setBusyLogin(false);
+    }
+  };
+
+  const handleTreasureSignOut = async () => {
+    if (!magic) return;
+    try {
+      await magic.user.logout();
+    } catch {
+      /* still try to reload */
+    }
+    try {
+      localStorage.removeItem('zeyodaUserEmail');
+    } catch {
+      /* non-fatal */
+    }
+    window.location.reload();
+  };
+
   /** Same UX as PurchaseFlow when logged out: shake login-prompts + unified strip, scroll/focus email. */
   function handleClaimTreasureClick() {
     if (busyLogin) return;
+    if (showClueInput) {
+      void submitClueGuest();
+      return;
+    }
     if (!loginEmail.trim()) {
       setClaimCtaShake(true);
       setTimeout(() => setClaimCtaShake(false), 500);
@@ -363,7 +452,9 @@ export default function TreasureInviteShell({
     onInviteClaimedRefetch,
   ]);
 
-  const showClaimedFootnote = envelope.status === 'claimed' && isClaimant === false;
+  /** Logged in as Magic user who is not the coin claimant (after /api/invite/me-state). */
+  const isWrongAccountOnClaimed =
+    envelope.status === 'claimed' && Boolean(user) && isClaimant === false;
 
   /** Non-carousel hero: single box with ref (onboarding-style halo behind content). */
   const staticHeroBoxStyle: React.CSSProperties = {
@@ -483,9 +574,8 @@ export default function TreasureInviteShell({
               <p className="text-sm leading-relaxed opacity-90 whitespace-pre-wrap">{treasure.description}</p>
             )}
 
-            {!user && envelope.status === 'draft' && (
+            {!user && (envelope.status === 'draft' || envelope.status === 'claimed') && (
               <>
-                {/* Same rhythm as PurchaseFlow guest: hero → primary CTA → login-prompts (live chassis) */}
                 <div className="my-4 w-full max-w-md mx-auto">
                   <button
                     type="button"
@@ -493,15 +583,17 @@ export default function TreasureInviteShell({
                     disabled={busyLogin}
                     className="w-full font-bold py-3 px-6 rounded-lg text-lg shadow-md transition duration-150 ease-in-out transform hover:scale-105 bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-70 disabled:hover:scale-100 min-h-[44px]"
                   >
-                    {busyLogin ? TREASURE_SENDING_CODE : CLAIM_CTA_LABEL}
+                    {busyLogin ? TREASURE_SENDING_CODE : envelope.status === 'draft' ? CLAIM_CTA_LABEL : TREASURE_CLAIMED_PRIMARY_CTA}
                   </button>
                 </div>
                 <div id="login-prompts-container" className="login-prompts mt-6">
                   <h3 id="accessHeadline" className="access-headline">
-                    {TREASURE_ACCESS_HEADLINE}
+                    {envelope.status === 'draft'
+                      ? TREASURE_ACCESS_HEADLINE
+                      : TREASURE_CLAIMED_ACCESS_HEADLINE}
                   </h3>
                   <p className="text-sm mt-3 leading-relaxed opacity-95 max-w-md mx-auto">
-                    {TREASURE_LOGIN_LEAD}
+                    {envelope.status === 'draft' ? TREASURE_LOGIN_LEAD : TREASURE_CLAIMED_LOGIN_LEAD}
                   </p>
                   <div className="social-login-container mt-3">
                     <p className="login-separator">or continue with</p>
@@ -537,6 +629,11 @@ export default function TreasureInviteShell({
                     </div>
                   </div>
                 </div>
+                {envelope.status === 'claimed' && (
+                  <p className="text-sm italic opacity-85 border border-white/15 rounded-xl p-4 bg-black/25 max-w-md mx-auto">
+                    {CLAIMED_PUBLIC_FOOTNOTE}
+                  </p>
+                )}
               </>
             )}
 
@@ -572,10 +669,21 @@ export default function TreasureInviteShell({
               </div>
             )}
 
-            {showClaimedFootnote && (
-              <p className="text-sm italic opacity-85 border border-white/15 rounded-xl p-4 bg-black/25">
-                {CLAIMED_PUBLIC_FOOTNOTE}
-              </p>
+            {isWrongAccountOnClaimed && (
+              <div className="rounded-xl bg-black/40 border border-amber-400/30 backdrop-blur-md p-4 text-sm text-left space-y-3 max-w-lg mx-auto">
+                <p className="font-semibold text-white">{TREASURE_WRONG_ACCOUNT_HEADLINE}</p>
+                <p className="opacity-90 leading-relaxed">{TREASURE_WRONG_ACCOUNT_LEAD}</p>
+                <button
+                  type="button"
+                  onClick={() => void handleTreasureSignOut()}
+                  className="w-full font-bold py-3 px-4 rounded-lg bg-slate-700 hover:bg-slate-600 text-white border border-white/15 transition"
+                >
+                  {TREASURE_SIGN_OUT_USE_OTHER_EMAIL}
+                </button>
+                <p className="text-xs italic opacity-80 pt-1 border-t border-white/10">
+                  {CLAIMED_PUBLIC_FOOTNOTE}
+                </p>
+              </div>
             )}
 
             {isClaimant === true && envelope.status === 'claimed' && (
@@ -594,18 +702,51 @@ export default function TreasureInviteShell({
             )}
         </div>
 
-        {!user && envelope.status === 'draft' && (
+        {!user && (
           <div
             className={`unified-input-container relative z-10 mock-ui-section p-4 border-t-2 border-gray-700 mt-8 ${claimCtaShake ? 'shake' : ''}`}
           >
             <div className="flex flex-col items-center max-w-xl mx-auto gap-3">
+              {showClueInput && (
+                <div className="w-full text-left space-y-2">
+                  <p className="text-xs text-gray-400">
+                    {TREASURE_CLUE_EMAIL_LABEL}{' '}
+                    <span className="text-white font-medium break-all">{loginEmail.trim() || '—'}</span>
+                  </p>
+                  <button
+                    type="button"
+                    className="text-xs text-amber-400/95 underline hover:text-amber-300"
+                    onClick={() => {
+                      setShowClueInput(false);
+                      setClueMessage('');
+                      const el = treasureEmailInputRef.current;
+                      if (el) {
+                        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                        setTimeout(() => el.focus(), 150);
+                      }
+                    }}
+                  >
+                    {TREASURE_USE_DIFFERENT_EMAIL}
+                  </button>
+                </div>
+              )}
               <div className="flex items-center w-full chat-input-container relative">
                 <input
                   ref={treasureEmailInputRef}
-                  type="email"
-                  value={loginEmail}
-                  placeholder={TREASURE_EMAIL_PLACEHOLDER}
-                  onChange={(e) => setLoginEmail(e.target.value)}
+                  type={showClueInput ? 'text' : 'email'}
+                  value={showClueInput ? clueMessage : loginEmail}
+                  placeholder={
+                    showClueInput
+                      ? TREASURE_CLUE_PLACEHOLDER
+                      : envelope.status === 'claimed'
+                        ? TREASURE_CLAIMED_EMAIL_PLACEHOLDER
+                        : TREASURE_EMAIL_PLACEHOLDER
+                  }
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    if (showClueInput) setClueMessage(v);
+                    else setLoginEmail(v);
+                  }}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter') {
                       e.preventDefault();
@@ -613,9 +754,9 @@ export default function TreasureInviteShell({
                     }
                   }}
                   className="flex-grow p-3 border border-gray-600 rounded-l-lg bg-gray-900 bg-opacity-70 text-white focus:ring-accentColor focus:border-accentColor backdrop-blur-sm"
-                  autoComplete="email"
-                  inputMode="email"
-                  aria-label="Email address input"
+                  autoComplete={showClueInput ? 'off' : 'email'}
+                  inputMode={showClueInput ? 'text' : 'email'}
+                  aria-label={showClueInput ? 'Clue input' : 'Email address input'}
                 />
                 <button
                   type="button"
@@ -623,9 +764,56 @@ export default function TreasureInviteShell({
                   disabled={busyLogin}
                   className="p-3 bg-accentColor text-white rounded-r-lg hover:bg-opacity-80 focus:outline-none focus:ring-2 focus:ring-accentColor focus:ring-opacity-50 disabled:opacity-70"
                 >
-                  {busyLogin ? TREASURE_SENDING_CODE : 'Continue'}
+                  {busyLogin
+                    ? TREASURE_SENDING_CODE
+                    : showClueInput
+                      ? TREASURE_CLUE_SUBMIT_LABEL
+                      : 'Continue'}
                 </button>
               </div>
+            </div>
+          </div>
+        )}
+
+        {isWrongAccountOnClaimed && (
+          <div className="unified-input-container relative z-10 mock-ui-section p-4 border-t-2 border-gray-700 mt-4">
+            <div className="flex flex-col items-center max-w-xl mx-auto gap-3 w-full">
+              {!magicEmailNorm && (
+                <p className="text-xs opacity-85 animate-pulse text-center">{TREASURE_FETCHING_SESSION}</p>
+              )}
+              {magicEmailNorm ? (
+                <>
+                  <p className="text-xs text-gray-400 w-full text-left">
+                    {TREASURE_CLUE_EMAIL_LABEL}{' '}
+                    <span className="text-white font-medium break-all">{magicEmailNorm}</span>
+                  </p>
+                  <div className="flex items-center w-full chat-input-container relative">
+                    <input
+                      type="text"
+                      value={clueMessage}
+                      placeholder={TREASURE_CLUE_PLACEHOLDER}
+                      onChange={(e) => setClueMessage(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          void submitClueWrongUser();
+                        }
+                      }}
+                      className="flex-grow p-3 border border-gray-600 rounded-l-lg bg-gray-900 bg-opacity-70 text-white focus:ring-accentColor focus:border-accentColor backdrop-blur-sm"
+                      autoComplete="off"
+                      aria-label="Clue input for wrong account"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => void submitClueWrongUser()}
+                      disabled={busyLogin || !magicEmailNorm}
+                      className="p-3 bg-accentColor text-white rounded-r-lg hover:bg-opacity-80 focus:outline-none focus:ring-2 focus:ring-accentColor focus:ring-opacity-50 disabled:opacity-70"
+                    >
+                      {busyLogin ? TREASURE_SENDING_CODE : TREASURE_CLUE_SUBMIT_LABEL}
+                    </button>
+                  </div>
+                </>
+              ) : null}
             </div>
           </div>
         )}

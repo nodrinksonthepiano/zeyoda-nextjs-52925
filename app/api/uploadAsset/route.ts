@@ -3,53 +3,132 @@ import { createClient } from '@supabase/supabase-js';
 import { v4 as uuidv4 } from 'uuid';
 import { requireSecret, rateLimit } from '@/app/utils/apiGuard';
 import { createGuardedSigner } from '@/app/utils/guardedSigner';
-import { verifyWhitelist } from '../../utils/server/whitelistCheck';
+import { isTrustedLaunchSourceUrl } from '@/app/utils/launchIntegrity';
 
-// Use service role for server-side uploads
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
+const MAX_BYTES = 280 * 1024 * 1024;
+
 export async function POST(request: NextRequest) {
-  // Security guards: secret header + whitelist + rate limit
   const secretCheck = requireSecret(request);
   if (secretCheck) return secretCheck;
-  
-  // Also check whitelist (defense-in-depth - middleware should catch this, but backup check)
-  const whitelistResult = await verifyWhitelist(request);
-  if (!whitelistResult.verified) {
-    console.log(`❌ Route blocked: ${whitelistResult.error || 'Not whitelisted'}`);
+
+  // Public proxy already verified Magic + whitelist; this internal route trusts
+  // x-internal-secret (requireSecret above) plus x-verified-email from that proxy.
+  const verifiedEmail = (request.headers.get('x-verified-email') ?? '').trim();
+  if (!verifiedEmail) {
     return NextResponse.json(
-      { 
-        error: whitelistResult.error || 'Unauthorized',
-        message: 'Access denied - whitelist required'
-      },
-      { status: whitelistResult.email === null ? 401 : 403 }
+      { error: 'Missing x-verified-email', message: 'Internal proxy must forward verified email' },
+      { status: 400 },
     );
   }
-  
-  const rl = rateLimit(request, 'upload-asset', 10, 60_000); // 10/min per IP
-  if (rl) return rl;
-  
-  console.log('📤 Asset upload API called...');
-  
-  try {
-    const formData = await request.formData();
-    const file = formData.get('file') as File;
-    const artistId = formData.get('artistId') as string;
-    const title = formData.get('title') as string;
-    const price = parseFloat(formData.get('price') as string);
-    const rawDescription = (formData.get('description') as string) || '';
-    const description = rawDescription.trim().replace(/\r\n/g, '\n'); // Sanitize whitespace
-    const userAddress = formData.get('userAddress') as string;
+  console.log('[uploadAsset] internal proxy caller:', verifiedEmail);
 
-    if (!file || !artistId || !title || !userAddress) {
-      return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
+  const rl = rateLimit(request, 'upload-asset', 10, 60_000);
+  if (rl) return rl;
+
+  console.log('📤 Asset upload API called...');
+
+  try {
+    const contentType = request.headers.get('content-type') || '';
+    let artistId: string;
+    let title: string;
+    let price: number;
+    let description: string;
+    let userAddress: string;
+    let uploadBody: Buffer;
+    let mime: string;
+    let fileSize: number;
+    let fileExtension: string;
+    let requestedAssetNumber: number | null = null;
+    let requireMint = false;
+
+    if (contentType.includes('application/json')) {
+      const body = await request.json();
+      artistId = typeof body.artistId === 'string' ? body.artistId.trim() : '';
+      title = typeof body.title === 'string' ? body.title.trim() : '';
+      userAddress = typeof body.userAddress === 'string' ? body.userAddress.trim() : '';
+      const rawDescription = typeof body.description === 'string' ? body.description : '';
+      description = rawDescription.trim().replace(/\r\n/g, '\n');
+      price = typeof body.price === 'number' ? body.price : parseFloat(String(body.price ?? ''));
+      const sourceUrl = typeof body.sourceUrl === 'string' ? body.sourceUrl.trim() : '';
+      const parsedAssetNumber = Number(body.assetNumber);
+      requestedAssetNumber =
+        Number.isInteger(parsedAssetNumber) && parsedAssetNumber > 0 ? parsedAssetNumber : null;
+      requireMint = body.requireMint === true;
+
+      if (!artistId || !title || !userAddress || !isTrustedLaunchSourceUrl(sourceUrl)) {
+        return NextResponse.json(
+          { error: 'Missing artistId, title, userAddress, or trusted Supabase https sourceUrl' },
+          { status: 400 },
+        );
+      }
+
+      if (!Number.isFinite(price) || price <= 0) {
+        return NextResponse.json({ error: 'price must be greater than 0' }, { status: 400 });
+      }
+
+      const upstream = await fetch(sourceUrl, { redirect: 'follow' });
+      if (!upstream.ok) {
+        return NextResponse.json(
+          { error: `Could not fetch media: HTTP ${upstream.status}` },
+          { status: 502 },
+        );
+      }
+
+      const lenHeader = upstream.headers.get('content-length');
+      if (lenHeader && Number(lenHeader) > MAX_BYTES) {
+        return NextResponse.json({ error: 'Asset too large' }, { status: 413 });
+      }
+
+      const buf = await upstream.arrayBuffer();
+      if (buf.byteLength > MAX_BYTES) {
+        return NextResponse.json({ error: 'Asset too large' }, { status: 413 });
+      }
+
+      uploadBody = Buffer.from(buf);
+      fileSize = uploadBody.length;
+      mime =
+        upstream.headers.get('content-type')?.split(';')[0]?.trim() || 'application/octet-stream';
+      const urlPath = new URL(sourceUrl).pathname;
+      fileExtension = urlPath.includes('.')
+        ? (urlPath.split('.').pop() || 'bin').replace(/[^a-zA-Z0-9]/g, '').slice(0, 8) || 'bin'
+        : 'bin';
+
+      console.log('📋 JSON upload (HTTPS source):', { artistId, title, price, fileSize });
+    } else {
+      const formData = await request.formData();
+      const file = formData.get('file') as File;
+      artistId = formData.get('artistId') as string;
+      title = (formData.get('title') as string) || '';
+      userAddress = formData.get('userAddress') as string;
+      const rawDescription = (formData.get('description') as string) || '';
+      description = rawDescription.trim().replace(/\r\n/g, '\n');
+      price = parseFloat(formData.get('price') as string);
+      const parsedAssetNumber = Number(formData.get('assetNumber'));
+      requestedAssetNumber =
+        Number.isInteger(parsedAssetNumber) && parsedAssetNumber > 0 ? parsedAssetNumber : null;
+      requireMint = formData.get('requireMint') === 'true';
+
+      if (!file || !artistId || !title || !userAddress) {
+        return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
+      }
+
+      if (!Number.isFinite(price) || price <= 0) {
+        return NextResponse.json({ error: 'price must be greater than 0' }, { status: 400 });
+      }
+
+      const ab = await file.arrayBuffer();
+      uploadBody = Buffer.from(ab);
+      fileSize = uploadBody.length;
+      mime = file.type || 'application/octet-stream';
+      fileExtension = file.name.split('.').pop() || 'bin';
+
+      console.log('📋 Form upload:', { artistId, title, price, fileSize });
     }
 
-    console.log('📋 Upload details:', { artistId, title, price, fileSize: file.size, userAddress });
-
-    // 1. Verify user owns this artist
     const { data: artist, error: artistError } = await supabase
       .from('artists')
       .select('*')
@@ -61,18 +140,11 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Artist not found' }, { status: 404 });
     }
 
-    // TODO: Add ownership verification here
-    // For now, we'll trust the frontend ownership check
-
-    // 2. Upload file to Supabase Storage
-    const fileExtension = file.name.split('.').pop();
     const fileName = `${artistId}/${uuidv4()}.${fileExtension}`;
-    
+
     const { data: uploadData, error: uploadError } = await supabase.storage
       .from('artist-assets')
-      .upload(fileName, file, {
-        contentType: file.type,
-      });
+      .upload(fileName, uploadBody, { contentType: mime });
 
     if (uploadError) {
       console.error('❌ File upload failed:', uploadError);
@@ -81,14 +153,10 @@ export async function POST(request: NextRequest) {
 
     console.log('✅ File uploaded:', uploadData.path);
 
-    // Get the public URL for the uploaded file
-    const { data: urlData } = supabase.storage
-      .from('artist-assets')
-      .getPublicUrl(uploadData.path);
+    const { data: urlData } = supabase.storage.from('artist-assets').getPublicUrl(uploadData.path);
 
     console.log('📄 Public URL:', urlData.publicUrl);
 
-    // 3. Get the next asset number for this artist
     const { data: existingAssets, error: assetsError } = await supabase
       .from('artist_assets')
       .select('asset_number')
@@ -101,122 +169,157 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Database error' }, { status: 500 });
     }
 
-    const nextAssetNumber = existingAssets.length > 0 ? existingAssets[0].asset_number + 1 : 1;
+    const assetNumber =
+      requestedAssetNumber ?? (existingAssets.length > 0 ? existingAssets[0].asset_number + 1 : 1);
 
-    // 4. Add asset to artist_assets table (match actual schema)
-    const { data: assetData, error: assetError } = await supabase
-      .from('artist_assets')
-      .insert({
-        artist_id: artistId,
-        asset_number: nextAssetNumber,
-        file_url: urlData.publicUrl,
-        file_type: file.type,
-        file_size_bytes: file.size,
-        price_usd: price,
-        metadata: {
-          title: title,
-          description: description || `${title} - uploaded via Zeyoda`, // New field
-          desc: description || `${title} - uploaded via Zeyoda` // Keep for backward compat (remove after 1 week)
-        }
-      })
-      .select()
-      .single();
+    const assetRecord = {
+      artist_id: artistId,
+      asset_number: assetNumber,
+      file_url: urlData.publicUrl,
+      file_type: mime,
+      file_size_bytes: fileSize,
+      price_usd: price,
+      metadata: {
+        title: title,
+        description: description || `${title} - uploaded via Zeyoda`,
+        desc: description || `${title} - uploaded via Zeyoda`,
+      },
+    };
+
+    const { data: existingTarget, error: existingTargetError } = requestedAssetNumber
+      ? await supabase
+          .from('artist_assets')
+          .select('id, asset_number')
+          .eq('artist_id', artistId)
+          .eq('asset_number', assetNumber)
+          .maybeSingle()
+      : { data: null, error: null };
+
+    if (existingTargetError) {
+      console.error('❌ Error checking target asset:', existingTargetError);
+      return NextResponse.json({ error: 'Database error' }, { status: 500 });
+    }
+
+    const writeQuery = existingTarget
+      ? supabase
+          .from('artist_assets')
+          .update(assetRecord)
+          .eq('artist_id', artistId)
+          .eq('asset_number', assetNumber)
+          .select()
+          .single()
+      : supabase.from('artist_assets').insert(assetRecord).select().single();
+
+    const { data: assetData, error: assetError } = await writeQuery;
 
     if (assetError) {
       console.error('❌ Asset database insert failed:', assetError);
       return NextResponse.json({ error: 'Database insert failed' }, { status: 500 });
     }
 
-    console.log('✅ Asset added to database:', assetData);
+    console.log('✅ Asset written to database:', assetData);
 
-    // 5. Mint ERC-1155 token to user's wallet
     try {
       console.log('🪙 Minting ERC-1155 token...');
-      
-      // Import required modules for minting
+
       const { ethers } = require('ethers');
       const ArtistDownloadsArtifact = require('../../../artifacts/contracts/ArtistDownloads.sol/ArtistDownloads.json');
-      
-      // Get minter wallet for minting (using guarded signer)
+
       const minterPrivateKey = process.env.MINTER_PRIVATE_KEY;
       const rpcUrl = process.env.SERVER_BASE_SEPOLIA_RPC_URL;
-      
+
       if (!minterPrivateKey || !rpcUrl) {
         console.warn('⚠️ Missing deployer key or RPC URL - skipping minting');
+        if (requireMint) {
+          return NextResponse.json(
+            {
+              success: false,
+              error: 'Minting is required for launch but minting config is missing',
+              asset: assetData,
+            },
+            { status: 500 },
+          );
+        }
         return NextResponse.json({
           success: true,
           asset: assetData,
-          message: `Asset "${title}" uploaded successfully! Asset #${nextAssetNumber} (minting skipped - missing config)`
+          message: `Asset "${title}" uploaded successfully! Asset #${assetNumber} (minting skipped - missing config)`,
         });
       }
-      
-      // Get download contract address and treasury wallet
+
       const { data: artistData } = await supabase
         .from('artists')
         .select('download_address, treasury_wallet')
         .eq('id', artistId)
         .single();
-        
+
       if (!artistData?.download_address) {
         console.error('❌ No download contract address');
-        return NextResponse.json({
-          success: false,
-          error: `No ERC-1155 contract deployed for artist ${artistId}. Deploy contracts first.`
-        }, { status: 400 });
+        return NextResponse.json(
+          {
+            success: false,
+            error: `No ERC-1155 contract deployed for artist ${artistId}. Deploy contracts first.`,
+          },
+          { status: 400 },
+        );
       }
-      
+
       const artistWallet = artistData.treasury_wallet;
       if (!artistWallet) {
         console.error('❌ Artist treasury wallet not found');
-        return NextResponse.json({
-          success: false,
-          error: 'Artist treasury wallet not configured'
-        }, { status: 400 });
+        return NextResponse.json(
+          {
+            success: false,
+            error: 'Artist treasury wallet not configured',
+          },
+          { status: 400 },
+        );
       }
-      
-      // Setup guarded signer (enforces Base Sepolia network)
+
       const wallet = await createGuardedSigner(minterPrivateKey, rpcUrl);
-      const contract = new ethers.Contract(artistData.download_address, ArtistDownloadsArtifact.abi, wallet);
-      
-      // Check if already minted (idempotency)
-      const existingBalance = await contract.balanceOf(artistWallet, nextAssetNumber);
+      const contract = new ethers.Contract(
+        artistData.download_address,
+        ArtistDownloadsArtifact.abi,
+        wallet,
+      );
+
+      const existingBalance = await contract.balanceOf(artistWallet, assetNumber);
       if (existingBalance > 0n) {
-        console.log(`✅ Asset #${nextAssetNumber} already minted (balance: ${existingBalance})`);
+        console.log(`✅ Asset #${assetNumber} already minted (balance: ${existingBalance})`);
         return NextResponse.json({
           success: true,
           asset: assetData,
-          message: `Asset "${title}" already minted. Asset #${nextAssetNumber}`,
-          alreadyMinted: true
+          message: `Asset "${title}" already minted. Asset #${assetNumber}`,
+          alreadyMinted: true,
         });
       }
-      
-      // Mint 1 "featured copy" to artist's treasury wallet
+
       console.log(`🎨 Minting featured copy to artist: ${artistWallet}`);
-      const tx = await contract.mintDownload(artistWallet, nextAssetNumber, 1);
+      const tx = await contract.mintDownload(artistWallet, assetNumber, 1);
       const receipt = await tx.wait();
-      
-      console.log(`✅ Minted ERC-1155 token #${nextAssetNumber} to ${artistWallet}`);
+
+      console.log(`✅ Minted ERC-1155 token #${assetNumber} to ${artistWallet}`);
       console.log(`   Transaction: ${receipt.hash}`);
-      
+
       return NextResponse.json({
         success: true,
         asset: assetData,
         mintTx: receipt.hash,
         explorerUrl: `https://sepolia.basescan.org/tx/${receipt.hash}`,
-        message: `Asset "${title}" uploaded and minted! Asset #${nextAssetNumber} - Featured copy minted to artist.`
+        message: `Asset "${title}" uploaded and minted! Asset #${assetNumber} - Featured copy minted to artist.`,
       });
-      
     } catch (mintError: any) {
       console.error('❌ Minting failed:', mintError);
-      // Return FAILURE if minting fails
-      return NextResponse.json({
-        success: false,
-        error: `Minting failed: ${mintError.message}`,
-        details: mintError.reason || mintError.code,
-        asset: assetData
-      }, { status: 500 });
+      return NextResponse.json(
+        {
+          success: false,
+          error: `Minting failed: ${mintError.message}`,
+          details: mintError.reason || mintError.code,
+          asset: assetData,
+        },
+        { status: 500 },
+      );
     }
-
   } catch (error: any) {
     console.error('❌ Asset upload error:', error);
     return NextResponse.json({ error: error.message }, { status: 500 });

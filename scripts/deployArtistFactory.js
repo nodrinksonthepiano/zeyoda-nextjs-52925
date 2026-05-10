@@ -13,8 +13,9 @@ async function main() {
   const TOKEN_IMPLEMENTATION = "0xe31608a3C5A7924D4C0f8A0b760839Caa2E4e90D";      // From Sprint 2A
   const DOWNLOADS_IMPLEMENTATION = "0x9de11C68d6f124BdAef175D51C7Ebb0bDb13d88e"; // V2 with sponsor in initialize
   const AMM_PROXY = "0x49B9538e0022dD919d9af2358783e89d08bCd82c";              // From Sprint 2B (FIXED)
-  const PROTOCOL_VAULT = "0x615258a5263DBEe0DDEED3166ddC1f442D937eB3";         // Known
-  const SPONSOR_ADDRESS = deployer.address;                                    // Server signer (can mint)
+  // Gen 2 testnet (collapsed roles): same address as deployer / minter / protocol vault — NOT for mainnet.
+  const PROTOCOL_VAULT = "0x4cfb53929cA0609482b1228Fa08B4D4d36751aBF";
+  const SPONSOR_ADDRESS = deployer.address;                                    // Must match MINTER_PRIVATE_KEY when using one hot ops wallet
 
   console.log("⚙️  Configuration:");
   console.log("   Token Implementation:    ", TOKEN_IMPLEMENTATION);

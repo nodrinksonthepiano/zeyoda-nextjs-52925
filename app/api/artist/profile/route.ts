@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { isPlaceholderVideoSrc } from '@/app/utils/launchIntegrity';
 
 // Use service role key to bypass RLS
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
@@ -26,6 +27,8 @@ interface ProfileUpdateRequest {
   background_image_url?: string;
   logo_use_background?: boolean;
   background_use_image?: boolean;
+  /** Hero / featured media public URL (launch retry path). */
+  videosrc?: string;
 }
 
 export async function GET() {
@@ -56,7 +59,7 @@ export async function PATCH(request: NextRequest) {
     // Verify artist exists and get treasury wallet
     const { data: artist, error: artistError } = await supabaseAdmin
       .from('artists')
-      .select('id, name, displayname, treasury_wallet')
+      .select('id, name, displayname, treasury_wallet, theme')
       .eq('id', updateData.artistId)
       .single();
 
@@ -79,7 +82,7 @@ export async function PATCH(request: NextRequest) {
 
     // Validate and sanitize inputs - build theme JSONB object
     const validationErrors: string[] = [];
-    const currentTheme = artist.theme || {};
+    const currentTheme = (artist.theme || {}) as Record<string, string>;
     const newTheme = { ...currentTheme };
 
     // Validate colors (hex format)
@@ -126,6 +129,16 @@ export async function PATCH(request: NextRequest) {
       }
     }
 
+    let videosrcUpdate: string | undefined;
+    if (updateData.videosrc !== undefined) {
+      const v = String(updateData.videosrc).trim();
+      if (!v.startsWith('https://') || isPlaceholderVideoSrc(v)) {
+        validationErrors.push('videosrc must be a valid https URL (not a placeholder)');
+      } else {
+        videosrcUpdate = v;
+      }
+    }
+
     // Return validation errors
     if (validationErrors.length > 0) {
       console.log('❌ Validation errors:', validationErrors);
@@ -154,14 +167,20 @@ export async function PATCH(request: NextRequest) {
     if (updateData.background_use_image !== undefined) {
       updates.background_use_image = updateData.background_use_image;
     }
+
+    if (videosrcUpdate !== undefined) {
+      updates.videosrc = videosrcUpdate;
+    }
     
     // Check if there are any changes (theme or logo fields)
     const hasLogoChanges = updateData.logo_url !== undefined || 
                           updateData.background_image_url !== undefined ||
                           updateData.logo_use_background !== undefined ||
                           updateData.background_use_image !== undefined;
+
+    const hasVideosrcChange = videosrcUpdate !== undefined;
     
-    if (!hasThemeChanges && !hasLogoChanges) {
+    if (!hasThemeChanges && !hasLogoChanges && !hasVideosrcChange) {
       return NextResponse.json({ 
         error: 'No valid fields to update' 
       }, { status: 400 });
@@ -170,7 +189,8 @@ export async function PATCH(request: NextRequest) {
     console.log('💾 Updating artist profile:', { 
       artistId: updateData.artistId, 
       themeChanges: hasThemeChanges ? Object.keys(newTheme) : [],
-      logoChanges: hasLogoChanges ? ['logo_url', 'background_image_url', 'logo_use_background', 'background_use_image'].filter(f => updateData[f as keyof ProfileUpdateRequest] !== undefined) : []
+      logoChanges: hasLogoChanges ? ['logo_url', 'background_image_url', 'logo_use_background', 'background_use_image'].filter(f => updateData[f as keyof ProfileUpdateRequest] !== undefined) : [],
+      videosrc: hasVideosrcChange,
     });
 
     // Update artist profile
@@ -205,7 +225,8 @@ export async function PATCH(request: NextRequest) {
         logo_url: updateResult.logo_url,
         background_image_url: updateResult.background_image_url,
         logo_use_background: updateResult.logo_use_background,
-        background_use_image: updateResult.background_use_image
+        background_use_image: updateResult.background_use_image,
+        videosrc: updateResult.videosrc,
       }
     });
 

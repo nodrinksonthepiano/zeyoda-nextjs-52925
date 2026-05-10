@@ -49,6 +49,7 @@ import {
 } from './utils/inviteLaunchBridge';
 
 import { CLAIM_ERROR_SESSION_EXPIRED } from './constants/treasureCopy';
+import { isPlaceholderVideoSrc } from './utils/launchIntegrity';
 
 interface OrbitalToken {
   name: string; 
@@ -842,7 +843,7 @@ const ArtistPageContent: React.FC<{
 
   const handleSaveArtist = useCallback(async (artistData: any) => {
     console.log('🚀 Starting UUPS artist deployment via factory...', artistData);
-    
+
     try {
       if (!magic) throw new Error('Magic not initialized');
 
@@ -853,208 +854,371 @@ const ArtistPageContent: React.FC<{
           return;
         }
       }
-      
-      showToast('⚡ Deploying via Factory (single transaction)...', 'info');
-      
+
+      const downloadPrice = Number(artistData.downloadPrice);
+      if (!Number.isFinite(downloadPrice) || downloadPrice <= 0) {
+        showToast('Download price must be greater than $0.', 'error');
+        return;
+      }
+
+      const featuredHttpsDraft =
+        (typeof workshopFeaturedHttpsUrl === 'string' && workshopFeaturedHttpsUrl.startsWith('https://')
+          ? workshopFeaturedHttpsUrl
+          : null) ||
+        (typeof onboardingData.featured_asset_url === 'string' &&
+        onboardingData.featured_asset_url.startsWith('https://')
+          ? onboardingData.featured_asset_url
+          : null);
+
+      if (!uploadedFile && !featuredHttpsDraft) {
+        showToast('Add featured media (upload or HTTPS draft) before launch.', 'error');
+        return;
+      }
+
+      showToast('⚡ Preparing launch…', 'info');
+
       const provider = new ethers.BrowserProvider(magic.rpcProvider as any);
       const signer = await provider.getSigner();
       const artistWallet = await signer.getAddress();
-      
-      // Get factory address from env
-      const factoryAddress = process.env.NEXT_PUBLIC_ARTIST_FACTORY;
-      if (!factoryAddress) {
-        throw new Error('Factory not configured. Add NEXT_PUBLIC_ARTIST_FACTORY to .env.local');
-      }
-      
-      const factory = new ethers.Contract(
-        factoryAddress,
-        ArtistFactoryABI,
-        signer
-      );
-      
-      // Prepare artist identifiers
+
       const tokenName = artistData.tokenName || artistData.name;
       const tokenSymbol = tokenName.toUpperCase().replace(/\s+/g, '');
       const artistId = tokenSymbol.toLowerCase();
-      
-      console.log('📝 Calling factory.createArtist()...');
-      console.log('   Name:', tokenName);
-      console.log('   Symbol:', tokenSymbol);
-      console.log('   ID:', artistId);
-      console.log('   Artist Wallet:', artistWallet);
-      
-      // Single transaction deploys everything
-      const tx = await factory.createArtist(
-        tokenName,
-        tokenSymbol,
-        artistId,
-        artistWallet
-      );
-      
-      showToast('⏳ Deploying contracts...', 'info');
-      const receipt = await tx.wait();
-      
-      // Parse ArtistCreated event
-      console.log('📡 Parsing ArtistCreated event...');
-      const iface = new ethers.Interface(ArtistFactoryABI);
-      let tokenProxy: string | undefined;
-      let downloadsProxy: string | undefined;
-      let ammProxy: string | undefined;
-      
-      for (const log of receipt.logs) {
-        try {
-          const parsed = iface.parseLog(log);
-          if (parsed?.name === 'ArtistCreated') {
-            tokenProxy = parsed.args.tokenProxy;
-            downloadsProxy = parsed.args.downloadsProxy;
-            ammProxy = parsed.args.ammProxy;
-            console.log('✅ Event parsed successfully');
-            break;
+
+      const { data: existingByToken } = await supabase
+        .from('artists')
+        .select('id, paused, treasury_wallet')
+        .eq('tokenName', tokenName)
+        .maybeSingle();
+
+      if (existingByToken && existingByToken.id !== artistId) {
+        showToast('This token name is already in use.', 'error');
+        return;
+      }
+
+      const { data: existingArtist } = await supabase
+        .from('artists')
+        .select('id, paused, treasury_wallet, contract, download_address, swap_address')
+        .eq('id', artistId)
+        .maybeSingle();
+
+      if (existingArtist && existingArtist.paused !== true) {
+        showToast('This artist is already live.', 'error');
+        return;
+      }
+
+      if (
+        existingArtist &&
+        existingArtist.paused === true &&
+        existingArtist.treasury_wallet?.toLowerCase() !== artistWallet.toLowerCase()
+      ) {
+        showToast('This artist id is reserved. Choose a different token name.', 'error');
+        return;
+      }
+
+      const resume =
+        !!(
+          existingArtist &&
+          existingArtist.paused === true &&
+          existingArtist.treasury_wallet?.toLowerCase() === artistWallet.toLowerCase()
+        );
+
+      const { data: regRow } = await supabase
+        .from('artist_registry')
+        .select('token, downloads, swap')
+        .eq('id', artistId)
+        .maybeSingle();
+
+      if (
+        resume &&
+        !regRow?.token &&
+        (!existingArtist?.contract || !existingArtist?.download_address || !existingArtist?.swap_address)
+      ) {
+        showToast(
+          'Cannot resume: deployed addresses are incomplete. Cleanup/restart is required.',
+          'error',
+        );
+        return;
+      }
+
+      let tokenProxy: string;
+      let downloadsProxy: string;
+      let ammProxy: string;
+
+      if (!resume) {
+        const factoryAddress = process.env.NEXT_PUBLIC_ARTIST_FACTORY;
+        if (!factoryAddress) {
+          throw new Error('Factory not configured. Add NEXT_PUBLIC_ARTIST_FACTORY to .env.local');
+        }
+
+        const factory = new ethers.Contract(factoryAddress, ArtistFactoryABI, signer);
+
+        console.log('📝 Calling factory.createArtist()...', {
+          tokenName,
+          tokenSymbol,
+          artistId,
+          artistWallet,
+        });
+
+        showToast('⏳ Deploying contracts…', 'info');
+        const tx = await factory.createArtist(tokenName, tokenSymbol, artistId, artistWallet);
+        const receipt = await tx.wait();
+
+        const iface = new ethers.Interface(ArtistFactoryABI);
+        let t: string | undefined;
+        let d: string | undefined;
+        let a: string | undefined;
+
+        for (const log of receipt.logs) {
+          try {
+            const parsed = iface.parseLog(log);
+            if (parsed?.name === 'ArtistCreated') {
+              t = parsed.args.tokenProxy;
+              d = parsed.args.downloadsProxy;
+              a = parsed.args.ammProxy;
+              break;
+            }
+          } catch {
+            /* skip non-matching */
           }
-        } catch (e) {
-          // Skip non-matching logs
+        }
+
+        if (!t || !d || !a) {
+          throw new Error('ArtistCreated event not found in transaction receipt');
+        }
+
+        tokenProxy = t;
+        downloadsProxy = d;
+        ammProxy = a;
+        console.log('✅ Factory deployment complete!');
+      } else {
+        tokenProxy = (regRow?.token || existingArtist!.contract) as string;
+        downloadsProxy = (regRow?.downloads || existingArtist!.download_address) as string;
+        ammProxy = (regRow?.swap || existingArtist!.swap_address) as string;
+      }
+
+      // HTTPS draft only: /api/uploadFeatured requires an existing artists row. Local file path
+      // uploads from the browser and unchanged order (featured upload → createArtist).
+      const httpsDraftFeaturedOnly =
+        !resume && Boolean(featuredHttpsDraft) && !uploadedFile;
+
+      if (httpsDraftFeaturedOnly) {
+        console.log('📝 Persisting paused artist before HTTPS featured copy...');
+        showToast('💾 Saving artist draft…', 'info');
+        await saveArtistToDatabase({
+          ...artistData,
+          id: artistId,
+          tokenAddress: tokenProxy,
+          downloadsAddress: downloadsProxy,
+          poolAddress: ammProxy,
+          contentUrl: featuredHttpsDraft,
+          treasuryWallet: artistWallet,
+          coin_public_id: inviteLaunchCoinRef.current ?? undefined,
+          downloadPrice,
+        });
+      }
+
+      console.log('📝 Uploading featured content...');
+      showToast('📤 Uploading featured media…', 'info');
+      const contentUrl = await uploadFeaturedContent(uploadedFile, artistId, featuredHttpsDraft);
+
+      if (httpsDraftFeaturedOnly) {
+        const profileRes = await authenticatedFetch(
+          '/api/artist/profile',
+          {
+            method: 'PATCH',
+            headers: { 'x-wallet-address': artistWallet.toLowerCase() },
+            body: JSON.stringify({ artistId, videosrc: contentUrl }),
+          },
+          getDidToken,
+        );
+        if (!profileRes.ok) {
+          const err = await profileRes.json().catch(() => ({}));
+          throw new Error(err.error || 'Could not update hero video URL');
+        }
+      } else if (!resume) {
+        console.log('📝 Saving to Supabase...');
+        await saveArtistToDatabase({
+          ...artistData,
+          id: artistId,
+          tokenAddress: tokenProxy,
+          downloadsAddress: downloadsProxy,
+          poolAddress: ammProxy,
+          contentUrl,
+          treasuryWallet: artistWallet,
+          coin_public_id: inviteLaunchCoinRef.current ?? undefined,
+          downloadPrice,
+        });
+      } else {
+        const profileRes = await authenticatedFetch(
+          '/api/artist/profile',
+          {
+            method: 'PATCH',
+            headers: { 'x-wallet-address': artistWallet.toLowerCase() },
+            body: JSON.stringify({ artistId, videosrc: contentUrl }),
+          },
+          getDidToken,
+        );
+        if (!profileRes.ok) {
+          const err = await profileRes.json().catch(() => ({}));
+          throw new Error(err.error || 'Could not update hero video URL');
         }
       }
-      
-      if (!tokenProxy || !downloadsProxy || !ammProxy) {
-        throw new Error('ArtistCreated event not found in transaction receipt');
-      }
-      
-      console.log('✅ Factory deployment complete!');
-      console.log('   Token:', tokenProxy);
-      console.log('   Downloads:', downloadsProxy);
-      console.log('   AMM:', ammProxy);
-      
-      // Upload featured content
-      console.log('📝 Uploading featured content...');
-      const contentUrl = await uploadFeaturedContent(uploadedFile, artistId);
-      
-      // Save to Supabase
-      console.log('📝 Saving to Supabase...');
-      await saveArtistToDatabase({
-        ...artistData,
-        id: artistId,
-        tokenAddress: tokenProxy,
-        downloadsAddress: downloadsProxy,
-        poolAddress: ammProxy,
-        contentUrl: contentUrl,
-        treasuryWallet: artistWallet,
-        coin_public_id: inviteLaunchCoinRef.current ?? undefined,
-      });
-      
-      // Upload logo and background images (if provided)
-      if (artistData.logoFile) {
+
+      if (!resume && artistData.logoFile) {
         try {
           console.log('📤 Uploading logo...');
           const logoFormData = new FormData();
           logoFormData.append('file', artistData.logoFile);
           logoFormData.append('artistId', artistId);
-          
-          const logoResponse = await authenticatedFetch('/api/uploadLogo', {
-            method: 'POST',
-            headers: {
-              'x-wallet-address': artistWallet.toLowerCase()
+
+          const logoResponse = await authenticatedFetch(
+            '/api/uploadLogo',
+            {
+              method: 'POST',
+              headers: { 'x-wallet-address': artistWallet.toLowerCase() },
+              body: logoFormData,
             },
-            body: logoFormData
-          }, getDidToken);
-          
+            getDidToken,
+          );
+
           if (logoResponse.ok) {
             const logoResult = await logoResponse.json();
-            // Update artist with logo URL
-            await authenticatedFetch('/api/artist/profile', {
-              method: 'PATCH',
-              headers: {
-                'x-wallet-address': artistWallet.toLowerCase()
+            await authenticatedFetch(
+              '/api/artist/profile',
+              {
+                method: 'PATCH',
+                headers: { 'x-wallet-address': artistWallet.toLowerCase() },
+                body: JSON.stringify({
+                  artistId,
+                  logo_url: logoResult.logoUrl,
+                  logo_use_background: artistData.logo_use_background || false,
+                }),
               },
-              body: JSON.stringify({
-                artistId: artistId,
-                logo_url: logoResult.logoUrl,
-                logo_use_background: artistData.logo_use_background || false
-              })
-            }, getDidToken);
+              getDidToken,
+            );
             console.log('✅ Logo uploaded');
           }
         } catch (logoError) {
           console.warn('⚠️ Logo upload failed (non-critical):', logoError);
         }
       }
-      
-      if (artistData.backgroundFile) {
+
+      if (!resume && artistData.backgroundFile) {
         try {
           console.log('📤 Uploading background image...');
           const bgFormData = new FormData();
           bgFormData.append('file', artistData.backgroundFile);
           bgFormData.append('artistId', artistId);
-          
-          const bgResponse = await authenticatedFetch('/api/uploadBackground', {
-            method: 'POST',
-            headers: {
-              'x-wallet-address': artistWallet.toLowerCase()
+
+          const bgResponse = await authenticatedFetch(
+            '/api/uploadBackground',
+            {
+              method: 'POST',
+              headers: { 'x-wallet-address': artistWallet.toLowerCase() },
+              body: bgFormData,
             },
-            body: bgFormData
-          }, getDidToken);
-          
+            getDidToken,
+          );
+
           if (bgResponse.ok) {
             const bgResult = await bgResponse.json();
-            // Update artist with background URL
-            await authenticatedFetch('/api/artist/profile', {
-              method: 'PATCH',
-              headers: {
-                'x-wallet-address': artistWallet.toLowerCase()
+            await authenticatedFetch(
+              '/api/artist/profile',
+              {
+                method: 'PATCH',
+                headers: { 'x-wallet-address': artistWallet.toLowerCase() },
+                body: JSON.stringify({
+                  artistId,
+                  background_image_url: bgResult.backgroundImageUrl,
+                  background_use_image: artistData.background_use_image || false,
+                }),
               },
-              body: JSON.stringify({
-                artistId: artistId,
-                background_image_url: bgResult.backgroundImageUrl,
-                background_use_image: artistData.background_use_image || false
-              })
-            });
+              getDidToken,
+            );
             console.log('✅ Background image uploaded');
           }
         } catch (bgError) {
           console.warn('⚠️ Background upload failed (non-critical):', bgError);
         }
       }
-      
-      // Mint first asset as ERC-1155 (if file was uploaded)
+
+      console.log('🪙 Publishing featured asset #1...');
+      showToast('🪙 Publishing download asset…', 'info');
+
+      let uploadResponse: Response;
       if (uploadedFile) {
-        console.log('🪙 Minting Asset #1...');
-        try {
-          const formData = new FormData();
-          formData.append('file', uploadedFile);
-          formData.append('artistId', artistId);
-          formData.append('title', artistData.artworktitle || 'Featured Content');
-          formData.append('price', (artistData.downloadPrice || 1).toString());
-          formData.append('description', artistData.description || 'First featured asset');
-          formData.append('userAddress', artistWallet);
-          
-          const uploadResponse = await authenticatedFetch('/api/public/uploadAsset', {
+        const formData = new FormData();
+        formData.append('file', uploadedFile);
+        formData.append('artistId', artistId);
+        formData.append('title', artistData.artworktitle || 'Featured Content');
+        formData.append('price', downloadPrice.toString());
+        formData.append('description', artistData.description || 'First featured asset');
+        formData.append('userAddress', artistWallet);
+        formData.append('assetNumber', '1');
+        formData.append('requireMint', 'true');
+        uploadResponse = await authenticatedFetch(
+          '/api/public/uploadAsset',
+          { method: 'POST', body: formData },
+          getDidToken,
+        );
+      } else {
+        uploadResponse = await authenticatedFetch(
+          '/api/public/uploadAsset',
+          {
             method: 'POST',
-            body: formData
-          }, getDidToken);
-          
-          if (uploadResponse.ok) {
-            console.log('✅ Asset #1 minted successfully!');
-          } else {
-            console.warn('⚠️ Asset minting failed (non-critical)');
-          }
-        } catch (mintError) {
-          console.warn('⚠️ Asset minting error:', mintError);
-        }
+            body: JSON.stringify({
+              artistId,
+              sourceUrl: featuredHttpsDraft!,
+              title: artistData.artworktitle || 'Featured Content',
+              price: downloadPrice,
+              description: artistData.description || 'First featured asset',
+              userAddress: artistWallet,
+              assetNumber: 1,
+              requireMint: true,
+            }),
+          },
+          getDidToken,
+        );
       }
-      
-      console.log('🎉 Artist created successfully!');
-      showToast(`🎉 ${tokenName} launched successfully!`, 'success');
+
+      const uploadJson = await uploadResponse.json().catch(() => ({}));
+      if (!uploadResponse.ok || uploadJson.success === false) {
+        throw new Error(
+          typeof uploadJson.error === 'string'
+            ? uploadJson.error
+            : 'Featured download asset could not be published. Retry launch without redeploying contracts.',
+        );
+      }
+
+      const finalizeRes = await authenticatedFetch(
+        '/api/artist/finalizeLaunch',
+        {
+          method: 'POST',
+          body: JSON.stringify({ artistId }),
+        },
+        getDidToken,
+      );
+      const finalizeJson = await finalizeRes.json().catch(() => ({}));
+      if (!finalizeRes.ok) {
+        throw new Error(
+          typeof finalizeJson.error === 'string'
+            ? finalizeJson.error
+            : 'Launch checks failed. Your page stays private until this succeeds. Retry without redeploying.',
+        );
+      }
+
+      console.log('🎉 Artist launch finalized!');
+      showToast(`🎉 ${tokenName} is live!`, 'success');
 
       inviteLaunchCoinRef.current = null;
-      
-      // Redirect to new artist page
+
       window.location.href = `/?artist=${artistId}`;
-      
     } catch (error: any) {
-      console.error('❌ Factory deployment failed:', error);
-      showToast(`❌ Deployment failed: ${error.message}`, 'error');
+      console.error('❌ Launch failed:', error);
+      showToast(`❌ ${error.message || 'Launch failed'}`, 'error');
     }
-  }, [magic, uploadedFile, showToast, getDidToken]);
+  }, [magic, uploadedFile, workshopFeaturedHttpsUrl, onboardingData, showToast, getDidToken]);
 
   // ASSET EDIT HANDLER
   const handleSaveAssetEdit = useCallback(async (updates: { title: string; description: string; price: number }) => {
@@ -1246,46 +1410,59 @@ const ArtistPageContent: React.FC<{
     }
   };
   
-  const uploadFeaturedContent = async (file: File | null, artistId: string) => {
-    if (!file) {
-      console.log('📁 No file uploaded, using placeholder');
-      return 'assets/placeholder.mp4';
-    }
-    
-    try {
-      console.log('📤 Uploading featured content to Supabase storage...');
-      
-      // Generate unique filename
-      const fileExt = file.name.split('.').pop();
-      const fileName = `${artistId}/featured.${fileExt}`;
-      
-      // Upload to artist-assets bucket (same as regular assets - this bucket exists!)
-      const { data, error } = await supabase.storage
-        .from('artist-assets')
-        .upload(fileName, file, {
-          cacheControl: '3600',
-          upsert: true
-        });
-      
-      if (error) {
-        console.warn('⚠️ File upload failed, using placeholder:', error.message);
-        return 'assets/placeholder.mp4';
+  const uploadFeaturedContent = async (
+    file: File | null,
+    artistId: string,
+    httpsDraftUrl: string | null,
+  ) => {
+    if (file) {
+      try {
+        console.log('📤 Uploading featured content to Supabase storage...');
+        const fileExt = file.name.split('.').pop();
+        const fileName = `${artistId}/featured.${fileExt}`;
+        const { data, error } = await supabase.storage
+          .from('artist-assets')
+          .upload(fileName, file, {
+            cacheControl: '3600',
+            upsert: true,
+          });
+        if (error) {
+          throw new Error(error.message || 'Featured upload failed');
+        }
+        if (!data) {
+          throw new Error('Featured upload returned no data');
+        }
+        const { data: urlData } = supabase.storage.from('artist-assets').getPublicUrl(fileName);
+        console.log('✅ File uploaded successfully:', urlData.publicUrl);
+        return urlData.publicUrl;
+      } catch (error: unknown) {
+        const msg = error instanceof Error ? error.message : 'Featured upload failed';
+        throw new Error(msg);
       }
-      
-      // Get public URL
-      const { data: urlData } = supabase.storage
-        .from('artist-assets')
-        .getPublicUrl(fileName);
-      
-      console.log('✅ File uploaded successfully:', urlData.publicUrl);
-      return urlData.publicUrl;
-      
-    } catch (error) {
-      console.warn('⚠️ File upload error, using placeholder:', error);
-      return 'assets/placeholder.mp4';
     }
+
+    if (httpsDraftUrl?.startsWith('https://')) {
+      const res = await authenticatedFetch(
+        '/api/public/uploadFeatured',
+        {
+          method: 'POST',
+          body: JSON.stringify({ artistId, sourceUrl: httpsDraftUrl }),
+        },
+        getDidToken,
+      );
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(typeof data.error === 'string' ? data.error : 'Could not copy HTTPS featured media');
+      }
+      if (typeof data.publicUrl !== 'string' || !data.publicUrl.startsWith('https://')) {
+        throw new Error('Featured copy returned no valid URL');
+      }
+      return data.publicUrl;
+    }
+
+    throw new Error('Featured media is required: upload a file or provide an HTTPS draft asset URL.');
   };
-  
+
   const saveArtistToDatabase = async (artistData: any) => {
     // Use service role to bypass RLS - call our API route instead
     console.log('💾 Saving to database via API route...');
@@ -1294,6 +1471,11 @@ const ArtistPageContent: React.FC<{
     const provider = new ethers.BrowserProvider(magic.rpcProvider as any);
     const signer = await provider.getSigner();
     
+    const downloadPrice = Number(artistData.downloadPrice);
+    if (!Number.isFinite(downloadPrice) || downloadPrice <= 0) {
+      throw new Error('Download price must be greater than 0');
+    }
+
     // Prepare complete artist data for API
     const completeArtistData = {
       // Basic info
@@ -1322,7 +1504,7 @@ const ArtistPageContent: React.FC<{
       treasuryWallet: await signer.getAddress(),
       
       // Download price
-      downloadPrice: artistData.downloadPrice || 5,
+      downloadPrice,
       ...(typeof artistData.coin_public_id === 'string' && artistData.coin_public_id.trim()
         ? { coin_public_id: artistData.coin_public_id.trim() }
         : {}),
@@ -2150,8 +2332,11 @@ const ArtistPageContent: React.FC<{
   // Calculate video source with proper fallback and type safety
   const getVideoSource = (): string => {
     if (videoUrl) return videoUrl;
-    if (artistConfig?.videoSrc) return `/${artistConfig.videoSrc}`;
-    // Ensure artistIdFromUrl is defined before using it
+    const vs = artistConfig?.videoSrc;
+    if (vs && !isPlaceholderVideoSrc(vs)) {
+      if (vs.startsWith('http')) return vs;
+      return vs.startsWith('/') ? vs : `/${vs}`;
+    }
     const artistId = artistIdFromUrl || 'gosheesh';
     return `/assets/1${artistId.toUpperCase()}.mp4`;
   };
@@ -3317,7 +3502,18 @@ function LiveArtistPortal(props?: { inviteLaunchBridge?: InviteLaunchBridge | nu
     : null;
 
   const coreLoading =
-    authLoading || !isReady || (!bridging && (configLoading || assetLoading));
+    authLoading ||
+    !isReady ||
+    (!bridging && configLoading) ||
+    (!bridging && artistConfig != null && artistConfig.paused !== true && assetLoading);
+
+  const viewerIsPausedArtistOwner =
+    Boolean(
+      artistConfig?.paused === true &&
+        user &&
+        artistConfig.treasury_wallet &&
+        user.toLowerCase() === artistConfig.treasury_wallet.toLowerCase(),
+    );
 
   if (authLoading || !isReady) {
     return (
@@ -3348,7 +3544,26 @@ function LiveArtistPortal(props?: { inviteLaunchBridge?: InviteLaunchBridge | nu
     return <BurialWizard variant="interest" artistSlugAttempted={artistIdFromUrl} />;
   }
 
-  if (!bridging && (configError || assetError)) {
+  if (!bridging && artistConfig?.paused === true && !viewerIsPausedArtistOwner) {
+    return (
+      <div className="flex flex-col justify-center items-center min-h-screen bg-black text-white px-6 text-center">
+        <p className="text-xl font-medium mb-2">This artist page is not published yet.</p>
+        <p className="text-gray-400 text-sm max-w-md">
+          The artist is still finishing launch. Please check back soon.
+        </p>
+        <p className="text-gray-500 text-xs max-w-md mt-4">
+          Launching this page? Connect in Zeyoda with the same Magic wallet set as treasury for this
+          artist, then reload — you&apos;ll be able to finish publish from here.
+        </p>
+      </div>
+    );
+  }
+
+  if (
+    !bridging &&
+    (configError || assetError) &&
+    !(artistConfig?.paused === true && viewerIsPausedArtistOwner)
+  ) {
     return (
       <div className="flex justify-center items-center h-screen">
         Error: {configError || assetError}
@@ -3363,7 +3578,7 @@ function LiveArtistPortal(props?: { inviteLaunchBridge?: InviteLaunchBridge | nu
   const renderFeatured = bridging ? null : featuredAsset ?? null;
   let renderVideo: string | null = bridging ? null : videoUrl ?? null;
   if (bridging && stubConfig?.videoSrc) {
-    const vs = stubConfig.videoSrc;
+    const vs = typeof stubConfig.videoSrc === 'string' ? stubConfig.videoSrc : '';
     if (vs.startsWith('http') || vs.startsWith('/')) renderVideo = vs;
   }
 
@@ -3374,7 +3589,7 @@ function LiveArtistPortal(props?: { inviteLaunchBridge?: InviteLaunchBridge | nu
       artistAssets={renderAssets}
       featuredAsset={renderFeatured}
       videoUrl={renderVideo}
-      user={user}
+      user={user ?? null}
       magic={magic}
       inviteLaunchBridge={bridging ? inviteLaunchBridge : null}
     />
