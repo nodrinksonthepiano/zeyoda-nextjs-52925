@@ -1491,3 +1491,112 @@ body {
   transform: translateY(-2px);
   box-shadow: 0 4px 12px rgba(184, 134, 11, 0.3);
 }
+
+/* Vault launch card (above chat command, onboarding-only) */
+.vault-launch-chat-well {
+  box-shadow:
+    0 0 0 1px rgba(251, 191, 36, 0.22),
+    0 20px 60px rgba(0, 0, 0, 0.55),
+    0 0 80px rgba(180, 83, 9, 0.18);
+}
+
+.vault-launch-card {
+  background: linear-gradient(
+    145deg,
+    rgba(25, 32, 48, 0.97) 0%,
+    rgba(17, 24, 39, 0.98) 45%,
+    rgba(30, 20, 12, 0.96) 100%
+  );
+  box-shadow:
+    0 16px 48px rgba(0, 0, 0, 0.55),
+    0 0 48px rgba(245, 158, 11, 0.12),
+    inset 0 1px 0 rgba(251, 191, 36, 0.15);
+}
+
+.vault-launch-card-ambient {
+  position: relative;
+}
+
+.vault-launch-card-ambient::before {
+  content: '';
+  pointer-events: none;
+  position: absolute;
+  inset: -2px;
+  border-radius: inherit;
+  background: radial-gradient(
+    ellipse 90% 70% at 50% 0%,
+    rgba(251, 191, 36, 0.14) 0%,
+    transparent 62%
+  );
+  z-index: 0;
+}
+
+.vault-launch-card-ambient > * {
+  position: relative;
+  z-index: 1;
+}
+
+.vault-launch-step--pending {
+  color: rgb(148, 163, 184);
+}
+
+.vault-launch-step--active {
+  background: rgba(180, 83, 9, 0.18);
+  box-shadow: inset 0 0 0 1px rgba(251, 191, 36, 0.12);
+}
+
+.vault-launch-step--done {
+  color: rgb(226, 232, 240);
+}
+
+.vault-launch-step--error {
+  background: rgba(153, 27, 27, 0.2);
+}
+
+@keyframes vault-launch-step-shimmer {
+  0%,
+  100% {
+    filter: brightness(1);
+    text-shadow: 0 0 12px rgba(251, 191, 36, 0.15);
+  }
+  50% {
+    filter: brightness(1.15);
+    text-shadow: 0 0 18px rgba(251, 191, 36, 0.35);
+  }
+}
+
+.vault-launch-step-active-shimmer {
+  animation: vault-launch-step-shimmer 1.4s ease-in-out infinite;
+}
+
+@keyframes vault-launch-line-emphasis {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.72;
+  }
+}
+
+.vault-launch-line-emphasis {
+  animation: vault-launch-line-emphasis 1.2s ease-in-out infinite;
+}
+
+@keyframes vault-launch-pulse {
+  50% {
+    opacity: 0.4;
+  }
+}
+
+.vault-launch-pulse {
+  animation: vault-launch-pulse 1.1s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vault-launch-step-active-shimmer,
+  .vault-launch-line-emphasis,
+  .vault-launch-pulse {
+    animation: none !important;
+  }
+}

@@ -37,6 +37,8 @@ interface OnboardingPanelProps {
       clearFeatured: () => void;
     } | null,
   ) => void;
+  /** Parent locks primary CTA during async artist launch ceremony */
+  artistLaunchLocksPrimaryButton?: boolean;
 }
 
 type TreasureCommittedSnapshot = {
@@ -306,6 +308,7 @@ const OnboardingPanel: React.FC<OnboardingPanelProps> = ({
   onWorkshopFeaturedHttpsChange,
   onClearWorkshopHeroStaging,
   onRegisterWorkshopFeaturedHandlers,
+  artistLaunchLocksPrimaryButton = false,
 }) => {
   const { showToast } = useToast();
   const ea = existingArtist as Record<string, unknown> | undefined;
@@ -1891,7 +1894,12 @@ const OnboardingPanel: React.FC<OnboardingPanelProps> = ({
       <div className="flex gap-3">
         <button
           onClick={handleSave}
-          disabled={mode === 'onboarding' ? (!formData.displayname || !formData.tokenName) : (!formData.artworktitle || !uploadedFile)}
+          disabled={
+            (mode === 'onboarding'
+              ? !formData.displayname || !formData.tokenName
+              : !formData.artworktitle || !uploadedFile) ||
+            (mode === 'onboarding' && artistLaunchLocksPrimaryButton)
+          }
           className="flex-1 px-6 py-3 bg-gradient-to-r from-green-600 to-green-700 text-white rounded-lg font-bold hover:from-green-700 hover:to-green-800 disabled:opacity-50 disabled:cursor-not-allowed transition-all transform hover:scale-105"
         >
           {mode === 'upload-asset' ? '📤 UPLOAD & MINT ASSET' : '🚀 CREATE ARTIST PAGE'}

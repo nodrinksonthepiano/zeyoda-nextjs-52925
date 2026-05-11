@@ -50,6 +50,15 @@ import {
 
 import { CLAIM_ERROR_SESSION_EXPIRED } from './constants/treasureCopy';
 import { isPlaceholderVideoSrc } from './utils/launchIntegrity';
+import VaultLaunchCeremonyCard, {
+  type VaultLaunchPhase,
+} from './components/VaultLaunchCeremonyCard';
+
+function sleep(ms: number) {
+  return new Promise<void>((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
 
 interface OrbitalToken {
   name: string; 
@@ -126,6 +135,58 @@ const ArtistPageContent: React.FC<{
   const [editingAsset, setEditingAsset] = useState<any | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const inviteLaunchCoinRef = useRef<string | null>(null);
+  const lastLaunchArtistPayloadRef = useRef<any>(null);
+  const launchCeremonyVisibleRef = useRef(false);
+  const launchStepRef = useRef(0);
+
+  const [launchCeremony, setLaunchCeremony] = useState<{
+    visible: boolean;
+    phase: VaultLaunchPhase;
+    activeStepIndex: number;
+    failedStepIndex: number | null;
+    errorMessage: string | null;
+    celebrateTokenName: string | null;
+    progressTokenName: string | null;
+  }>({
+    visible: false,
+    phase: 'idle',
+    activeStepIndex: 0,
+    failedStepIndex: null,
+    errorMessage: null,
+    celebrateTokenName: null,
+    progressTokenName: null,
+  });
+
+  const vaultLaunchFocusActive =
+    appMode === 'onboarding' &&
+    launchCeremony.visible &&
+    (launchCeremony.phase === 'running' ||
+      launchCeremony.phase === 'celebrating' ||
+      launchCeremony.phase === 'failed');
+
+  const vaultLaunchFreezesChat =
+    appMode === 'onboarding' &&
+    launchCeremony.visible &&
+    (launchCeremony.phase === 'running' || launchCeremony.phase === 'celebrating');
+
+  const vaultLaunchCeremonyRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!launchCeremony.visible || launchCeremony.phase !== 'running' || launchCeremony.activeStepIndex !== 0) {
+      return;
+    }
+    const id = requestAnimationFrame(() => {
+      vaultLaunchCeremonyRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    });
+    return () => cancelAnimationFrame(id);
+  }, [launchCeremony.visible, launchCeremony.phase, launchCeremony.activeStepIndex]);
+
+  const artistLaunchLocksPrimaryButton =
+    appMode === 'onboarding' &&
+    launchCeremony.visible &&
+    (launchCeremony.phase === 'running' ||
+      launchCeremony.phase === 'celebrating' ||
+      launchCeremony.phase === 'failed');
 
   // Search state
   const [searchQuery, setSearchQuery] = useState('');
@@ -841,8 +902,33 @@ const ArtistPageContent: React.FC<{
     }
   }, [onboardingData]);
 
+  const launchPipelineBusyRef = useRef(false);
+
+  const resetLaunchCeremony = useCallback(() => {
+    launchCeremonyVisibleRef.current = false;
+    launchPipelineBusyRef.current = false;
+    setLaunchCeremony({
+      visible: false,
+      phase: 'idle',
+      activeStepIndex: 0,
+      failedStepIndex: null,
+      errorMessage: null,
+      celebrateTokenName: null,
+      progressTokenName: null,
+    });
+  }, []);
+
+  const setLaunchProgressStep = useCallback((index: number) => {
+    launchStepRef.current = index;
+    setLaunchCeremony((s) => ({ ...s, activeStepIndex: index }));
+  }, []);
+
   const handleSaveArtist = useCallback(async (artistData: any) => {
     console.log('🚀 Starting UUPS artist deployment via factory...', artistData);
+
+    if (launchPipelineBusyRef.current) {
+      return;
+    }
 
     try {
       if (!magic) throw new Error('Magic not initialized');
@@ -874,8 +960,6 @@ const ArtistPageContent: React.FC<{
         showToast('Add featured media (upload or HTTPS draft) before launch.', 'error');
         return;
       }
-
-      showToast('⚡ Preparing launch…', 'info');
 
       const provider = new ethers.BrowserProvider(magic.rpcProvider as any);
       const signer = await provider.getSigner();
@@ -941,6 +1025,28 @@ const ArtistPageContent: React.FC<{
         return;
       }
 
+      launchPipelineBusyRef.current = true;
+      lastLaunchArtistPayloadRef.current = artistData;
+      launchCeremonyVisibleRef.current = true;
+      const progressName =
+        (artistData.tokenName && String(artistData.tokenName).trim()) ||
+        (artistData.name && String(artistData.name).trim()) ||
+        null;
+      setLaunchCeremony({
+        visible: true,
+        phase: 'running',
+        activeStepIndex: 0,
+        failedStepIndex: null,
+        errorMessage: null,
+        celebrateTokenName: null,
+        progressTokenName: progressName,
+      });
+      setLaunchProgressStep(0);
+      await sleep(45);
+      setLaunchProgressStep(1);
+      await sleep(110);
+      setLaunchProgressStep(2);
+
       let tokenProxy: string;
       let downloadsProxy: string;
       let ammProxy: string;
@@ -960,7 +1066,6 @@ const ArtistPageContent: React.FC<{
           artistWallet,
         });
 
-        showToast('⏳ Deploying contracts…', 'info');
         const tx = await factory.createArtist(tokenName, tokenSymbol, artistId, artistWallet);
         const receipt = await tx.wait();
 
@@ -1007,7 +1112,6 @@ const ArtistPageContent: React.FC<{
 
       if (httpsDraftFeaturedOnly) {
         console.log('📝 Persisting paused artist before HTTPS featured copy...');
-        showToast('💾 Saving artist draft…', 'info');
         await saveArtistToDatabase({
           ...artistData,
           id: artistId,
@@ -1023,7 +1127,6 @@ const ArtistPageContent: React.FC<{
 
       if (bootstrapHeroForFileUpload) {
         console.log('💾 Persisting artist row before featured file upload (Storage RLS bypass)...');
-        showToast('💾 Saving artist draft…', 'info');
         const placeholderHero =
           typeof artistData.videosrc === 'string' && artistData.videosrc.trim().length > 0
             ? artistData.videosrc.trim()
@@ -1041,8 +1144,8 @@ const ArtistPageContent: React.FC<{
         });
       }
 
+      setLaunchProgressStep(3);
       console.log('📝 Uploading featured content...');
-      showToast('📤 Uploading featured media…', 'info');
       const contentUrl = await uploadFeaturedContent(
         uploadedFile,
         artistId,
@@ -1172,8 +1275,8 @@ const ArtistPageContent: React.FC<{
         }
       }
 
+      setLaunchProgressStep(4);
       console.log('🪙 Publishing featured asset #1...');
-      showToast('🪙 Publishing download asset…', 'info');
 
       let uploadResponse: Response;
       if (uploadedFile) {
@@ -1220,6 +1323,8 @@ const ArtistPageContent: React.FC<{
         );
       }
 
+      setLaunchProgressStep(5);
+
       const finalizeRes = await authenticatedFetch(
         '/api/artist/finalizeLaunch',
         {
@@ -1238,16 +1343,43 @@ const ArtistPageContent: React.FC<{
       }
 
       console.log('🎉 Artist launch finalized!');
-      showToast(`🎉 ${tokenName} is live!`, 'success');
-
       inviteLaunchCoinRef.current = null;
+      launchStepRef.current = 5;
+
+      setLaunchCeremony((s) => ({
+        ...s,
+        phase: 'celebrating',
+        celebrateTokenName: tokenName,
+        activeStepIndex: 5,
+      }));
+
+      await sleep(4200);
 
       window.location.href = `/?artist=${artistId}`;
     } catch (error: any) {
       console.error('❌ Launch failed:', error);
-      showToast(`❌ ${error.message || 'Launch failed'}`, 'error');
+      launchPipelineBusyRef.current = false;
+      const msg = error?.message || 'Launch failed';
+      if (launchCeremonyVisibleRef.current) {
+        setLaunchCeremony((s) => ({
+          ...s,
+          phase: 'failed',
+          failedStepIndex: launchStepRef.current,
+          errorMessage: typeof msg === 'string' ? msg : String(msg),
+        }));
+      } else {
+        showToast(`❌ ${msg}`, 'error');
+      }
     }
-  }, [magic, uploadedFile, workshopFeaturedHttpsUrl, onboardingData, showToast, getDidToken]);
+  }, [
+    magic,
+    uploadedFile,
+    workshopFeaturedHttpsUrl,
+    onboardingData,
+    showToast,
+    getDidToken,
+    setLaunchProgressStep,
+  ]);
 
   // ASSET EDIT HANDLER
   const handleSaveAssetEdit = useCallback(async (updates: { title: string; description: string; price: number }) => {
@@ -1562,6 +1694,8 @@ const ArtistPageContent: React.FC<{
     // Clear onboarding mode flag
     (window as any).onboardingMode = false;
 
+    resetLaunchCeremony();
+
     setAppMode('normal');
     setOnboardingArtistName('WELCOME, ARTIST!');
     setOnboardingData({});
@@ -1576,7 +1710,7 @@ const ArtistPageContent: React.FC<{
     workshopFeaturedHandlersRef.current = null;
     setUploadAssetData({ title: '', price: 5, description: '' });
     showToast(appMode === 'upload-asset' ? 'Upload cancelled' : 'Onboarding cancelled', 'info');
-  }, [showToast, appMode]);
+  }, [showToast, appMode, resetLaunchCeremony]);
 
   const handleUploadAsset = useCallback(async (assetData: any) => {
     if (!artistConfig || !uploadedFile || !user) {
@@ -2435,7 +2569,10 @@ const ArtistPageContent: React.FC<{
   return (
     <UsdBalanceProvider userAddress={user || null}>
       <div className="flex min-h-screen flex-col items-center justify-between pt-10 px-6 pb-6 relative bg-primary text-white font-sans">
-        <div id="particles" className="cosmic-particles"></div>
+        <div
+          id="particles"
+          className={`cosmic-particles transition-opacity duration-300 ${vaultLaunchFocusActive ? 'opacity-40' : ''}`}
+        />
 
         {user && (
           <Wallet
@@ -2447,10 +2584,11 @@ const ArtistPageContent: React.FC<{
             userAddress={user}
             magic={magic}
             isAdmin={isAdmin}
+            vaultLaunchDimmed={vaultLaunchFocusActive}
           />
         )}
 
-        <header className="app-header">
+        <header className={`app-header transition-opacity duration-300 ${vaultLaunchFocusActive ? 'opacity-40 pointer-events-none' : ''}`}>
           {user && (
             <div className="flex items-center gap-4">
               <div 
@@ -2470,7 +2608,7 @@ const ArtistPageContent: React.FC<{
 
         <main className="app-main">
           {/* z-0: halo shadow bleeds past hero; keep below purchase/login chassis (matches TreasureInviteShell) */}
-          <div className="text-center relative z-0">
+          <div className={`text-center relative z-0 transition-opacity duration-300 ${vaultLaunchFocusActive ? 'opacity-40 pointer-events-none' : ''}`}>
               <>
                 <ArtistPortalTitle
                   fontFamily={appMode === 'onboarding' ? 'Bungee, cursive' : artistConfig.theme.fontFamily}
@@ -2826,6 +2964,10 @@ const ArtistPageContent: React.FC<{
           </div>
 
           <div className="relative z-10 w-full flex flex-col items-center">
+          <div
+            className="w-full flex flex-col items-center"
+            inert={vaultLaunchFocusActive ? true : undefined}
+          >
           {isOwner && (
             <OwnerControls
               isMinting={isMinting}
@@ -2983,6 +3125,7 @@ const ArtistPageContent: React.FC<{
               onWorkshopFeaturedHttpsChange={handleWorkshopFeaturedHttpsChange}
               onClearWorkshopHeroStaging={handleClearWorkshopHeroStaging}
               onRegisterWorkshopFeaturedHandlers={registerWorkshopFeaturedHandlers}
+              artistLaunchLocksPrimaryButton={artistLaunchLocksPrimaryButton}
             />
           )}
 
@@ -3057,15 +3200,43 @@ const ArtistPageContent: React.FC<{
               }}
             />
           )}
+          </div>
 
+          {vaultLaunchFocusActive && (
+            <div
+              className="fixed inset-0 z-[100] bg-black/60 transition-opacity duration-300 pointer-events-auto"
+              aria-hidden
+            />
+          )}
 
           <div 
-            className={`unified-input-container mock-ui-section p-4 border-t-2 border-gray-700 mt-8 ${!user && shakeActive ? 'shake' : ''}`}
+            className={`unified-input-container mock-ui-section p-4 border-t-2 border-gray-700 mt-8 ${!user && shakeActive ? 'shake' : ''} ${vaultLaunchFocusActive ? 'relative z-[110] vault-launch-chat-well' : ''}`}
           >
             {user && (
               <h3 className="text-xl font-semibold mb-3 text-center">Chat / Command</h3>
             )}
-            <div className="flex flex-col items-center max-w-xl mx-auto gap-3">
+            <div
+              className={`flex flex-col items-center mx-auto gap-3 w-full ${
+                vaultLaunchFocusActive ? 'max-w-2xl' : 'max-w-xl'
+              }`}
+            >
+              {appMode === 'onboarding' && launchCeremony.visible && (
+                <div ref={vaultLaunchCeremonyRef} className="w-full">
+                  <VaultLaunchCeremonyCard
+                    phase={launchCeremony.phase}
+                    activeStepIndex={launchCeremony.activeStepIndex}
+                    failedStepIndex={launchCeremony.failedStepIndex}
+                    errorMessage={launchCeremony.errorMessage}
+                    tokenName={launchCeremony.celebrateTokenName}
+                    progressTokenName={launchCeremony.progressTokenName}
+                    onRetry={() => {
+                      const p = lastLaunchArtistPayloadRef.current;
+                      if (p) void handleSaveArtist(p);
+                    }}
+                    onDismiss={resetLaunchCeremony}
+                  />
+                </div>
+              )}
               {/* Treasure message */}
               {treasureMessage && (
                 <div className="text-center text-gold-400 font-medium animate-pulse">
@@ -3371,9 +3542,12 @@ const ArtistPageContent: React.FC<{
                       setEmail(value);
                     }
                   }}
+                  disabled={Boolean(user && vaultLaunchFreezesChat && !showClueInput)}
                   placeholder={
                     user 
-                      ? (appMode === 'onboarding' 
+                      ? (vaultLaunchFreezesChat
+                          ? 'Vault sequence in progress…'
+                          : appMode === 'onboarding' 
                           ? (uploadedFile 
                               ? "Type your artist name or try: gold, emerald, sapphire..." 
                               : "Type your artist name, upload content, or try colors: gold, emerald...")
@@ -3382,8 +3556,12 @@ const ArtistPageContent: React.FC<{
                         ? "Who sent you? Enter a clue here..." 
                         : "Enter your email address to continue"
                   }
-                className={`flex-grow p-3 border border-gray-600 ${user ? '' : 'rounded-l-lg'} bg-gray-900 bg-opacity-70 text-white focus:ring-accentColor focus:border-accentColor backdrop-blur-sm`}
+                className={`flex-grow p-3 border border-gray-600 ${user ? '' : 'rounded-l-lg'} bg-gray-900 bg-opacity-70 text-white focus:ring-accentColor focus:border-accentColor backdrop-blur-sm disabled:opacity-55 disabled:cursor-not-allowed disabled:border-amber-900/40`}
                 onKeyDown={(e) => {
+                  if (user && vaultLaunchFreezesChat && !showClueInput) {
+                    e.preventDefault();
+                    return;
+                  }
                   const totalResults = artistResults.length + assetResults.length;
                   
                   // Navigation for dropdown
@@ -3455,8 +3633,8 @@ const ArtistPageContent: React.FC<{
                     handleSafewordSubmit();
                   }
                 }}
-                className="p-3 bg-accentColor text-white rounded-r-lg hover:bg-opacity-80 focus:outline-none focus:ring-2 focus:ring-accentColor focus:ring-opacity-50"
-                disabled={isCheckingWhitelist}
+                className="p-3 bg-accentColor text-white rounded-r-lg hover:bg-opacity-80 focus:outline-none focus:ring-2 focus:ring-accentColor focus:ring-opacity-50 disabled:opacity-45 disabled:cursor-not-allowed"
+                disabled={isCheckingWhitelist || Boolean(user && vaultLaunchFreezesChat && !showClueInput)}
               >
                 {isCheckingWhitelist 
                   ? "🔍" 
@@ -3475,7 +3653,11 @@ const ArtistPageContent: React.FC<{
 
         {/* Top-left wallet button - MOVED TO END TO ENSURE TOP Z-INDEX */}
         {user && (
-          <div className="fixed top-4 left-4 z-[9999] flex gap-2">
+          <div
+            className={`fixed top-4 left-4 z-[9999] flex gap-2 transition-opacity duration-300 ${
+              vaultLaunchFocusActive ? 'opacity-40 pointer-events-none' : ''
+            }`}
+          >
             <button
               onClick={(e) => {
                 e.preventDefault();

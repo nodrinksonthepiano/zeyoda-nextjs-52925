@@ -46,6 +46,8 @@ interface WalletProps {
   userAddress?: string;
   magic?: any;
   isAdmin?: boolean;
+  /** When true, dims the panel during vault launch so the ceremony stays the focus */
+  vaultLaunchDimmed?: boolean;
 }
 
 const Wallet: React.FC<WalletProps> = ({
@@ -56,7 +58,8 @@ const Wallet: React.FC<WalletProps> = ({
   onClose,
   userAddress,
   magic,
-  isAdmin = false
+  isAdmin = false,
+  vaultLaunchDimmed = false,
 }) => {
   const [downloadingAssets, setDownloadingAssets] = useState<Set<string>>(new Set());
   const [assetMetadata, setAssetMetadata] = useState<{ [key: string]: AssetMetadata }>({});
@@ -564,7 +567,11 @@ const Wallet: React.FC<WalletProps> = ({
   const isAnythingLoading = balancesLoading || downloadsLoading || usdLoading;
 
   return (
-    <div className="fixed top-16 left-4 w-80 max-h-96 bg-gradient-to-br from-gray-800 via-gray-700 to-gray-900 rounded-2xl shadow-2xl border border-yellow-400 z-[9999] overflow-hidden flex flex-col">
+    <div
+      className={`fixed top-16 left-4 w-80 max-h-96 bg-gradient-to-br from-gray-800 via-gray-700 to-gray-900 rounded-2xl shadow-2xl border border-yellow-400 z-[9999] overflow-hidden flex flex-col transition-opacity duration-300 ${
+        vaultLaunchDimmed ? 'opacity-35 pointer-events-none brightness-75' : ''
+      }`}
+    >
       {/* Header */}
       <div className="flex justify-between items-center p-4 bg-gradient-to-r from-yellow-600 to-yellow-500 text-black flex-shrink-0">
         <h2 className="text-lg font-bold">💰 Your Assets</h2>

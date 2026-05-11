@@ -119,6 +119,24 @@ This repo is currently the **private testnet rehearsal space**, not the final pu
 
 ---
 
+## Vault launch ceremony UI (May 2026)
+
+**Engine (do not reorder casually):** `handleSaveArtist` in `app/page.tsx` drives launch; `setLaunchProgressStep(n)` runs only at real `await` boundaries (factory, uploads, publish, `finalizeLaunch`). Treat chain calls, Supabase, upload routes, auth, and redirect as product/security surface area.
+
+**UX-only layer:** `VaultLaunchCeremonyCard.tsx`, dimming + frozen chat + scrim/`inert` in `app/page.tsx`, `globals.css` (`.vault-launch-*`, `vault-launch-chat-well`), optional `Wallet` dim via `vaultLaunchDimmed`.
+
+**Card behavior:** No GOSHEESH branding on the card; no dial. **Running:** “Launch in progress…”, **Milestone X of 6**, a **single caption** for the current `activeStepIndex` (one milestone at a time), plus the six-step checklist (done / active / pending). **Success:** “Contracts deployed successfully.”, “Entering your page…”, token live; **`window.location.href`** after ~**4.2s** sleep. **Failure:** Retry/Dismiss unchanged.
+
+**Caption index map (aligned with `setLaunchProgressStep`):** 0 treasure → 1 opening vault → 2 forging (uses `progressTokenName`) → 3 placing treasure → 4 minting key → 5 publishing portal.
+
+**Focus mode (`vaultLaunchFocusActive`):** Scrim over chrome; `inert` on content above chat; hero/particles/header/top-left controls dimmed; chat column raised. Chat **frozen** for `running` or `celebrating` with placeholder “Vault sequence in progress…”
+
+**Scroll:** `vaultLaunchCeremonyRef` scrolls into view when `visible && running && activeStepIndex === 0` (Retry may not re-scroll if index never returns to 0 — edge case).
+
+**Build:** If `next build` fails on missing `.next` chunk (e.g. `8548.js`), try `rm -rf .next && npm run build`.
+
+---
+
 ## Gotchas
 
 - **Launch Storage RLS** — direct client upload to `artist-assets` can throw `new row violates row-level security policy`; server routes use service role.

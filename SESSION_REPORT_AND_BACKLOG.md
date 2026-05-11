@@ -301,3 +301,48 @@ Use **Incognito** where it says **public**.
 ### Scope freeze (until post-checklist planning)
 
 Do **not** prioritize in this slice: tokenomics rework, Artistock↔Artistock execution, LP drain tooling, wholesale legacy cleanup—boundary = **artist rehearsal quality** first.
+
+---
+
+## Part 10: Vault launch ceremony UI (May 2026)
+
+### Purpose
+
+Document the **presentation-only** vault launch experience above the chat strip during onboarding, without duplicating or replacing launch pipeline documentation elsewhere in this file.
+
+### Engine vs UI
+
+- **Engine (unchanged by ceremony work):** `handleSaveArtist` in `app/page.tsx`; `setLaunchProgressStep` only at real async boundaries; celebration delay before redirect is presentation-only (~4.2s); hard navigation remains `window.location.href`.
+- **UI:** `app/components/VaultLaunchCeremonyCard.tsx`, focus/dim/frozen chat in `app/page.tsx`, styles in `app/globals.css`, optional `vaultLaunchDimmed` on `app/components/Wallet.tsx`.
+
+### What the user sees (running)
+
+- Dimmed page chrome; bright chat column (`vault-launch-chat-well`, higher z-index over scrim).
+- “Launch in progress…”, **Milestone X of 6**, one **current** caption line (not a cumulative transcript list).
+- Numbered checklist: prior steps ✓, current step highlighted, rest pending.
+- Chat input disabled with “Vault sequence in progress…” while `running` or `celebrating`.
+
+### Captions vs step indices
+
+| Index | Caption theme |
+|-------|----------------|
+| 0 | Treasure found. |
+| 1 | Opening the vault. |
+| 2 | Forging {token} Artistocks. (`progressTokenName` from payload) |
+| 3 | Placing the first treasure. |
+| 4 | Minting the key. |
+| 5 | Publishing the portal. |
+
+### Success / failure
+
+- **Success:** Green panel — “Contracts deployed successfully.”, “Entering your page…”, `{token} is live.` — then redirect.
+- **Failure:** Card shows stopped step + error; Retry/Dismiss.
+
+### Follow-ups (optional, not scoped here)
+
+- Re-scroll vault into view on Retry if product wants a re-focus when `activeStepIndex` does not return to 0.
+- First three step updates are very fast (short sleeps before factory); later steps match long-running work.
+
+### Build note
+
+- Stale `.next` can cause `Cannot find module './8548.js'` (or similar) on `next build`; clean rebuild: `rm -rf .next && npm run build`.
