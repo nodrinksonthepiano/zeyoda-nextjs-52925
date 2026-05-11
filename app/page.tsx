@@ -997,10 +997,13 @@ const ArtistPageContent: React.FC<{
         ammProxy = (regRow?.swap || existingArtist!.swap_address) as string;
       }
 
-      // HTTPS draft only: /api/uploadFeatured requires an existing artists row. Local file path
-      // uploads from the browser and unchanged order (featured upload → createArtist).
+      // HTTPS copy needs an artists row first. Browser→Supabase Storage with anon key hits RLS; file
+      // uploads go through /api/uploadFeaturedFile (service role), which requires a row — persist first.
       const httpsDraftFeaturedOnly =
         !resume && Boolean(featuredHttpsDraft) && !uploadedFile;
+
+      const bootstrapHeroForFileUpload =
+        !resume && Boolean(uploadedFile) && !httpsDraftFeaturedOnly;
 
       if (httpsDraftFeaturedOnly) {
         console.log('📝 Persisting paused artist before HTTPS featured copy...');
@@ -1018,9 +1021,34 @@ const ArtistPageContent: React.FC<{
         });
       }
 
+      if (bootstrapHeroForFileUpload) {
+        console.log('💾 Persisting artist row before featured file upload (Storage RLS bypass)...');
+        showToast('💾 Saving artist draft…', 'info');
+        const placeholderHero =
+          typeof artistData.videosrc === 'string' && artistData.videosrc.trim().length > 0
+            ? artistData.videosrc.trim()
+            : 'assets/placeholder.mp4';
+        await saveArtistToDatabase({
+          ...artistData,
+          id: artistId,
+          tokenAddress: tokenProxy,
+          downloadsAddress: downloadsProxy,
+          poolAddress: ammProxy,
+          contentUrl: placeholderHero,
+          treasuryWallet: artistWallet,
+          coin_public_id: inviteLaunchCoinRef.current ?? undefined,
+          downloadPrice,
+        });
+      }
+
       console.log('📝 Uploading featured content...');
       showToast('📤 Uploading featured media…', 'info');
-      const contentUrl = await uploadFeaturedContent(uploadedFile, artistId, featuredHttpsDraft);
+      const contentUrl = await uploadFeaturedContent(
+        uploadedFile,
+        artistId,
+        featuredHttpsDraft,
+        artistWallet,
+      );
 
       if (httpsDraftFeaturedOnly) {
         const profileRes = await authenticatedFetch(
@@ -1036,19 +1064,20 @@ const ArtistPageContent: React.FC<{
           const err = await profileRes.json().catch(() => ({}));
           throw new Error(err.error || 'Could not update hero video URL');
         }
-      } else if (!resume) {
-        console.log('📝 Saving to Supabase...');
-        await saveArtistToDatabase({
-          ...artistData,
-          id: artistId,
-          tokenAddress: tokenProxy,
-          downloadsAddress: downloadsProxy,
-          poolAddress: ammProxy,
-          contentUrl,
-          treasuryWallet: artistWallet,
-          coin_public_id: inviteLaunchCoinRef.current ?? undefined,
-          downloadPrice,
-        });
+      } else if (bootstrapHeroForFileUpload) {
+        const profileRes = await authenticatedFetch(
+          '/api/artist/profile',
+          {
+            method: 'PATCH',
+            headers: { 'x-wallet-address': artistWallet.toLowerCase() },
+            body: JSON.stringify({ artistId, videosrc: contentUrl }),
+          },
+          getDidToken,
+        );
+        if (!profileRes.ok) {
+          const err = await profileRes.json().catch(() => ({}));
+          throw new Error(err.error || 'Could not update hero video URL');
+        }
       } else {
         const profileRes = await authenticatedFetch(
           '/api/artist/profile',
@@ -1414,31 +1443,33 @@ const ArtistPageContent: React.FC<{
     file: File | null,
     artistId: string,
     httpsDraftUrl: string | null,
+    treasuryWallet: string,
   ) => {
     if (file) {
-      try {
-        console.log('📤 Uploading featured content to Supabase storage...');
-        const fileExt = file.name.split('.').pop();
-        const fileName = `${artistId}/featured.${fileExt}`;
-        const { data, error } = await supabase.storage
-          .from('artist-assets')
-          .upload(fileName, file, {
-            cacheControl: '3600',
-            upsert: true,
-          });
-        if (error) {
-          throw new Error(error.message || 'Featured upload failed');
-        }
-        if (!data) {
-          throw new Error('Featured upload returned no data');
-        }
-        const { data: urlData } = supabase.storage.from('artist-assets').getPublicUrl(fileName);
-        console.log('✅ File uploaded successfully:', urlData.publicUrl);
-        return urlData.publicUrl;
-      } catch (error: unknown) {
-        const msg = error instanceof Error ? error.message : 'Featured upload failed';
-        throw new Error(msg);
+      console.log('📤 Uploading featured content via server (bypasses Storage RLS for anon client)...');
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('artistId', artistId);
+      const res = await authenticatedFetch(
+        '/api/uploadFeaturedFile',
+        {
+          method: 'POST',
+          headers: { 'x-wallet-address': treasuryWallet.toLowerCase() },
+          body: formData,
+        },
+        getDidToken,
+      );
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(
+          typeof json.error === 'string' ? json.error : 'Featured file upload failed',
+        );
       }
+      if (typeof json.publicUrl !== 'string' || !json.publicUrl.startsWith('http')) {
+        throw new Error('Featured upload returned no valid URL');
+      }
+      console.log('✅ File uploaded successfully:', json.publicUrl);
+      return json.publicUrl as string;
     }
 
     if (httpsDraftUrl?.startsWith('https://')) {
