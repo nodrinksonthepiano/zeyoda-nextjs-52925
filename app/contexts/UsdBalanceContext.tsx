@@ -123,6 +123,17 @@ export function UsdBalanceProvider({ children, userAddress }: UsdBalanceProvider
     }
   }, [userAddress]);
 
+  // Keep Treasure (cash_balances) in sync after purchases / withdrawals (same event as token refresh)
+  useEffect(() => {
+    const onBalanceUpdate = () => {
+      if (userAddress) {
+        loadBalance(userAddress);
+      }
+    };
+    window.addEventListener('balanceUpdate', onBalanceUpdate);
+    return () => window.removeEventListener('balanceUpdate', onBalanceUpdate);
+  }, [userAddress]);
+
   const contextValue: UsdBalanceContextType = {
     usdBalance,
     setUsdBalance,

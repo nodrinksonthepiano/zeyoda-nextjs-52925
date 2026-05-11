@@ -1,9 +1,9 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { ethers } from 'ethers';
 import { useRouter } from 'next/navigation';
 import { useAllArtistsDownloadAccess } from '../hooks/useDownloadAccess';
 import { useWalletBalances } from '../hooks/useWalletBalances';
-import { useArtistEarnings } from '../hooks/useArtistEarnings';
+import { useOwnedArtistsEarnings } from '../hooks/useOwnedArtistsEarnings';
 import { useTreasuryEarnings } from '../hooks/useTreasuryEarnings';
 import { supabase } from '../utils/supabaseClient';
 import { useToast } from '../contexts/ToastContext';
@@ -61,7 +61,7 @@ const Wallet: React.FC<WalletProps> = ({
   const [downloadingAssets, setDownloadingAssets] = useState<Set<string>>(new Set());
   const [assetMetadata, setAssetMetadata] = useState<{ [key: string]: AssetMetadata }>({});
   const [showUsdBalance, setShowUsdBalance] = useState<boolean>(true);
-  const [showLpPanel, setShowLpPanel] = useState<boolean>(false);
+  const [lpPanelArtistId, setLpPanelArtistId] = useState<string | null>(null);
   const [lpPct, setLpPct] = useState<number>(0);
   const [quoteUsd, setQuoteUsd] = useState<string>('0.00');
   const [isQuoting, setIsQuoting] = useState<boolean>(false);
@@ -76,8 +76,31 @@ const Wallet: React.FC<WalletProps> = ({
   const [feedbackList, setFeedbackList] = useState<FeedbackItem[]>([]);
   const [feedbackLoading, setFeedbackLoading] = useState(false);
   const [feedbackExpanded, setFeedbackExpanded] = useState(false);
+  /** Per-artist panel open state; `undefined`/`true` = expanded (default), `false` = collapsed */
+  const [assetArtistExpanded, setAssetArtistExpanded] = useState<Record<string, boolean>>({});
+  const [earningsArtistExpanded, setEarningsArtistExpanded] = useState<Record<string, boolean>>({});
+  const isAssetArtistOpen = useCallback(
+    (artistId: string) => assetArtistExpanded[artistId] !== false,
+    [assetArtistExpanded]
+  );
+  const toggleAssetArtist = useCallback((artistId: string) => {
+    setAssetArtistExpanded((prev) => {
+      const open = prev[artistId] !== false;
+      return { ...prev, [artistId]: !open };
+    });
+  }, []);
+  const isEarningsArtistOpen = useCallback(
+    (artistId: string) => earningsArtistExpanded[artistId] !== false,
+    [earningsArtistExpanded]
+  );
+  const toggleEarningsArtist = useCallback((artistId: string) => {
+    setEarningsArtistExpanded((prev) => {
+      const open = prev[artistId] !== false;
+      return { ...prev, [artistId]: !open };
+    });
+  }, []);
   const { showToast } = useToast();
-  const { usdBalance, isLoading: usdLoading } = useUsdBalance();
+  const { usdBalance, isLoading: usdLoading, refreshBalance: refreshUsdBalance } = useUsdBalance();
   const { getDidToken } = useWallet();
   const router = useRouter();
 
@@ -148,28 +171,49 @@ const Wallet: React.FC<WalletProps> = ({
     return () => { cancelled = true; };
   }, [isAdmin, showAssetsPanel, getDidToken]);
 
-  // Determine which artist this wallet owns (check all artists)
-  const { ownedArtistId, isArtistWallet } = useMemo(() => {
-    if (!userAddress || !allArtistsConfig) return { ownedArtistId: null, isArtistWallet: false };
-    
-    // Check if this wallet matches any artist's treasury_wallet (case-insensitive)
-    for (const [artistId, config] of Object.entries(allArtistsConfig)) {
-      if (config.treasury_wallet && config.treasury_wallet.toLowerCase() === userAddress.toLowerCase()) {
-        console.debug('[Wallet] Artist ownership detected:', { artistId, wallet: userAddress.slice(0,8) + '...' });
-        return { ownedArtistId: artistId, isArtistWallet: true };
-      }
+  // All artist pages this wallet launched (treasury matches connected address)
+  const { ownedArtistIds, isArtistWallet } = useMemo(() => {
+    if (!userAddress || !allArtistsConfig) {
+      return { ownedArtistIds: [] as string[], isArtistWallet: false };
     }
-    
-    return { ownedArtistId: null, isArtistWallet: false };
+    const ids = Object.entries(allArtistsConfig)
+      .filter(
+        ([, config]) =>
+          config.treasury_wallet &&
+          config.treasury_wallet.toLowerCase() === userAddress.toLowerCase()
+      )
+      .map(([artistId]) => artistId);
+    if (ids.length > 0) {
+      console.debug('[Wallet] Artist ownership:', { count: ids.length, wallet: userAddress.slice(0, 8) + '...' });
+    }
+    return { ownedArtistIds: ids, isArtistWallet: ids.length > 0 };
   }, [userAddress, allArtistsConfig]);
 
-  // Use artist earnings hook for the specific artist this wallet owns
-  const { isArtist, data: artistEarnings, isLoading: earningsLoading } = useArtistEarnings({
-    artistId: ownedArtistId,
+  /** Sorted like useOwnedArtistsEarnings; used for card order and global cash withdraw artistId. */
+  const sortedOwnedArtistIds = useMemo(
+    () => [...ownedArtistIds].sort(),
+    [ownedArtistIds]
+  );
+  const cashWithdrawArtistId =
+    sortedOwnedArtistIds.length > 0 ? sortedOwnedArtistIds[0] : null;
+
+  const {
+    entries: creatorEarningsEntries,
+    refetch: refetchCreatorEarnings
+  } = useOwnedArtistsEarnings({
+    ownedArtistIds,
     userAddress: userAddress || null,
     allArtistsConfig,
     autoRefresh: showAssetsPanel
   });
+
+  useEffect(() => {
+    const onBalanceUpdate = () => {
+      void refetchCreatorEarnings();
+    };
+    window.addEventListener('balanceUpdate', onBalanceUpdate);
+    return () => window.removeEventListener('balanceUpdate', onBalanceUpdate);
+  }, [refetchCreatorEarnings]);
 
   // Use treasury earnings hook for treasury mode
   const { isTreasury, data: treasuryEarnings, isLoading: treasuryLoading, error: treasuryError, refetch: refetchTreasury } = useTreasuryEarnings({
@@ -262,26 +306,32 @@ const Wallet: React.FC<WalletProps> = ({
   // Manual refresh using the hook
   const handleManualRefresh = async () => {
     localStorage.removeItem('zeyodaUserTokenBalances');
-    await refreshBalances();
+    await Promise.all([
+      refreshBalances(),
+      refreshUsdBalance(),
+      refetchCreatorEarnings()
+    ]);
   };
 
-  const quoteLPWithdraw = async (percent: number) => {
-    if (!ownedArtistId || percent <= 0) {
+  const quoteLPWithdraw = async (artistId: string, percent: number) => {
+    if (!artistId || percent <= 0) {
       setQuoteUsd('0.00');
       return;
     }
 
     setIsQuoting(true);
     try {
-      const response = await fetch(`/api/lp/quote?artistId=${ownedArtistId}&percent=${percent}`);
+      const response = await fetch(
+        `/api/lp/quote?artistId=${encodeURIComponent(artistId)}&percent=${percent}`
+      );
       const result = await response.json();
-      
+
       if (response.ok) {
         setQuoteUsd(result.quoteUsd?.toFixed(2) || '0.00');
       } else {
         setQuoteUsd('Error');
       }
-    } catch (error) {
+    } catch {
       setQuoteUsd('Error');
     } finally {
       setIsQuoting(false);
@@ -289,32 +339,37 @@ const Wallet: React.FC<WalletProps> = ({
   };
 
   const handleLPWithdraw = async () => {
-    if (!ownedArtistId || !userAddress || !isArtistWallet || lpPct <= 0 || isWithdrawing) {
+    const artistId = lpPanelArtistId;
+    if (!artistId || !userAddress || !isArtistWallet || lpPct <= 0 || isWithdrawing) {
       showToast('Invalid withdrawal parameters', 'error');
       return;
     }
 
     setIsWithdrawing(true);
     try {
-      console.log('💎 Starting LP withdrawal:', { artistId: ownedArtistId, percent: lpPct });
+      console.log('💎 Starting LP withdrawal:', { artistId, percent: lpPct });
       showToast(`Withdrawing ${lpPct}% of LP position...`, 'info');
 
-      const response = await authenticatedFetch('/api/public/lpWithdraw', {
-        method: 'POST',
-        headers: { 
-          'x-wallet-address': userAddress.toLowerCase()
+      const response = await authenticatedFetch(
+        '/api/public/lpWithdraw',
+        {
+          method: 'POST',
+          headers: {
+            'x-wallet-address': userAddress.toLowerCase()
+          },
+          body: JSON.stringify({
+            artistId,
+            percent: lpPct
+          })
         },
-        body: JSON.stringify({
-          artistId: ownedArtistId,
-          percent: lpPct
-        })
-      }, getDidToken);
+        getDidToken
+      );
 
       const result = await response.json();
 
       if (!response.ok) {
         if (result.floorBreached) {
-          showToast('Withdrawal cancelled: price moved too much', 'warning');
+          showToast('Withdrawal cancelled: price moved too much', 'info');
         } else if (result.duplicate) {
           showToast('Withdrawal already processed', 'info');
         } else {
@@ -326,16 +381,15 @@ const Wallet: React.FC<WalletProps> = ({
       console.log('✅ LP withdrawal successful:', result);
       showToast(`✅ Withdrew ${result.breakdown.percent}% of LP ($${result.usdProceeds.toFixed(2)})`, 'success');
 
-      // Reset panel state and trigger refresh
       setTimeout(() => {
-        setShowLpPanel(false);
+        setLpPanelArtistId(null);
         setLpPct(0);
         setQuoteUsd('0.00');
-      }, 800); // Brief delay to show success state
-      
-      window.dispatchEvent(new CustomEvent('balanceUpdate'));
+      }, 800);
 
-    } catch (error: any) {
+      window.dispatchEvent(new CustomEvent('balanceUpdate'));
+      await refetchCreatorEarnings();
+    } catch (error: unknown) {
       console.error('❌ LP withdrawal error:', error);
       showToast('LP withdrawal failed', 'error');
     } finally {
@@ -369,50 +423,8 @@ const Wallet: React.FC<WalletProps> = ({
     }
   };
 
-  const handleDownloadsWithdraw = async () => {
-    if (!ownedArtistId || !userAddress || !isArtistWallet || !artistEarnings) {
-      showToast('Permission denied: only artist can withdraw downloads', 'error');
-      return;
-    }
-
-    try {
-      const amountUsd = artistEarnings.totals.totalEarnings;
-      console.log('💰 Starting downloads withdrawal:', { artistId: ownedArtistId, amount: amountUsd });
-      showToast(`Withdrawing $${amountUsd.toFixed(2)} in download earnings...`, 'info');
-
-      const response = await authenticatedFetch('/api/artist/withdraw', {
-        method: 'POST',
-        headers: { 
-          'x-wallet-address': userAddress.toLowerCase()
-        },
-        body: JSON.stringify({
-          artistId: ownedArtistId,
-          type: 'downloads',
-          amountUsd: Number(amountUsd),
-          method: 'paypal'
-        })
-      });
-
-      const result = await response.json();
-
-      if (!response.ok) {
-        showToast(result.error || 'Downloads withdrawal failed', 'error');
-        return;
-      }
-
-      console.log('✅ Downloads withdrawal successful:', result);
-      showToast(`✅ Withdrew $${amountUsd.toFixed(2)} in download earnings!`, 'success');
-
-      // Trigger balance refresh
-      window.dispatchEvent(new CustomEvent('balanceUpdate'));
-
-    } catch (error: any) {
-      console.error('❌ Downloads withdrawal error:', error);
-      showToast('Downloads withdrawal failed', 'error');
-    }
-  };
-
   const handleCashWithdraw = async () => {
+    const artistId = cashWithdrawArtistId || 'unknown';
     if (!userAddress || parseFloat(cashAmount) <= 0) {
       showToast('Invalid withdrawal amount', 'error');
       return;
@@ -424,11 +436,11 @@ const Wallet: React.FC<WalletProps> = ({
 
       const response = await authenticatedFetch('/api/artist/withdraw', {
         method: 'POST',
-        headers: { 
+        headers: {
           'x-wallet-address': userAddress.toLowerCase()
         },
         body: JSON.stringify({
-          artistId: ownedArtistId || 'unknown',
+          artistId,
           type: 'cash',
           amountUsd: amount,
           method: 'eth_balance'
@@ -443,10 +455,11 @@ const Wallet: React.FC<WalletProps> = ({
         setCashPct(0);
         setCashAmount('0.00');
         window.dispatchEvent(new CustomEvent('balanceUpdate'));
+        await refetchCreatorEarnings();
       } else {
         showToast(result.error || 'Cash withdrawal failed', 'error');
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('❌ Cash withdrawal error:', error);
       showToast('Cash withdrawal failed', 'error');
     }
@@ -660,38 +673,75 @@ const Wallet: React.FC<WalletProps> = ({
             const artistDisplayTitle =
               artistId === 'gosheesh' ? 'GOSHEESH' : artistId === 'jaitea' ? 'JAI TEA' : config.displayName;
 
+            const assetOpen = isAssetArtistOpen(artistId);
+            const assetSummaryParts: string[] = [];
+            if (tokenBalance && tokenBalance > BigInt(0)) assetSummaryParts.push('tokens');
+            if (downloads.length > 0) {
+              assetSummaryParts.push(`${downloads.length} download${downloads.length === 1 ? '' : 's'}`);
+            }
+
             return (
               <div key={artistId} className="mb-3 rounded-lg p-3 border border-opacity-50" style={{ 
                 backgroundColor: `${config.theme.primaryColor}80`, // 50% opacity
                 borderColor: config.theme.accentColor 
               }}>
                 <div className="flex flex-col">
-                  {/* Artist Name — navigates to artist page */}
-                  <button
-                    type="button"
-                    className="text-lg font-bold text-white mb-2 text-left w-full bg-transparent border-0 p-0 cursor-pointer hover:opacity-80 transition-opacity rounded"
-                    style={{ color: config.theme.accentColor }}
-                    aria-label={`View ${artistDisplayTitle} on artist page`}
-                    onClick={() => {
-                      const targetUrl = `/?artist=${artistId}`;
-                      if (typeof window !== 'undefined') router.prefetch(targetUrl);
-                      router.push(targetUrl);
-                    }}
-                    onMouseEnter={() => {
-                      if (typeof window !== 'undefined') router.prefetch(`/?artist=${artistId}`);
-                    }}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' || e.key === ' ') {
-                        e.preventDefault();
-                        const targetUrl = `/?artist=${artistId}`;
-                        if (typeof window !== 'undefined') router.prefetch(targetUrl);
-                        router.push(targetUrl);
-                      }
-                    }}
+                  <div className="flex items-start gap-2">
+                    <button
+                      type="button"
+                      aria-expanded={assetOpen}
+                      aria-controls={`wallet-asset-body-${artistId}`}
+                      id={`wallet-asset-toggle-${artistId}`}
+                      onClick={() => toggleAssetArtist(artistId)}
+                      className="mt-1 p-0.5 rounded text-white/90 hover:text-white hover:bg-black/20 shrink-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/50"
+                      title={assetOpen ? 'Collapse' : 'Expand'}
+                    >
+                      <span className="text-xs tabular-nums" aria-hidden>
+                        {assetOpen ? '▼' : '▶'}
+                      </span>
+                    </button>
+                    <div className="flex flex-col flex-1 min-w-0">
+                      {/* Artist Name — navigates to artist page */}
+                      <button
+                        type="button"
+                        id={`wallet-asset-title-${artistId}`}
+                        className="text-lg font-bold text-white text-left w-full bg-transparent border-0 p-0 cursor-pointer hover:opacity-80 transition-opacity rounded"
+                        style={{ color: config.theme.accentColor }}
+                        aria-label={`View ${artistDisplayTitle} on artist page`}
+                        onClick={() => {
+                          const targetUrl = `/?artist=${artistId}`;
+                          if (typeof window !== 'undefined') router.prefetch(targetUrl);
+                          router.push(targetUrl);
+                        }}
+                        onMouseEnter={() => {
+                          if (typeof window !== 'undefined') router.prefetch(`/?artist=${artistId}`);
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            const targetUrl = `/?artist=${artistId}`;
+                            if (typeof window !== 'undefined') router.prefetch(targetUrl);
+                            router.push(targetUrl);
+                          }
+                        }}
+                      >
+                        {artistDisplayTitle}
+                      </button>
+                      {!assetOpen && assetSummaryParts.length > 0 && (
+                        <div className="text-[11px] text-white/75 mt-0.5">
+                          {assetSummaryParts.join(' · ')}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {assetOpen && (
+                  <div
+                    id={`wallet-asset-body-${artistId}`}
+                    role="region"
+                    aria-labelledby={`wallet-asset-title-${artistId}`}
+                    className="flex flex-col mt-2"
                   >
-                    {artistDisplayTitle}
-                  </button>
-                  
                   {/* Token Balance */}
                   {tokenBalance && tokenBalance > BigInt(0) && (
                     <div className="flex flex-col mb-2 rounded p-2" style={{ 
@@ -779,6 +829,8 @@ const Wallet: React.FC<WalletProps> = ({
                         );
                       })}
                     </div>
+                  )}
+                  </div>
                   )}
                 </div>
               </div>
@@ -889,7 +941,7 @@ const Wallet: React.FC<WalletProps> = ({
                     </div>
                   </div>
                 )}
-                
+
                 {/* Cash Withdrawal Panel */}
                 {showCashPanel && showUsdBalance && (
                   <div className="mt-3 p-3 bg-gray-700 bg-opacity-50 rounded border border-gray-400 border-opacity-50">
@@ -897,7 +949,7 @@ const Wallet: React.FC<WalletProps> = ({
                       <div className="text-gray-300 text-xs mb-1">Withdraw Cash</div>
                       <div className="text-gray-200 text-xs">Available: ${(parseFloat(ethers.formatEther(combinedBalances['ETH'])) * 2500).toFixed(2)}</div>
                     </div>
-                    
+
                     <div className="flex items-center space-x-3 mb-3">
                       <input
                         type="range"
@@ -929,19 +981,21 @@ const Wallet: React.FC<WalletProps> = ({
                         />
                       </div>
                     </div>
-                    
+
                     <div className="text-gray-300 text-xs mb-3">
                       Withdrawing ${cashAmount} ({cashPct.toFixed(1)}% of cash balance)
                     </div>
-                    
+
                     <div className="flex space-x-2">
                       <button
+                        type="button"
                         onClick={() => setShowCashPanel(false)}
                         className="flex-1 py-1 px-3 bg-gray-600 hover:bg-gray-500 text-white text-xs rounded transition-colors"
                       >
                         Cancel
                       </button>
                       <button
+                        type="button"
                         onClick={handleCashWithdraw}
                         disabled={parseFloat(cashAmount) <= 0}
                         className="flex-1 py-1 px-3 bg-green-600 hover:bg-green-500 disabled:bg-gray-600 disabled:cursor-not-allowed text-white text-xs rounded transition-colors"
@@ -997,100 +1051,188 @@ const Wallet: React.FC<WalletProps> = ({
           </div>
         )}
 
-        {/* Artist Earnings Display - Shows when wallet owns an artist */}
-        {isArtistWallet && (artistEarnings || earningsLoading) && (
-          <div className="mt-4 bg-yellow-900 bg-opacity-50 rounded-lg p-3 border border-yellow-400 border-opacity-50">
-            <div className="flex justify-between items-start">
-              <div className="flex flex-col flex-grow">
-                <div className="text-yellow-300 text-xs mb-1">🎨 {artistEarnings?.artist?.displayName || ownedArtistId?.toUpperCase() || 'Artist'} Earnings</div>
-                <div className="text-white font-bold text-lg">
-                  {earningsLoading ? (
-                    <span className="text-gray-300">Loading...</span>
-                  ) : !showUsdBalance ? (
-                    <span className="text-gray-400">••••••</span>
-                  ) : !artistEarnings ? (
-                    '$0.00'
-                  ) : artistEarnings.totals.availableBalance < 0.01 && artistEarnings.totals.availableBalance > 0 ? (
-                    '< $0.01'
-                  ) : (
-                    `$${artistEarnings.totals.availableBalance.toFixed(2)}`
-                  )}
+        {/* Artist Earnings Display — original card, repeated per owned artist */}
+        {isArtistWallet &&
+          sortedOwnedArtistIds.map((artistId) => {
+            const row = creatorEarningsEntries.find((e) => e.artistId === artistId);
+            const earningsLoading = row?.isLoading ?? true;
+            const artistEarnings = row?.data ?? null;
+            const error = row?.error ?? null;
+            const earningsOpen = isEarningsArtistOpen(artistId);
+
+            return (
+              <div
+                key={artistId}
+                className="mt-4 bg-yellow-900 bg-opacity-50 rounded-lg p-3 border border-yellow-400 border-opacity-50"
+              >
+                <div className="flex justify-between items-start gap-2">
+                  <div className="flex items-start gap-2 flex-1 min-w-0">
+                    <button
+                      type="button"
+                      aria-expanded={earningsOpen}
+                      aria-controls={`wallet-earnings-body-${artistId}`}
+                      id={`wallet-earnings-toggle-${artistId}`}
+                      onClick={() => toggleEarningsArtist(artistId)}
+                      className="mt-0.5 p-0.5 rounded text-yellow-300/90 hover:text-white hover:bg-black/20 shrink-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-yellow-400/60"
+                      title={earningsOpen ? 'Collapse details' : 'Expand details'}
+                    >
+                      <span className="text-xs tabular-nums" aria-hidden>
+                        {earningsOpen ? '▼' : '▶'}
+                      </span>
+                    </button>
+                    <div className="flex flex-col flex-grow min-w-0">
+                      <div
+                        id={`wallet-earnings-title-${artistId}`}
+                        className="text-yellow-300 text-xs mb-1"
+                      >
+                        🎨 {artistEarnings?.artist?.displayName || artistId.toUpperCase() || 'Artist'} Earnings
+                      </div>
+                      <div className="text-white font-bold text-lg">
+                        {earningsLoading && !artistEarnings ? (
+                          <span className="text-gray-300">Loading...</span>
+                        ) : !showUsdBalance ? (
+                          <span className="text-gray-400">••••••</span>
+                        ) : error ? (
+                          <span className="text-red-300 text-sm font-normal">{error}</span>
+                        ) : !artistEarnings ? (
+                          '$0.00'
+                        ) : artistEarnings.totals.availableBalance < 0.01 &&
+                          artistEarnings.totals.availableBalance > 0 ? (
+                          '< $0.01'
+                        ) : (
+                          `$${artistEarnings.totals.availableBalance.toFixed(2)}`
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowUsdBalance(!showUsdBalance)}
+                    className="ml-2 p-1 text-yellow-300 hover:text-white transition-colors duration-200 text-lg shrink-0"
+                    title={showUsdBalance ? 'Hide balance' : 'Show balance'}
+                  >
+                    {showUsdBalance ? '🔓' : '🔒'}
+                  </button>
                 </div>
-                {!earningsLoading && showUsdBalance && artistEarnings && (
-                  /* Downloads Earnings Section */
-                  <div className="space-y-2">
-                    <div className="text-yellow-200 text-xs">📊 Sales History</div>
-                    <div className="text-yellow-200 text-xs">
-                      {artistEarnings.totals.totalSales} sales • Gross ${artistEarnings.totals.totalEarnings.toFixed(2)} • Net ~${(artistEarnings.totals.totalEarnings * 0.997).toFixed(2)}
-                    </div>
-                    <div className="text-yellow-300 text-xs opacity-75">
-                      All net earnings credited to Cash
-                    </div>
-                    
-                    {/* LP Section - Separate */}
-                    {artistEarnings.totals.lpWithdrawable > 0 && (
-                      <div className="border-t border-yellow-400 border-opacity-30 pt-3 space-y-2">
-                        <div className="flex justify-between items-center">
-                          <div className="text-yellow-200 text-xs">🏦 LP Position</div>
-                          <div className="text-yellow-200 text-xs">${artistEarnings.totals.lpWithdrawable.toFixed(2)} (in pool)</div>
+
+                {earningsOpen && (
+                  <div
+                    id={`wallet-earnings-body-${artistId}`}
+                    role="region"
+                    aria-labelledby={`wallet-earnings-title-${artistId}`}
+                    className="mt-2"
+                  >
+                    {!earningsLoading && showUsdBalance && artistEarnings && !error && (
+                      <div className="space-y-2">
+                        <div className="text-yellow-200 text-xs">📊 Sales History</div>
+                        <div className="text-yellow-200 text-xs">
+                          {artistEarnings.totals.totalSales} sales • Gross $
+                          {artistEarnings.totals.totalEarnings.toFixed(2)} • Net ~
+                          {(artistEarnings.totals.totalEarnings * 0.997).toFixed(2)}
                         </div>
-                        <button
-                          onClick={() => { setShowLpPanel(true); setLpPct(0); quoteLPWithdraw(0); }}
-                          disabled={!isArtistWallet || artistEarnings.totals.lpWithdrawable <= 0}
-                          className="w-full py-1 px-3 bg-yellow-600 hover:bg-yellow-500 disabled:bg-gray-600 disabled:cursor-not-allowed text-white text-xs rounded transition-colors"
-                        >
-                          Withdraw LP
-                        </button>
-                        
-                        {/* LP Withdrawal Panel */}
-                        {showLpPanel && (
-                          <div className="mt-3 p-3 bg-yellow-800 bg-opacity-50 rounded border border-yellow-400 border-opacity-50">
-                            <div className="mb-3">
-                              <div className="text-yellow-300 text-xs mb-1">Withdraw LP</div>
-                              <div className="text-yellow-200 text-xs">LP Withdrawable: ${artistEarnings.totals.lpWithdrawable.toFixed(2)}</div>
-                            </div>
-                            
-                            <div className="flex items-center space-x-3 mb-3">
-                              <input
-                                type="range"
-                                min="0"
-                                max="100"
-                                step="1"
-                                value={lpPct}
-                                onChange={(e) => {
-                                  const newPct = Number(e.target.value);
-                                  setLpPct(newPct);
-                                  quoteLPWithdraw(newPct);
-                                }}
-                                className="flex-1"
-                              />
-                              <div className="text-right min-w-[80px]">
-                                <div className="text-yellow-300 text-xs">Estimated</div>
-                                <div className="text-white font-bold text-sm">
-                                  ${isQuoting ? '...' : quoteUsd}
-                                </div>
+                        <div className="text-yellow-300 text-xs opacity-75">
+                          All net earnings credited to Cash
+                        </div>
+
+                        {artistEarnings.totals.lpWithdrawable > 0 && (
+                          <div className="border-t border-yellow-400 border-opacity-30 pt-3 space-y-2">
+                            <div className="flex justify-between items-center">
+                              <div className="text-yellow-200 text-xs">🏦 LP Position</div>
+                              <div className="text-yellow-200 text-xs">
+                                ${artistEarnings.totals.lpWithdrawable.toFixed(2)} (in pool)
                               </div>
                             </div>
-                            
-                            <div className="text-yellow-300 text-xs mb-3">
-                              Withdrawing {lpPct}% of LP position
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setLpPanelArtistId(artistId);
+                                setLpPct(0);
+                                setQuoteUsd('0.00');
+                                quoteLPWithdraw(artistId, 0);
+                              }}
+                              disabled={!isArtistWallet || artistEarnings.totals.lpWithdrawable <= 0}
+                              className="w-full py-1 px-3 bg-yellow-600 hover:bg-yellow-500 disabled:bg-gray-600 disabled:cursor-not-allowed text-white text-xs rounded transition-colors"
+                            >
+                              Withdraw LP
+                            </button>
+
+                            {lpPanelArtistId === artistId && (
+                              <div className="mt-3 p-3 bg-yellow-800 bg-opacity-50 rounded border border-yellow-400 border-opacity-50">
+                                <div className="mb-3">
+                                  <div className="text-yellow-300 text-xs mb-1">Withdraw LP</div>
+                                  <div className="text-yellow-200 text-xs">
+                                    LP Withdrawable: ${artistEarnings.totals.lpWithdrawable.toFixed(2)}
+                                  </div>
+                                </div>
+
+                                <div className="flex items-center space-x-3 mb-3">
+                                  <input
+                                    type="range"
+                                    min="0"
+                                    max="100"
+                                    step="1"
+                                    value={lpPct}
+                                    onChange={(e) => {
+                                      const newPct = Number(e.target.value);
+                                      setLpPct(newPct);
+                                      quoteLPWithdraw(artistId, newPct);
+                                    }}
+                                    className="flex-1"
+                                  />
+                                  <div className="text-right min-w-[80px]">
+                                    <div className="text-yellow-300 text-xs">Estimated</div>
+                                    <div className="text-white font-bold text-sm">
+                                      ${isQuoting ? '...' : quoteUsd}
+                                    </div>
+                                  </div>
+                                </div>
+
+                                <div className="text-yellow-300 text-xs mb-3">
+                                  Withdrawing {lpPct}% of LP position
+                                </div>
+
+                                <div className="flex space-x-2">
+                                  <button
+                                    type="button"
+                                    onClick={() => setLpPanelArtistId(null)}
+                                    className="flex-1 py-1 px-3 bg-gray-600 hover:bg-gray-500 text-white text-xs rounded transition-colors"
+                                  >
+                                    Cancel
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={handleLPWithdraw}
+                                    disabled={lpPct <= 0 || isWithdrawing}
+                                    className="flex-1 py-1 px-3 bg-yellow-600 hover:bg-yellow-500 disabled:bg-gray-600 disabled:cursor-not-allowed text-white text-xs rounded transition-colors"
+                                  >
+                                    {isWithdrawing ? 'Withdrawing...' : `Confirm Withdraw ${lpPct}%`}
+                                  </button>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {!earningsLoading && artistEarnings && showUsdBalance && artistEarnings.recentEarnings.length > 0 && (
+                      <div className="mt-3 pt-3 border-t border-purple-400 border-opacity-30">
+                        <div className="text-purple-300 text-xs mb-2">Recent Sales</div>
+                        <div className="space-y-1 max-h-32 overflow-y-auto">
+                          {artistEarnings.recentEarnings.slice(0, 5).map((earning) => (
+                            <div key={earning.id} className="flex justify-between items-center text-xs">
+                              <div className="text-gray-300">
+                                {earning.assetTitle} • {new Date(earning.createdAt).toLocaleDateString()}
+                              </div>
+                              <div className="text-white font-medium">
+                                +${earning.netEarnings.toFixed(2)}
+                              </div>
                             </div>
-                            
-                            <div className="flex space-x-2">
-                              <button
-                                onClick={() => setShowLpPanel(false)}
-                                className="flex-1 py-1 px-3 bg-gray-600 hover:bg-gray-500 text-white text-xs rounded transition-colors"
-                              >
-                                Cancel
-                              </button>
-                              <button
-                                onClick={handleLPWithdraw}
-                                disabled={lpPct <= 0 || isWithdrawing}
-                                className="flex-1 py-1 px-3 bg-yellow-600 hover:bg-yellow-500 disabled:bg-gray-600 disabled:cursor-not-allowed text-white text-xs rounded transition-colors"
-                              >
-                                {isWithdrawing ? 'Withdrawing...' : `Confirm Withdraw ${lpPct}%`}
-                              </button>
-                            </div>
+                          ))}
+                        </div>
+                        {artistEarnings.recentEarnings.length > 5 && (
+                          <div className="text-purple-300 text-xs mt-2 opacity-70">
+                            +{artistEarnings.recentEarnings.length - 5} more sales
                           </div>
                         )}
                       </div>
@@ -1098,40 +1240,8 @@ const Wallet: React.FC<WalletProps> = ({
                   </div>
                 )}
               </div>
-              <button
-                onClick={() => setShowUsdBalance(!showUsdBalance)}
-                className="ml-2 p-1 text-yellow-300 hover:text-white transition-colors duration-200 text-lg"
-                title={showUsdBalance ? "Hide balance" : "Show balance"}
-              >
-                {showUsdBalance ? '🔓' : '🔒'}
-              </button>
-            </div>
-            
-            {/* Recent Sales List */}
-            {!earningsLoading && artistEarnings && showUsdBalance && artistEarnings.recentEarnings.length > 0 && (
-              <div className="mt-3 pt-3 border-t border-purple-400 border-opacity-30">
-                <div className="text-purple-300 text-xs mb-2">Recent Sales</div>
-                <div className="space-y-1 max-h-32 overflow-y-auto">
-                  {artistEarnings.recentEarnings.slice(0, 5).map((earning) => (
-                    <div key={earning.id} className="flex justify-between items-center text-xs">
-                      <div className="text-gray-300">
-                        {earning.assetTitle} • {new Date(earning.createdAt).toLocaleDateString()}
-                      </div>
-                      <div className="text-white font-medium">
-                        +${earning.netEarnings.toFixed(2)}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-                {artistEarnings.recentEarnings.length > 5 && (
-                  <div className="text-purple-300 text-xs mt-2 opacity-70">
-                    +{artistEarnings.recentEarnings.length - 5} more sales
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-        )}
+            );
+          })}
 
         {/* Treasury Earnings Display - always show when treasury wallet, even if fetch failed */}
         {isTreasury && (

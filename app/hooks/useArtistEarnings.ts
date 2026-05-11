@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useWallet } from '../components/MagicProvider';
 import { authenticatedFetch } from '../utils/authenticatedFetch';
 
-interface ArtistEarning {
+export interface ArtistEarning {
   id: number;
   assetNumber: number;
   assetTitle: string;
@@ -19,7 +19,8 @@ interface ArtistEarning {
   createdAt: string;
 }
 
-interface ArtistEarningsData {
+export interface ArtistEarningsData {
+  success?: boolean;
   artist: {
     id: string;
     name: string;
@@ -29,6 +30,7 @@ interface ArtistEarningsData {
     totalEarnings: number;
     totalSales: number;
     availableBalance: number;
+    lpWithdrawable: number;
     mintedCount: number;
     pendingCount: number;
   };

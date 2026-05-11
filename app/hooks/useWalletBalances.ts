@@ -159,6 +159,20 @@ export const useWalletBalances = ({
     return () => window.removeEventListener('transactionSuccess', handleTransactionSuccess);
   }, [fetchRealBalances]);
 
+  // Purchase / LP / cash flows dispatch `balanceUpdate` but did not refresh reads — keep panel in sync
+  useEffect(() => {
+    const handleBalanceUpdate = () => {
+      setError(null);
+      localStorage.removeItem('zeyodaUserTokenBalances');
+      setTimeout(() => {
+        fetchRealBalances();
+      }, 800);
+    };
+
+    window.addEventListener('balanceUpdate', handleBalanceUpdate);
+    return () => window.removeEventListener('balanceUpdate', handleBalanceUpdate);
+  }, [fetchRealBalances]);
+
   return {
     balances,
     isLoading,
