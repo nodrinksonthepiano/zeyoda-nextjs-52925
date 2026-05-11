@@ -3,7 +3,9 @@ import { createClient } from '@supabase/supabase-js';
 import { ethers } from 'ethers';
 import { requireSecret, rateLimit } from '@/app/utils/apiGuard';
 import { createGuardedProvider, createGuardedSigner } from '@/app/utils/guardedSigner';
-import { verifyWhitelist } from '@/app/utils/server/whitelistCheck';
+import { getMagicAuthFromBearer } from '@/app/utils/server/magicBearerEmail';
+import { normalizeReservedEmail } from '@/app/utils/server/normalizeReservedEmail';
+import { assertMagicTreasuryArtist } from '@/app/utils/server/assertMagicTreasuryArtist';
 
 // Use service role key to bypass RLS
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
@@ -38,23 +40,21 @@ export async function GET() {
 }
 
 export async function POST(request: NextRequest) {
-  // Security guards: secret header + whitelist + rate limit (stricter for withdrawals)
+  // Internal: trusted secret + forwarded verified email + Magic DID; treasury-only for artistId (see Pass 2).
   const secretCheck = requireSecret(request);
   if (secretCheck) return secretCheck;
-  
-  // Also check whitelist (defense-in-depth - middleware should catch this, but backup check)
-  const whitelistResult = await verifyWhitelist(request);
-  if (!whitelistResult.verified) {
-    console.log(`❌ Route blocked: ${whitelistResult.error || 'Not whitelisted'}`);
+
+  const verifiedEmail = (request.headers.get('x-verified-email') ?? '').trim();
+  if (!verifiedEmail) {
     return NextResponse.json(
-      { 
-        error: whitelistResult.error || 'Unauthorized',
-        message: 'Access denied - whitelist required'
+      {
+        error: 'Missing x-verified-email',
+        message: 'Internal proxy must forward verified email',
       },
-      { status: whitelistResult.email === null ? 401 : 403 }
+      { status: 400 },
     );
   }
-  
+
   const rl = rateLimit(request, 'lp-withdraw', 5, 60_000); // 5/min per IP (stricter)
   if (rl) return rl;
   
@@ -73,36 +73,52 @@ export async function POST(request: NextRequest) {
       }, { status: 400 });
     }
 
-    // Get wallet address from header for auth
-    const walletAddress = request.headers.get('x-wallet-address');
-    if (!walletAddress) {
-      return NextResponse.json({ 
-        error: 'Missing x-wallet-address header' 
-      }, { status: 400 });
+    const auth = await getMagicAuthFromBearer(request);
+    if (!auth) {
+      return NextResponse.json(
+        {
+          error: 'Authentication required',
+          message: 'Valid Magic DID token required',
+        },
+        { status: 401 },
+      );
     }
+
+    const bearerIdentity = auth.email?.trim() || auth.issuer?.trim();
+    if (!bearerIdentity) {
+      return NextResponse.json(
+        {
+          error: 'Authentication required',
+          message: 'Magic session lacks email or issuer — cannot bind to proxy',
+        },
+        { status: 401 },
+      );
+    }
+
+    if (normalizeReservedEmail(bearerIdentity) !== normalizeReservedEmail(verifiedEmail)) {
+      return NextResponse.json(
+        {
+          error: 'Identity mismatch',
+          message: 'Token identity does not match verified proxy caller',
+        },
+        { status: 403 },
+      );
+    }
+
+    const treasuryDenied = await assertMagicTreasuryArtist(request, artistId, auth);
+    if (treasuryDenied) return treasuryDenied;
 
     // Verify artist exists and get treasury wallet
     const { data: artist, error: artistError } = await supabaseAdmin
       .from('artists')
-      .select('id, name, displayname, treasury_wallet, total_earnings_usd')
+      .select('id, name, displayname, treasury_wallet, total_earnings_usd, total_sales_count')
       .eq('id', artistId)
       .single();
 
     if (artistError || !artist) {
-      return NextResponse.json({ 
-        error: `Artist not found: ${artistId}` 
+      return NextResponse.json({
+        error: `Artist not found: ${artistId}`,
       }, { status: 404 });
-    }
-
-    // Verify caller is the artist's treasury wallet
-    if (!artist.treasury_wallet || artist.treasury_wallet.toLowerCase() !== walletAddress.toLowerCase()) {
-      console.log('🚫 Permission denied:', { 
-        caller: walletAddress.slice(0, 8) + '...', 
-        required: artist.treasury_wallet?.slice(0, 8) + '...' 
-      });
-      return NextResponse.json({ 
-        error: 'Permission denied: only artist treasury wallet can withdraw' 
-      }, { status: 403 });
     }
 
     // Get token address from registry

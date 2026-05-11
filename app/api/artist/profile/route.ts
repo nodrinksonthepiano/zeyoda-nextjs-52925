@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { isPlaceholderVideoSrc } from '@/app/utils/launchIntegrity';
+import { assertMagicArtistUploader } from '@/app/utils/server/assertMagicArtistUploader';
 
 // Use service role key to bypass RLS
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
@@ -12,6 +13,21 @@ const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey, {
     persistSession: false
   }
 });
+
+// PATCH body keys must match this allowlist exactly (reject treasury, contracts, money, paused, etc.).
+const SAFE_PROFILE_PATCH_KEYS = new Set([
+  'artistId',
+  'primary_color',
+  'accent_color',
+  'font_family',
+  'gradient_start',
+  'gradient_end',
+  'logo_url',
+  'background_image_url',
+  'logo_use_background',
+  'background_use_image',
+  'videosrc',
+]);
 
 // Allowed font families
 const ALLOWED_FONTS = ["Inter", "DM Sans", "Space Grotesk", "Instrument Sans", "Bungee", "Geist", "Bungee, cursive", "Inter, sans-serif", "Arial, sans-serif"];
@@ -48,18 +64,25 @@ export async function PATCH(request: NextRequest) {
       }, { status: 400 });
     }
 
-    // Get wallet address from header for auth
-    const walletAddress = request.headers.get('x-wallet-address');
-    if (!walletAddress) {
-      return NextResponse.json({ 
-        error: 'Missing x-wallet-address header' 
-      }, { status: 400 });
+    const disallowedKeys = Object.keys(updateData).filter((k) => !SAFE_PROFILE_PATCH_KEYS.has(k));
+    if (disallowedKeys.length > 0) {
+      return NextResponse.json(
+        {
+          error:
+            'Disallowed profile fields (treasury, contracts, withdrawals, paused state, etc. cannot be PATCHed here)',
+          disallowedKeys,
+        },
+        { status: 400 },
+      );
     }
 
-    // Verify artist exists and get treasury wallet
+    const profileForbidden = await assertMagicArtistUploader(request, updateData.artistId);
+    if (profileForbidden) return profileForbidden;
+
+    // Verify artist exists and get theme column
     const { data: artist, error: artistError } = await supabaseAdmin
       .from('artists')
-      .select('id, name, displayname, treasury_wallet, theme')
+      .select('id, name, displayname, theme')
       .eq('id', updateData.artistId)
       .single();
 
@@ -67,17 +90,6 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({ 
         error: `Artist not found: ${updateData.artistId}` 
       }, { status: 404 });
-    }
-
-    // Verify caller is the artist's treasury wallet
-    if (!artist.treasury_wallet || artist.treasury_wallet.toLowerCase() !== walletAddress.toLowerCase()) {
-      console.log('🚫 Permission denied for profile update:', { 
-        caller: walletAddress.slice(0, 8) + '...', 
-        required: artist.treasury_wallet?.slice(0, 8) + '...' 
-      });
-      return NextResponse.json({ 
-        error: 'Permission denied: only artist treasury wallet can edit profile' 
-      }, { status: 403 });
     }
 
     // Validate and sanitize inputs - build theme JSONB object

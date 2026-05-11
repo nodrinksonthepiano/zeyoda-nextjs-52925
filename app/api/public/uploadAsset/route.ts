@@ -40,14 +40,20 @@ export async function POST(request: NextRequest) {
     
     // Get content-type from original request (needed for FormData boundary)
     const contentType = request.headers.get('content-type') || 'application/json';
-    
+    const authorization = request.headers.get('authorization');
+
+    const forwardHeaders: Record<string, string> = {
+      'content-type': contentType,
+      'x-internal-secret': secret,
+      'x-verified-email': whitelistResult.email!,
+    };
+    if (authorization) {
+      forwardHeaders['authorization'] = authorization;
+    }
+
     const response = await fetch(`${origin}/api/uploadAsset`, {
       method: 'POST',
-      headers: {
-        'content-type': contentType, // Preserve multipart/form-data boundary
-        'x-internal-secret': secret, // Always overwrite, never trust client
-        'x-verified-email': whitelistResult.email!, // Pass verified email to internal route
-      },
+      headers: forwardHeaders,
       body: body, // Use ArrayBuffer to preserve FormData structure
     });
     

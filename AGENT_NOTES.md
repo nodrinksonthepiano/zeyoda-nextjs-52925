@@ -46,6 +46,12 @@ This repo is currently the **private testnet rehearsal space**, not the final pu
 
 ## Current Truths
 
+- **MVP testnet spine (May 2026):** Normal launch + nested/treasure launch + **public Incognito** page + buy + cash-out + optional download after cash-out are the rehearsal bar. Phase = **pre–artist-testing hardening**, not “prove the stack runs.” **Do not** expand into tokenomics, token-to-token, LP drains, or legacy cleanup in the same breath as first external artist invites.
+- **Public launch ≠ owner session:** `LiveArtistPortal` black screen when `artists.paused === true` and user is not treasury. **Always** verify `/?artist=slug` **logged out / Incognito** before calling a page “live.”
+- **Publish gate:** `createArtist` sets `paused: true`; `POST /api/artist/finalizeLaunch` flips `false` after integrity checks. Manual `paused` edits are a valid testnet escape hatch but bypass automated proof.
+- **Featured hero file upload:** Do not use browser `supabase.storage` (anon) for `artist-assets` on launch—RLS blocks. Use **`/api/uploadFeaturedFile`** + bootstrap row in `page.tsx` (see `SESSION_REPORT_AND_BACKLOG.md` Part 9).
+- **Next product decision:** Prefer **light finalize/publish telemetry or “Retry publish” UI** before scaling artist testers (recommended in Part 9).
+
 - This repo is for rehearsal and refinement on Base Sepolia
 - Inner-circle artists may be onboarded here for testing before a clean public fork
 - Current LP issue is based on `100M` LP seed out of `10B` total supply, which is **1%**, not 10%
@@ -75,8 +81,47 @@ This repo is currently the **private testnet rehearsal space**, not the final pu
 
 ---
 
+## Auth hardening rules (Pass 1–2)
+
+**Middleware vs routes** — `middleware.ts` only ensures a Bearer token or internal secret is *present* on `/api/*`. It does **not** validate the Magic DID. Handlers must call `getMagicAuthFromBearer` / shared helpers so **Magic is the source of truth**. **`x-wallet-address` is advisory only** (possible `console.warn` if it disagrees with Magic `publicAddress`); it must **not** be used to authorize.
+
+**Two helpers (do not conflate):**
+
+| Helper | Use for | Allows | Disallows |
+|--------|---------|--------|-----------|
+| `assertMagicArtistUploader` | Art / content / presentation | Treasury `publicAddress`, finalize-style **invite** match, **`whitelist_emails.role === 'admin'`** (with `console.warn` admin bypass) | — |
+| `assertMagicTreasuryArtist` | Money / value movement | **Only** `Magic.publicAddress === artists.treasury_wallet` | Admin bypass, invite shortcut |
+
+**Governance line:** Admin may help artists with **presentation**; only the **treasury’s Magic wallet** may perform **withdraw / economic** actions covered by `assertMagicTreasuryArtist`.
+
+**Routes using `assertMagicArtistUploader` (representative):**
+
+- `app/api/uploadFeaturedFile/route.ts`
+- `app/api/uploadLogo/route.ts`, `app/api/uploadBackground/route.ts`
+- `app/api/uploadAsset/route.ts` — internal; with `app/api/public/uploadAsset/route.ts` forwarding **`Authorization`** and internal binding of Bearer identity to **`x-verified-email`**
+- `app/api/deleteLogo/route.ts`, `app/api/deleteBackground/route.ts`
+- `app/api/artist/profile/route.ts` — **PATCH body keys are allowlisted only** (`artistId` + theme / logo / background / `videosrc` fields). Any other key (e.g. `treasury_wallet`, `paused`, contract or payout-shaped fields) → **400** + `disallowedKeys`
+
+**Routes using `assertMagicTreasuryArtist`:**
+
+- `app/api/lp/withdraw/route.ts` — internal: `requireSecret`, required **`x-verified-email`**, Bearer identity must match verified email, then treasury check
+- `app/api/public/lpWithdraw/route.ts` — must forward **`Authorization`** (same idea as `public/uploadAsset`)
+- `app/api/artist/withdraw/route.ts`
+
+**Regression to avoid:** Clients that call `public/uploadAsset` or `public/lpWithdraw` without **`authenticatedFetch`/Bearer` will fail internal Magic checks.
+
+**Not done in Pass 1–2 (next passes / backlog):**
+
+- Publish observability / **Retry publish** for `finalizeLaunch` vs `paused` (before many external artist testers)
+- Server-side gate on **`GET /api/treasury-earnings`** (PRD **T-006**) before widening testers
+- Audit any other mutators still trusting headers alone if they appear in grep
+- Optionally split this section into `HARDENING_AND_AUTH.md` if it grows large
+
+---
+
 ## Gotchas
 
+- **Launch Storage RLS** — direct client upload to `artist-assets` can throw `new row violates row-level security policy`; server routes use service role.
 - **PGRST116** — Supabase "no rows" is not an error
 - **BigInt** — ethers v6 uses `0n`; check `balance > 0n`
 - **Base Sepolia** — chainId `84532`

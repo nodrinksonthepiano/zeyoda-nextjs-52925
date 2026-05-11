@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { assertMagicArtistUploader } from '@/app/utils/server/assertMagicArtistUploader';
 
 // Use service role for server-side operations
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
@@ -11,40 +12,13 @@ export async function DELETE(request: NextRequest) {
   
   try {
     const { artistId } = await request.json();
-    
-    // Get wallet address from header for auth
-    const walletAddress = request.headers.get('x-wallet-address');
-    
+
     if (!artistId) {
       return NextResponse.json({ error: 'Missing artistId' }, { status: 400 });
     }
-    
-    if (!walletAddress) {
-      return NextResponse.json({ error: 'Missing x-wallet-address header' }, { status: 400 });
-    }
 
-    // Verify artist exists and get treasury wallet
-    const { data: artist, error: artistError } = await supabase
-      .from('artists')
-      .select('id, treasury_wallet')
-      .eq('id', artistId)
-      .single();
-
-    if (artistError || !artist) {
-      console.error('❌ Artist not found:', artistError);
-      return NextResponse.json({ error: 'Artist not found' }, { status: 404 });
-    }
-
-    // Verify ownership (caller must be treasury wallet)
-    if (!artist.treasury_wallet || artist.treasury_wallet.toLowerCase() !== walletAddress.toLowerCase()) {
-      console.log('🚫 Permission denied for background delete:', { 
-        caller: walletAddress.slice(0, 8) + '...', 
-        required: artist.treasury_wallet?.slice(0, 8) + '...' 
-      });
-      return NextResponse.json({ 
-        error: 'Permission denied: only artist treasury wallet can delete background' 
-      }, { status: 403 });
-    }
+    const uploadDenied = await assertMagicArtistUploader(request, artistId);
+    if (uploadDenied) return uploadDenied;
 
     // Delete all background files for this artist
     let storageDeleted = false;

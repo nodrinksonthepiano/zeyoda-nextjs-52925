@@ -251,3 +251,53 @@ Add a `.cursor/rules/backlog.mdc` that references this file so agents know the b
 ### Safe-area note
 
 - iPhone bottom padding deferred / watch-only unless QA shows repeat issues (Safari chrome collapse often sufficient).
+
+---
+
+## Part 9: MVP testnet spine & pre–artist-testing hardening (May 2026)
+
+### Status decision
+
+**The scary part is behind you for testnet rehearsal:** the core loop is validated, not “does the system ever work?” Focus shifts to **pre–artist-testing hardening** (clarity, telemetry, runbooks), **not** tokenomics, token-to-token trading, LP drains, or legacy cleanup—those stay **explicitly later**.
+
+### What was proven (two launch families + public + marketplace shell)
+
+| Lane | Meaning |
+|------|--------|
+| **Normal safeword launch** | Factory → DB → featured media → asset publish → **`finalizeLaunch`** path; re-verify after **`uploadFeaturedFile` + launch bootstrap** merge. |
+| **Nested / treasure-style launch** | Invite / coin bridge → launch; **separate** QA path from normal; also reported working in session. |
+| **Public logged-out** | **`/?artist=slug`** in **Incognito** without Magic = real “published” check. **Owner-logged-in-only** is **not** proof of public launch. |
+| **Cash-out / swap UX** | Unified panel: USD slider = dollars; Artistock→USD = % of balance (BigInt); download checkbox on cash-out; **order:** cash-out → refresh → optional download mint; **partial success** if mint fails. |
+| **Download + cash-out** | Not one combined swap tx; net-style CTA (receive − download ≈ net); snapshot semantics avoid bogus “token + USD” totals for cash-out. |
+
+**Human follow-up:** Write down the **two disposable test slugs** (normal + nested), what passed, and **git commit** after saving **`uploadFeaturedFile` + `page.tsx` bootstrap**.
+
+**Slug note (inferential — verify in Supabase):** Recent local `npm run dev` logs showed activity for **`pemfnash`** (e.g. `artist-earnings`) and **`rnr3333`** (e.g. `/?artist=rnr3333`). These are **leads**, not authoritative labels for which slug was normal vs treasure; confirm against **`artists.id`** before delete/relaunch.
+
+### Important product / engineering decisions
+
+- **`artists.paused`:** **`createArtist` always inserts `paused: true`**. Only **`POST /api/artist/finalizeLaunch`** (plus manual DB) flips **`false`**. **`LiveArtistPortal`** “not published yet” = **`paused === true`** **and** viewer **not** treasury—**not** “nested under GOSHEESH.”
+- **Hero video file upload (launch):** Browser **`supabase.storage.upload`** with **anon** key hit **Storage RLS** (`new row violates row-level security`). **Fix:** **`/api/uploadFeaturedFile`** (service role + treasury check) + **`page.tsx` bootstrap:** persist artist row (placeholder **`videosrc`**) **before** file upload, then **PATCH** real **`videosrc`**. HTTPS draft path already used service role via **`/api/public/uploadFeatured`**.
+- **Checkout confirm grid:** **2×2** — Wallet (approx.) + grey **Venmo / PayPal / Card** (**`soon`**) for rehearsal “future rails.”
+- **Secrets / git:** Never commit **`.env.local`**; user owns git operations.
+
+### Final tester checklist (before inviting wider artists)
+
+Use **Incognito** where it says **public**.
+
+- [ ] Normal launch → **public** in Incognito (`/?artist=<slug>`)
+- [ ] Nested / treasure launch → **public** in Incognito
+- [ ] Buy **~$1** (USD → Artistock)
+- [ ] Cash out **small** amount
+- [ ] Cash out **with** featured download checked (partial success acceptable if edge)
+- [ ] Refresh balances / persistence sanity
+
+### Next strategic fork (recommended order)
+
+**Recommendation:** Add **light `finalizeLaunch` telemetry and/or explicit publish status in UI** (persist or log failure body; optional **“Retry publish”** calling **`finalizeLaunch` only**) **before** inviting **trusted external artist testers**—reduces “works for me logged in, black screen when logged out” without a diagnosable signal.
+
+**Backlog cue:** e.g. **T-0xx Publish observability** — surface **`finalizeLaunch`** errors; optional retry affordance.
+
+### Scope freeze (until post-checklist planning)
+
+Do **not** prioritize in this slice: tokenomics rework, Artistock↔Artistock execution, LP drain tooling, wholesale legacy cleanup—boundary = **artist rehearsal quality** first.

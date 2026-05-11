@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { v4 as uuidv4 } from 'uuid';
+import { assertMagicArtistUploader } from '@/app/utils/server/assertMagicArtistUploader';
 
 // Use service role for server-side uploads
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
@@ -13,18 +14,14 @@ export async function POST(request: NextRequest) {
   try {
     const formData = await request.formData();
     const file = formData.get('file') as File;
-    const artistId = formData.get('artistId') as string;
-    
-    // Get wallet address from header for auth
-    const walletAddress = request.headers.get('x-wallet-address');
-    
+    const artistId = ((formData.get('artistId') as string) || '').trim();
+
     if (!file || !artistId) {
       return NextResponse.json({ error: 'Missing required fields: file and artistId' }, { status: 400 });
     }
-    
-    if (!walletAddress) {
-      return NextResponse.json({ error: 'Missing x-wallet-address header' }, { status: 400 });
-    }
+
+    const uploadDenied = await assertMagicArtistUploader(request, artistId);
+    if (uploadDenied) return uploadDenied;
 
     console.log('📋 Background upload details:', { artistId, fileSize: file.size, fileType: file.type });
 
@@ -43,30 +40,7 @@ export async function POST(request: NextRequest) {
       }, { status: 400 });
     }
 
-    // 3. Verify artist exists and get treasury wallet
-    const { data: artist, error: artistError } = await supabase
-      .from('artists')
-      .select('id, treasury_wallet')
-      .eq('id', artistId)
-      .single();
-
-    if (artistError || !artist) {
-      console.error('❌ Artist not found:', artistError);
-      return NextResponse.json({ error: 'Artist not found' }, { status: 404 });
-    }
-
-    // 4. Verify ownership (caller must be treasury wallet)
-    if (!artist.treasury_wallet || artist.treasury_wallet.toLowerCase() !== walletAddress.toLowerCase()) {
-      console.log('🚫 Permission denied for background upload:', { 
-        caller: walletAddress.slice(0, 8) + '...', 
-        required: artist.treasury_wallet?.slice(0, 8) + '...' 
-      });
-      return NextResponse.json({ 
-        error: 'Permission denied: only artist treasury wallet can upload background' 
-      }, { status: 403 });
-    }
-
-    // 5. Delete old background files first (cleanup)
+    // Delete old background files first (cleanup)
     try {
       const { data: oldFiles } = await supabase.storage
         .from('artist-assets')
@@ -90,7 +64,7 @@ export async function POST(request: NextRequest) {
       console.warn('⚠️ Could not delete old background files (non-critical):', cleanupError);
     }
 
-    // 6. Upload file to Supabase Storage with unique filename
+    // Upload file to Supabase Storage with unique filename
     const fileExtension = file.name.split('.').pop()?.toLowerCase() || 'png';
     const uniqueId = uuidv4();
     const fileName = `${artistId}/background.${uniqueId}.${fileExtension}`;
@@ -109,7 +83,7 @@ export async function POST(request: NextRequest) {
 
     console.log('✅ Background uploaded:', uploadData.path);
 
-    // 7. Get the public URL for the uploaded file with cache-busting
+    // Get the public URL for the uploaded file with cache-busting
     const { data: urlData } = supabase.storage
       .from('artist-assets')
       .getPublicUrl(uploadData.path);

@@ -38,13 +38,17 @@ export async function POST(request: NextRequest) {
       );
     }
     
-    // Preserve x-wallet-address header if present (needed for lp/withdraw auth)
+    // Optional: clients may still send x-wallet-address — advisory only; Magic treasury binding is authoritative.
+    const authorization = request.headers.get('authorization');
     const walletAddress = request.headers.get('x-wallet-address');
     const headers: Record<string, string> = {
       'content-type': 'application/json',
-      'x-internal-secret': secret, // Always overwrite, never trust client
-      'x-verified-email': whitelistResult.email!, // Pass verified email to internal route
+      'x-internal-secret': secret,
+      'x-verified-email': whitelistResult.email!,
     };
+    if (authorization) {
+      headers.authorization = authorization;
+    }
     if (walletAddress) {
       headers['x-wallet-address'] = walletAddress;
     }

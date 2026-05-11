@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { assertMagicTreasuryArtist } from '@/app/utils/server/assertMagicTreasuryArtist';
 
 // Use service role key to bypass RLS
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
@@ -36,13 +37,8 @@ export async function POST(request: NextRequest) {
       }, { status: 400 });
     }
 
-    // Get wallet address from header for auth
-    const walletAddress = request.headers.get('x-wallet-address');
-    if (!walletAddress) {
-      return NextResponse.json({ 
-        error: 'Missing x-wallet-address header' 
-      }, { status: 400 });
-    }
+    const treasuryDenied = await assertMagicTreasuryArtist(request, withdrawData.artistId);
+    if (treasuryDenied) return treasuryDenied;
 
     // Verify artist exists and get treasury wallet
     const { data: artist, error: artistError } = await supabaseAdmin
@@ -55,16 +51,6 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ 
         error: `Artist not found: ${withdrawData.artistId}` 
       }, { status: 404 });
-    }
-
-    // Verify caller is the artist's treasury wallet
-    const callerLc = walletAddress.toLowerCase();
-    const ownerLc = artist.treasury_wallet?.toLowerCase() || '';
-    
-    if (!ownerLc || callerLc !== ownerLc) {
-      return NextResponse.json({ 
-        error: 'Permission denied: only artist treasury wallet can withdraw downloads' 
-      }, { status: 403 });
     }
 
     // Calculate available downloads balance

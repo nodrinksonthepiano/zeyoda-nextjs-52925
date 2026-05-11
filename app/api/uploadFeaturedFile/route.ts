@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { assertMagicArtistUploader } from '@/app/utils/server/assertMagicArtistUploader';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
@@ -16,13 +17,26 @@ export async function POST(request: NextRequest) {
     const file = formData.get('file') as File | null;
     const artistId = (formData.get('artistId') as string | null)?.trim() ?? '';
 
-    const walletAddress = request.headers.get('x-wallet-address');
-
     if (!file || !artistId) {
       return NextResponse.json({ error: 'Missing file or artistId' }, { status: 400 });
     }
-    if (!walletAddress) {
-      return NextResponse.json({ error: 'Missing x-wallet-address header' }, { status: 400 });
+
+    const uploadDenied = await assertMagicArtistUploader(request, artistId);
+    if (uploadDenied) return uploadDenied;
+
+    const { data: artistRow } = await supabase
+      .from('artists')
+      .select('treasury_wallet')
+      .eq('id', artistId)
+      .maybeSingle();
+
+    if (!artistRow?.treasury_wallet) {
+      return NextResponse.json(
+        {
+          error: 'Artist not found or treasury not set. Save artist first, then upload featured media.',
+        },
+        { status: 404 },
+      );
     }
 
     const ext = (file.name.split('.').pop() || '').toLowerCase();
@@ -38,26 +52,6 @@ export async function POST(request: NextRequest) {
 
     if (file.size > MAX_BYTES) {
       return NextResponse.json({ error: 'Featured video is too large (max ~280 MB).' }, { status: 413 });
-    }
-
-    const { data: artist, error: artistError } = await supabase
-      .from('artists')
-      .select('id, treasury_wallet')
-      .eq('id', artistId)
-      .single();
-
-    if (artistError || !artist?.treasury_wallet) {
-      return NextResponse.json(
-        { error: 'Artist not found or treasury not set. Save artist first, then upload featured media.' },
-        { status: 404 },
-      );
-    }
-
-    if (artist.treasury_wallet.toLowerCase() !== walletAddress.toLowerCase()) {
-      return NextResponse.json(
-        { error: 'Permission denied: only the treasury wallet can upload hero media.' },
-        { status: 403 },
-      );
     }
 
     const fileExt = ext || 'mp4';

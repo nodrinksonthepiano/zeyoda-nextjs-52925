@@ -4,6 +4,9 @@ import { v4 as uuidv4 } from 'uuid';
 import { requireSecret, rateLimit } from '@/app/utils/apiGuard';
 import { createGuardedSigner } from '@/app/utils/guardedSigner';
 import { isTrustedLaunchSourceUrl } from '@/app/utils/launchIntegrity';
+import { getMagicAuthFromBearer } from '@/app/utils/server/magicBearerEmail';
+import { normalizeReservedEmail } from '@/app/utils/server/normalizeReservedEmail';
+import { assertMagicArtistUploader } from '@/app/utils/server/assertMagicArtistUploader';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
@@ -129,16 +132,40 @@ export async function POST(request: NextRequest) {
       console.log('📋 Form upload:', { artistId, title, price, fileSize });
     }
 
-    const { data: artist, error: artistError } = await supabase
-      .from('artists')
-      .select('*')
-      .eq('id', artistId)
-      .single();
-
-    if (artistError || !artist) {
-      console.error('❌ Artist not found:', artistError);
-      return NextResponse.json({ error: 'Artist not found' }, { status: 404 });
+    const auth = await getMagicAuthFromBearer(request);
+    if (!auth) {
+      return NextResponse.json(
+        {
+          error: 'Authentication required',
+          message: 'Valid Magic DID token required',
+        },
+        { status: 401 },
+      );
     }
+
+    const bearerIdentity = auth.email?.trim() || auth.issuer?.trim();
+    if (!bearerIdentity) {
+      return NextResponse.json(
+        {
+          error: 'Authentication required',
+          message: 'Magic session lacks email or issuer — cannot bind to proxy',
+        },
+        { status: 401 },
+      );
+    }
+
+    if (normalizeReservedEmail(bearerIdentity) !== normalizeReservedEmail(verifiedEmail)) {
+      return NextResponse.json(
+        {
+          error: 'Identity mismatch',
+          message: 'Token identity does not match verified proxy caller',
+        },
+        { status: 403 },
+      );
+    }
+
+    const artistUploadForbidden = await assertMagicArtistUploader(request, artistId, auth);
+    if (artistUploadForbidden) return artistUploadForbidden;
 
     const fileName = `${artistId}/${uuidv4()}.${fileExtension}`;
 
