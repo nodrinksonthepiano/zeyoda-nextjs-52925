@@ -3,11 +3,9 @@ import { ethers } from 'ethers';
 import { ArtistConfig, UserTokenBalances } from '../../types/artist-types';
 // SwapService removed - using direct AMM helper functions instead
 // TreasurySwapLite removed - using AMM only
-import { UsdcSwapRouter } from '../utils/usdcSwapRouter';
 import { useWallet } from './MagicProvider';
 import { useDownloadAccess } from '../hooks/useDownloadAccess';
 import { authenticatedFetch } from '../utils/authenticatedFetch';
-import { useUsdBalance } from '../contexts/UsdBalanceContext';
 import { getArtistContracts } from '../utils/addressRegistryFallback';
 import { getDownloadPrice } from '../utils/downloadUtils';
 
@@ -16,6 +14,87 @@ const DOWNLOAD_CONTRACT_ABI = [
   "function mintDownload(address user, uint256 assetId, uint256 amount) external",
   "function owner() view returns (address)"
 ];
+
+function coerceBalanceToBigInt(entry: unknown): bigint {
+  if (typeof entry === 'bigint') return entry;
+  if (typeof entry === 'number' && Number.isFinite(entry)) {
+    try {
+      return BigInt(Math.trunc(entry));
+    } catch {
+      return 0n;
+    }
+  }
+  if (typeof entry === 'string' && entry.trim() !== '') {
+    try {
+      const base = entry.includes('.') ? entry.split('.')[0] : entry;
+      return BigInt(base || '0');
+    } catch {
+      return 0n;
+    }
+  }
+  return 0n;
+}
+
+function trimTokenAmountDecimalString(s: string): string {
+  if (!s.includes('.')) return s;
+  return s.replace(/\.?0+$/, '') || '0';
+}
+
+/** Truncate wei toward zero so at most `decimals` fractional digits (safe vs balance). */
+function truncateTokenWeiForUiDecimals(wei: bigint, decimals: number): bigint {
+  if (wei <= 0n) return 0n;
+  if (decimals <= 0) return 0n;
+  if (decimals >= 18) return wei;
+  const shift = BigInt(18 - decimals);
+  const step = 10n ** shift;
+  return (wei / step) * step;
+}
+
+function tokenWeiToHumanSwapInput(wei: bigint, fractionalDigits: number): string {
+  const w = truncateTokenWeiForUiDecimals(wei, fractionalDigits);
+  const s = trimTokenAmountDecimalString(ethers.formatUnits(w, 18));
+  return s === '' ? '0' : s;
+}
+
+/** Thousands separators on integer part; preserves fractional digits as given (Artistock DISPLAY). */
+function formatSwapFromDisplay(fromTrimmed: string): string {
+  const raw = fromTrimmed.replace(/,/g, '').trim();
+  if (!raw) return '0';
+  const neg = raw.startsWith('-');
+  const u = neg ? raw.slice(1) : raw;
+  const [whole, frac] = u.split('.');
+  const wi = whole || '0';
+  const grouped = wi.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+  const f = frac != null && frac !== '' ? `.${frac}` : '';
+  return (neg ? '-' : '') + grouped + f;
+}
+
+function parseQuotedUsdRough(s: string | undefined): number {
+  const n = parseFloat(String(s ?? '').replace(/[^\d.-]+/g, '') || '');
+  return Number.isFinite(n) ? n : 0;
+}
+
+/** One-line cash-out CTA: receive ~proceeds; if download checked, subtract download → net (~left in wallet notion). */
+function cashOutCtaSingleLine(args: {
+  fromAmountTrimmed: string;
+  tokenSymbol: string;
+  proceedsUsd: number;
+  includeDownload: boolean;
+  downloadUsd: number | null | undefined;
+}): string {
+  const fmt = formatSwapFromDisplay(args.fromAmountTrimmed);
+  const p = args.proceedsUsd.toFixed(2);
+  const d =
+    args.includeDownload && args.downloadUsd != null && args.downloadUsd > 0
+      ? args.downloadUsd
+      : null;
+  if (d != null) {
+    const net = args.proceedsUsd - d;
+    const nf = net.toFixed(2);
+    return `🔄 Cash Out ${fmt} ${args.tokenSymbol} — receive ~$${p}, download −$${d.toFixed(2)} → net ~$${nf}`;
+  }
+  return `🔄 Cash Out ${fmt} ${args.tokenSymbol} — receive ~$${p}`;
+}
 
 interface PurchaseFlowProps {
   user: string | null | undefined;
@@ -32,6 +111,10 @@ interface PurchaseFlowProps {
   setSwapToAsset: (asset: string) => void;
   unlockedArtistStates: { [key: string]: boolean };
   userTokenBalances: UserTokenBalances;
+  /** Parent sets true once live balances arrived (avoid false insufficient before RPC). */
+  swapTokenBalancesReady: boolean;
+  setSwapFromAmount: (amount: string) => void;
+  setIncludeDownload: (v: boolean) => void;
   swapFromAmount: string;
   handleSwapFromAmountChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
   artistocksInput: string;
@@ -43,6 +126,11 @@ interface PurchaseFlowProps {
   setShakeActive: (active: boolean) => void;
   swapToAmount: string;
 }
+
+/** Slider 0…1000 = 0.0%…100.0% of token balance (BigInt-safe, never use balanceWei as DOM max). */
+const TOKEN_SLIDER_PERMILLE_MAX = 1000;
+/** Max fractional digits shown for Artistock amounts (FROM field / CTA labels). */
+const TOKEN_AMOUNT_UI_DECIMALS = 4;
 
 const PurchaseFlow: React.FC<PurchaseFlowProps> = ({
   user,
@@ -59,6 +147,9 @@ const PurchaseFlow: React.FC<PurchaseFlowProps> = ({
   setSwapToAsset,
   unlockedArtistStates,
   userTokenBalances,
+  swapTokenBalancesReady,
+  setSwapFromAmount,
+  setIncludeDownload,
   swapFromAmount,
   handleSwapFromAmountChange,
   artistocksInput,
@@ -71,16 +162,20 @@ const PurchaseFlow: React.FC<PurchaseFlowProps> = ({
   swapToAmount
 }) => {
     const { magic, getDidToken } = useWallet();
-    const { setUsdBalance, usdBalance, isLoading: usdBalanceLoading } = useUsdBalance();
+    const [tokenSliderPermille, setTokenSliderPermille] = useState(0);
     const [isSwapping, setIsSwapping] = useState(false);
     const [downloadingAssets, setDownloadingAssets] = useState<Set<number>>(new Set());
     const [confirmationMode, setConfirmationMode] = useState<'config' | 'confirm'>('config');
     const [confirmationSnapshot, setConfirmationSnapshot] = useState<{
-        amount: number;
+        fromAmountTrimmed: string;
         artistocks: number;
         includeDownload: boolean;
         downloadPrice: number;
-        total: number;
+        /** USD-from only: swap dollars + optional featured download — wallet sufficiency uses this only. */
+        usdSpendTotalCombined: number | null;
+        usdSwapDollars: number | null;
+        /** Artistock → USD quoted USD out (~) */
+        cashOutUsdEstimate: number | null;
     } | null>(null);
     
     // Check download access for current artist
@@ -89,62 +184,213 @@ const PurchaseFlow: React.FC<PurchaseFlowProps> = ({
         artistConfig?.name?.toLowerCase() || null
     );
 
-    if (!artistConfig) return null;
-
     const resolvedDownloadPrice = getDownloadPrice(featuredAsset);
     const downloadPriceLabel = resolvedDownloadPrice == null ? '—' : resolvedDownloadPrice.toFixed(2);
 
-    // Calculate slider value for proper positioning
-    const sliderValue = swapFromAsset === "USD" ? parseFloat(swapFromAmount || "0") : 0;
+    // Calculate slider value for proper positioning (USD buy only)
     const maxSliderValue = 1000; // Maximum slider range
     const minSliderValue = 1;    // Minimum slider range
+    const isCashOutToUsd = swapFromAsset !== 'USD' && swapToAsset === 'USD';
+    const sellingFromToken = swapFromAsset !== 'USD';
+    const rawTokenBalanceWei = sellingFromToken ? coerceBalanceToBigInt(userTokenBalances[swapFromAsset]) : 0n;
+    const formattedTokenBalanceLabel = sellingFromToken
+      ? Number(ethers.formatUnits(rawTokenBalanceWei, 18)).toLocaleString(undefined, { maximumFractionDigits: 0 })
+      : '';
 
-    const handleSliderChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-        const usdString = e.target.value;
-        handleSwapFromAmountChange({ target: { value: usdString } } as React.ChangeEvent<HTMLInputElement>);
+    const hasValidSwapFromAmount = (): boolean => {
+      const t = (swapFromAmount ?? '').replace(/,/g, '').trim();
+      if (t === '') return false;
+      try {
+        if (swapFromAsset === 'USD') {
+          const n = parseFloat(t);
+          return !Number.isNaN(n) && n > 0;
+        }
+        return ethers.parseUnits(t, 18) > 0n;
+      } catch {
+        return false;
+      }
     };
 
-    // Capture snapshot for confirmation view
+    const handleUsdSliderChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        handleSwapFromAmountChange({ target: { value: e.target.value } } as React.ChangeEvent<HTMLInputElement>);
+    };
+
+    /** Token FROM: slider = permille of balance; amount derived with BigInt (no Number(balanceWei) as range max). */
+    const handleTokenSliderChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+      const pv = Number.parseInt(e.target.value, 10);
+      const permille = Math.min(
+        TOKEN_SLIDER_PERMILLE_MAX,
+        Math.max(0, Number.isFinite(pv) ? pv : 0)
+      );
+      setTokenSliderPermille(permille);
+      if (rawTokenBalanceWei <= 0n) {
+        setSwapFromAmount('');
+        return;
+      }
+      const wei = (rawTokenBalanceWei * BigInt(permille)) / BigInt(TOKEN_SLIDER_PERMILLE_MAX);
+      if (wei <= 0n) {
+        setSwapFromAmount('');
+        return;
+      }
+      const s = tokenWeiToHumanSwapInput(wei, TOKEN_AMOUNT_UI_DECIMALS);
+      setSwapFromAmount(s);
+    };
+
+    /** After manual edits, shorten crazy-long fractional tails without rounding up balance. */
+    const normalizeDisplayedTokenSwapFromAmount = (): void => {
+      if (swapFromAsset === 'USD') return;
+      const raw = (swapFromAmount ?? '').replace(/,/g, '').trim();
+      if (!raw) return;
+      try {
+        const w = ethers.parseUnits(raw, 18);
+        if (w <= 0n) return;
+        const next = tokenWeiToHumanSwapInput(w, TOKEN_AMOUNT_UI_DECIMALS);
+        if (next !== raw) setSwapFromAmount(next);
+      } catch {
+        /* incomplete paste / invalid */
+      }
+    };
+
+    const sliderValueUsd = swapFromAsset === "USD" ? parseFloat(swapFromAmount || "0") : 0;
+
+    /** Keep slider in sync when the user edits the FROM amount manually. */
+    useEffect(() => {
+      if (swapFromAsset === 'USD') return;
+      if (!swapTokenBalancesReady || rawTokenBalanceWei <= 0n) {
+        setTokenSliderPermille(0);
+        return;
+      }
+      const t = (swapFromAmount ?? '').replace(/,/g, '').trim();
+      if (t === '') {
+        setTokenSliderPermille(0);
+        return;
+      }
+      try {
+        const w = ethers.parseUnits(t, 18);
+        const pBig = (w * BigInt(TOKEN_SLIDER_PERMILLE_MAX)) / rawTokenBalanceWei;
+        const clamped =
+          pBig > BigInt(TOKEN_SLIDER_PERMILLE_MAX)
+            ? TOKEN_SLIDER_PERMILLE_MAX
+            : Number(pBig);
+        setTokenSliderPermille(clamped);
+      } catch {
+        /* keep previous */
+      }
+    }, [swapFromAmount, swapFromAsset, rawTokenBalanceWei, swapTokenBalancesReady]);
+
+    /** Token slider irrelevant in USD-from mode; avoids stale UI when switching. */
+    useEffect(() => {
+      if (swapFromAsset === 'USD') setTokenSliderPermille(0);
+    }, [swapFromAsset]);
+
+    // Capture snapshot for confirmation view (never mix token qty + USD as one "total" except USD buy.)
     const captureSnapshot = () => {
-        const amount = parseFloat(swapFromAmount || '0');
+        const fromAmountTrimmed = (swapFromAmount ?? '').replace(/,/g, '').trim();
         const artistocks = Math.floor(parseFloat(swapToAmount || artistocksInput || '0'));
         const downloadPrice =
           includeDownload && resolvedDownloadPrice != null ? resolvedDownloadPrice : 0;
-        const total = amount + (includeDownload ? downloadPrice : 0);
-        
+
+        const isUsdFrom = swapFromAsset === 'USD';
+        let usdSwapDollars: number | null = null;
+        let usdSpendTotalCombined: number | null = null;
+        if (isUsdFrom) {
+          const base = parseFloat(fromAmountTrimmed || '0');
+          const safe = Number.isFinite(base) ? base : 0;
+          usdSwapDollars = safe;
+          usdSpendTotalCombined = safe + (includeDownload ? downloadPrice : 0);
+        }
+
+        const cashOutUsdEstimate =
+          isCashOutToUsd && !isUsdFrom ? parseQuotedUsdRough(swapToAmount || undefined) : null;
+
         return {
-            amount,
-            artistocks,
-            includeDownload,
-            downloadPrice,
-            total
+          fromAmountTrimmed,
+          artistocks,
+          includeDownload,
+          downloadPrice,
+          usdSpendTotalCombined,
+          usdSwapDollars,
+          cashOutUsdEstimate,
         };
     };
 
     // Calculate ETH balance in USD (same as wallet chip uses)
-    const ethBalance = userTokenBalances['ETH'] || BigInt(0);
+    const ethBalance = coerceBalanceToBigInt(userTokenBalances['ETH']);
     const ethBalanceUsd = parseFloat(ethers.formatEther(ethBalance)) * 2500;
 
-    // Helper: Check if balance is insufficient (only when both are numbers)
-    const isInsufficient = typeof ethBalanceUsd === 'number' && 
-                           typeof confirmationSnapshot?.total === 'number' && 
-                           ethBalanceUsd < confirmationSnapshot.total;
+    const isBuyWithUsd = swapFromAsset === 'USD';
 
-    // Auto-reset confirmation mode when swap inputs change
+    /** Buy-side only: ETH wallet must cover combined USD spend (swap + optional download). */
+    const isInsufficientBuy =
+      confirmationMode === 'confirm' &&
+      isBuyWithUsd &&
+      typeof ethBalanceUsd === 'number' &&
+      confirmationSnapshot?.usdSpendTotalCombined != null &&
+      ethBalanceUsd < confirmationSnapshot.usdSpendTotalCombined;
+
+    /** Cash-out: compare parsed token amount to balance (only after live balances known). */
+    let isInsufficientCashOutTokens = false;
+    if (
+      confirmationMode === 'confirm' &&
+      isCashOutToUsd &&
+      confirmationSnapshot &&
+      swapTokenBalancesReady
+    ) {
+      try {
+        const cleaned = (swapFromAmount || '0').replace(/,/g, '').trim();
+        const want = ethers.parseUnits(cleaned === '' ? '0' : cleaned, 18);
+        const have = coerceBalanceToBigInt(userTokenBalances[swapFromAsset]);
+        isInsufficientCashOutTokens = want > 0n && have < want;
+      } catch {
+        isInsufficientCashOutTokens = true;
+      }
+    }
+
+    const confirmBlockedInsufficient =
+      confirmationMode === 'confirm' &&
+      (isInsufficientBuy || isInsufficientCashOutTokens);
+
+    /** Non-blocking hint for sells when ETH is very low (still need gas for approvals / router tx) */
+    const showLowGasCashOutHint =
+      confirmationMode === 'confirm' &&
+      isCashOutToUsd &&
+      typeof ethBalanceUsd === 'number' &&
+      ethBalanceUsd >= 0 &&
+      ethBalanceUsd < 0.25;
+
+    // Must run before any early return — otherwise hook order changes when artistConfig loads (breaks React / pricing UI).
     useEffect(() => {
+        if (!artistConfig) return;
         if (confirmationMode === 'confirm' && confirmationSnapshot) {
             const currentSnapshot = captureSnapshot();
-            // If any purchase details changed, reset to config mode
             if (
-                currentSnapshot.amount !== confirmationSnapshot.amount ||
+                currentSnapshot.fromAmountTrimmed !== confirmationSnapshot.fromAmountTrimmed ||
                 currentSnapshot.includeDownload !== confirmationSnapshot.includeDownload ||
-                currentSnapshot.downloadPrice !== confirmationSnapshot.downloadPrice
+                currentSnapshot.downloadPrice !== confirmationSnapshot.downloadPrice ||
+                (currentSnapshot.usdSwapDollars ?? -1) !== (confirmationSnapshot.usdSwapDollars ?? -1) ||
+                (currentSnapshot.usdSpendTotalCombined ?? -1) !==
+                  (confirmationSnapshot.usdSpendTotalCombined ?? -1) ||
+                (currentSnapshot.cashOutUsdEstimate ?? -1) !== (confirmationSnapshot.cashOutUsdEstimate ?? -1) ||
+                currentSnapshot.artistocks !== confirmationSnapshot.artistocks
             ) {
                 setConfirmationMode('config');
                 setConfirmationSnapshot(null);
             }
         }
-    }, [swapFromAmount, includeDownload, swapToAmount, artistocksInput, confirmationMode, confirmationSnapshot, resolvedDownloadPrice]);
+    }, [
+        artistConfig,
+        swapFromAsset,
+        swapToAsset,
+        swapFromAmount,
+        includeDownload,
+        swapToAmount,
+        artistocksInput,
+        confirmationMode,
+        confirmationSnapshot,
+        resolvedDownloadPrice,
+    ]);
+
+    if (!artistConfig) return null;
 
     // 🎯 HELPER: Mint download token (extracted for reuse)
     const mintDownloadToken = async (userAddress: string): Promise<string> => {
@@ -279,14 +525,16 @@ const PurchaseFlow: React.FC<PurchaseFlowProps> = ({
         setIsSwapping(true);
         try {
             const provider = magic.rpcProvider;
-            const { ethers } = await import('ethers');
             const browserProvider = new ethers.BrowserProvider(provider as any);
             const signer = await browserProvider.getSigner();
             
-            // Calculate total USD amount including download fee
-            const baseUsdAmount = parseFloat(swapFromAmount);
+            const trimmedFromAmount = (swapFromAmount ?? '').replace(/,/g, '').trim();
+
+            // Calculate total USD amount including download fee (USD → Artistock buys only)
+            const baseUsdAmount =
+              swapFromAsset === 'USD' ? parseFloat(trimmedFromAmount || '0') || 0 : 0;
             if (includeDownload && resolvedDownloadPrice == null) {
-                alert('Download price is not set for this featured asset yet. Uncheck download or try again later.');
+                alert('Featured download pricing is not set for this featured asset yet. Uncheck download or try again later.');
                 return;
             }
             const downloadFee = includeDownload ? resolvedDownloadPrice! : 0.0;
@@ -308,9 +556,6 @@ const PurchaseFlow: React.FC<PurchaseFlowProps> = ({
                 swapFromAsset: swapFromAsset
             });
             
-            // Show user that transaction is starting
-            const loadingToast = window.alert || console.log;
-            
             // FIXED ROUTING LOGIC: Prioritize AMM when liquidity pools exist
             const hasLiquidityPool = artistConfig.hasLiquidityPool;
             
@@ -319,10 +564,21 @@ const PurchaseFlow: React.FC<PurchaseFlowProps> = ({
             let transactionHash = '';
             let swapType = '';
             let downloadTxHash = '';
+            let performedCashOut = false;
             
-            // Check if we should skip swap entirely (amount is 0)
-            const swapAmountNum = parseFloat(swapFromAmount) || 0;
-            const shouldExecuteSwap = swapAmountNum > 0;
+            let shouldExecuteSwap = false;
+            try {
+                if (swapFromAsset === 'USD') {
+                    const n = parseFloat(trimmedFromAmount);
+                    shouldExecuteSwap = trimmedFromAmount !== '' && !Number.isNaN(n) && n > 0;
+                } else {
+                    const w = ethers.parseUnits(trimmedFromAmount === '' ? '0' : trimmedFromAmount, 18);
+                    shouldExecuteSwap = w > 0n;
+                }
+            } catch {
+                shouldExecuteSwap = false;
+            }
+            const swapAmountNum = swapFromAsset === 'USD' ? parseFloat(trimmedFromAmount) || 0 : 0;
             
             console.log('🎯 Purchase decision:', {
                 swapAmount: swapAmountNum,
@@ -336,19 +592,26 @@ const PurchaseFlow: React.FC<PurchaseFlowProps> = ({
                 // ✅ PRIORITY: Use AMM for USD purchases when liquidity pools exist (live pricing)
                 console.log('🏊 Using AMM system for LP-based swap (live pricing)');
                 
-                // Import new swap utils
-                const { swapETHForTokens, getReserves, calculateAmountOut } = await import('../utils/swapUtils');
+                const {
+                    swapETHForTokens,
+                    estimateTokensOutFromEthIn,
+                    readAmmCurveParams,
+                    AMM_FEE_DENOMINATOR
+                } = await import('../utils/swapUtils');
                 
                 // Convert total USD amount (including download fee) to ETH for AMM with proper precision
                 const ethAmount = ethers.parseEther((totalUsdAmount / 2500).toFixed(18)); // Convert to wei
                 swapType = `$${totalUsdAmount} USD → ${artistConfig.tokenName}${includeDownload ? ' + Download' : ''} (AMM Live Price)`;
                 
-                // Get reserves and calculate expected output
                 const ammAddress = artistConfig.swap;
                 if (!ammAddress) throw new Error('No AMM address for this artist');
                 
-                const reserves = await getReserves(ammAddress, artistConfig.contract, signer.provider!);
-                const expectedOut = calculateAmountOut(ethAmount, reserves.ethReserve, reserves.tokenReserve);
+                const expectedOut = await estimateTokensOutFromEthIn(
+                    ammAddress,
+                    artistConfig.contract,
+                    ethAmount,
+                    signer.provider!
+                );
                 const minTokensOut = (expectedOut * 95n) / 100n; // 5% slippage tolerance
                 
                 console.log('📊 AMM Quote:', {
@@ -370,9 +633,10 @@ const PurchaseFlow: React.FC<PurchaseFlowProps> = ({
                 transactionHash = tx.hash;
                 console.log('✅ AMM swap successful:', tx.hash);
                 
-                // Log protocol fee to database (0.3% of ETH input)
+                // Log protocol skim to database when V2 feeBps applies
                 try {
-                    const feeAmountWei = (ethAmount * 30n) / 10000n; // 0.3%
+                    const curve = await readAmmCurveParams(ammAddress, signer.provider!);
+                    const feeAmountWei = (ethAmount * curve.feeProtocolBps) / AMM_FEE_DENOMINATOR;
                     
                     // Get artistId from URL
                     const urlPath = window.location.pathname;
@@ -411,63 +675,77 @@ const PurchaseFlow: React.FC<PurchaseFlowProps> = ({
                 }));
                 
             } else if (hasLiquidityPool && swapFromAsset !== "USD" && swapToAsset !== "USD") {
-                // ⚠️ Token-to-token swaps disabled - requires multiple UUPS artists
-                console.warn('⚠️ Token-to-token swaps not yet implemented for UUPS');
-                throw new Error('Token-to-token swaps require multiple artists. Coming soon!');
+                console.warn('⚠️ Artistock-to-Artistock trading not enabled in this build');
+                throw new Error(
+                    'Trading one Artistock for another is not available in this rehearsal yet. Cash out to your wallet, then buy the other Artistock.'
+                );
                 
             } else if (shouldExecuteSwap && swapFromAsset !== "USD" && swapToAsset === "USD") {
-                // 💰 CASH-OUT: Convert tokens to USDC → USD balance via new router
-                console.log('💰 Processing USDC cash-out transaction');
+                console.log('💰 Cash-out via AMM (Artistocks → ETH in wallet)');
                 
-                const tokenAmount = parseFloat(swapFromAmount);
-                swapType = `${tokenAmount} ${swapFromAsset} → $${swapToAmount} USD (USDC Cash-Out)`;
-                
-                console.log('🏦 USDC cash-out details:', {
-                    fromToken: swapFromAsset,
-                    tokenAmount: tokenAmount,
-                    expectedUSD: swapToAmount,
-                    userAddress: user
-                });
-                
-                // Find the token config for the FROM token
                 const fromTokenConfig = Object.values(allArtistsConfig || {}).find(
                     config => config.tokenName === swapFromAsset
                 );
                 
                 if (!fromTokenConfig?.contract) {
-                    throw new Error(`Cannot find contract for token: ${swapFromAsset}`);
+                    throw new Error(`We couldn’t find ${swapFromAsset} in the catalog. Try refreshing the page.`);
+                }
+                if (!fromTokenConfig.hasLiquidityPool || !fromTokenConfig.swap) {
+                    throw new Error(
+                        'Cash-out isn’t available for this Artistock right now — the market isn’t active.'
+                    );
                 }
                 
-                // ✅ Use USDC Swap Router (0x → Uniswap V3 fallback)
-                console.log('🔄 Using USDC Swap Router for cash-out');
+                let tokenWeiIn: bigint;
+                try {
+                    tokenWeiIn = ethers.parseUnits(trimmedFromAmount === '' ? '0' : trimmedFromAmount, 18);
+                } catch (e) {
+                    console.error('Invalid cash-out amount:', e);
+                    throw new Error('Enter a valid amount to cash out.');
+                }
+                if (tokenWeiIn <= 0n) {
+                    throw new Error('Enter an amount greater than zero to cash out.');
+                }
                 
-                const usdcRouter = new UsdcSwapRouter(signer);
+                swapType = `Cash out ${swapFromAmount} ${swapFromAsset} (wallet balance updates after confirm)`;
                 
-                const result = await usdcRouter.executeCashOut(
+                const { swapTokensForETH, estimateEthOutFromTokenIn } = await import('../utils/swapUtils');
+                const ammAddr = fromTokenConfig.swap;
+                
+                const expectedEth = await estimateEthOutFromTokenIn(
+                    ammAddr,
                     fromTokenConfig.contract,
-                    swapFromAmount,
-                    user!
+                    tokenWeiIn,
+                    signer.provider!
                 );
-                
-                if (result.success && result.usdcReceived) {
-                    transactionHash = result.txHash || '';
-                    console.log('✅ USDC cash-out successful:', {
-                        usdReceived: result.usdcReceived,
-                        txHash: transactionHash
-                    });
-                    
-                    // Update USD balance via context
-                    await setUsdBalance(result.usdcReceived);
-                    console.log('💰 USD balance updated:', result.usdcReceived);
-                    
-                    // Trigger balance refresh
-                    window.dispatchEvent(new CustomEvent('transactionSuccess', {
-                        detail: { type: 'cashout', hash: transactionHash }
-                    }));
-                    
-                } else {
-                    throw new Error(result.error || 'USDC cash-out failed');
+                if (expectedEth <= 0n) {
+                    throw new Error('This trade would return nothing — try a smaller amount or check the market.');
                 }
+                const minEthOut = (expectedEth * 95n) / 100n;
+                
+                console.log('📊 Cash-out AMM quote:', {
+                    tokenIn: swapFromAsset,
+                    tokenWei: tokenWeiIn.toString(),
+                    expectedEth: ethers.formatEther(expectedEth),
+                    minEth: ethers.formatEther(minEthOut),
+                    amm: ammAddr
+                });
+                
+                const tx = await swapTokensForETH(
+                    ammAddr,
+                    fromTokenConfig.contract,
+                    tokenWeiIn,
+                    minEthOut,
+                    signer
+                );
+                await tx.wait();
+                transactionHash = tx.hash;
+                console.log('✅ Cash-out swap confirmed:', tx.hash);
+                
+                window.dispatchEvent(new CustomEvent('transactionSuccess', {
+                    detail: { type: 'cashout', hash: transactionHash }
+                }));
+                performedCashOut = true;
                 
             } else if (shouldExecuteSwap) {
                 // No valid swap path found
@@ -477,28 +755,62 @@ const PurchaseFlow: React.FC<PurchaseFlowProps> = ({
                 console.log('⏭️ Skipping swap (amount = $0), proceeding to download only...');
             }
             
-            // 🎯 DOWNLOAD TOKEN MINTING (after successful swap OR if no swap was needed)
+            // 🎯 Featured download: never bundled with the swap tx. USD buy = mint after swap; cash-out = refresh then mint if affordable.
             let downloadMintFailed = false;
             let downloadMintError: string | null = null;
-            if (includeDownload && user) {
-                try {
-                    // Small delay to ensure token is fresh after swap transaction
-                    await new Promise(resolve => setTimeout(resolve, 500));
-                    downloadTxHash = await mintDownloadToken(user);
-                } catch (mintError: any) {
-                    console.error('❌ Download token mint failed:', mintError);
-                    downloadMintFailed = true;
-                    downloadMintError = mintError.message || 'Download purchase failed';
-                    
-                    // If it's an auth error, suggest refreshing
-                    if (mintError.message?.includes('token') || mintError.message?.includes('Authentication')) {
-                        downloadMintError = 'Authentication expired. Please refresh the page and your download token will be minted automatically.';
+            if (includeDownload && user && resolvedDownloadPrice != null) {
+                if (swapFromAsset === 'USD') {
+                    try {
+                        await new Promise((resolve) => setTimeout(resolve, 500));
+                        downloadTxHash = await mintDownloadToken(user);
+                    } catch (mintError: any) {
+                        console.error('❌ Download token mint failed:', mintError);
+                        downloadMintFailed = true;
+                        downloadMintError = mintError.message || 'Download purchase failed';
+                        if (
+                            mintError.message?.includes('token') ||
+                            mintError.message?.includes('Authentication')
+                        ) {
+                            downloadMintError =
+                                'Authentication expired. Please refresh the page and your download token will be minted automatically.';
+                        }
+                        if (!transactionHash) {
+                            alert(downloadMintError);
+                        }
                     }
-                    
-                    // Don't show alert here - will be included in success message if swap succeeded
-                    // Only show alert if this was download-only purchase
-                    if (!transactionHash) {
-                        alert(downloadMintError);
+                }
+                if (performedCashOut) {
+                    try {
+                        window.dispatchEvent(
+                            new CustomEvent('refreshWalletBalances', {
+                                detail: { forceRefresh: true, reason: 'post-cashout-download' },
+                            })
+                        );
+                        await new Promise((resolve) => setTimeout(resolve, 2400));
+                        const balWei = await browserProvider.getBalance(user as string);
+                        const usdApprox = parseFloat(ethers.formatEther(balWei)) * 2500;
+                        const dl = resolvedDownloadPrice;
+                        if (!Number.isFinite(usdApprox) || usdApprox < dl - 1e-6) {
+                            throw new Error(
+                                `Featured download (~$${dl.toFixed(
+                                    2
+                                )}) needs a bit more wallet value after cash-out (~$${usdApprox.toFixed(
+                                    2
+                                )} now). Your cash-out is done—add value and unlock the download from here when you're ready.`
+                            );
+                        }
+                        downloadTxHash = await mintDownloadToken(user);
+                    } catch (mintError: any) {
+                        console.error('❌ Post-cash-out download mint failed:', mintError);
+                        downloadMintFailed = true;
+                        downloadMintError = mintError.message || 'Download purchase failed';
+                        if (
+                            mintError.message?.includes('token') ||
+                            mintError.message?.includes('Authentication')
+                        ) {
+                            downloadMintError =
+                                'Authentication expired. Please refresh the page and try unlocking the download again.';
+                        }
                     }
                 }
             }
@@ -519,13 +831,16 @@ const PurchaseFlow: React.FC<PurchaseFlowProps> = ({
                 // If only swap (no download) OR swap succeeded but download mint failed
                 else if (transactionHash) {
                     successMessage = `🎉 PURCHASE SUCCESSFUL!\n\n${swapType}\n\nSwap Transaction: ${transactionHash.substring(0, 10)}...`;
-                    if (includeDownload) {
-                        if (downloadMintFailed) {
-                            const dp = resolvedDownloadPrice ?? 0;
-                            successMessage += `\n\n⚠️ Download Token Issue:\nYour payment of $${dp.toFixed(2)} was successful, but we encountered an issue minting your download token.\n\n${downloadMintError || 'Please contact support or try again.'}`;
+                    if (includeDownload && downloadMintFailed) {
+                        const dp = resolvedDownloadPrice ?? 0;
+                        if (performedCashOut) {
+                            successMessage += `\n\nCash-out completed successfully.\n\nThe featured download (~$${dp.toFixed(
+                                2
+                            )}) couldn’t unlock yet:\n${downloadMintError || 'Try again once your wallet balance updates, or toggle the checkbox off for cash-out only.'}`;
                         } else {
-                            const dp = resolvedDownloadPrice ?? 0;
-                            successMessage += `\n\n💡 Download processing: Your payment included $${dp.toFixed(2)} for download access. Download tokens are being credited to your wallet.`;
+                            successMessage += `\n\n⚠️ Download token issue:\nYour swap succeeded, including ~$${dp.toFixed(
+                                2
+                            )} for the featured download in this flow—but minting ran into something:\n\n${downloadMintError || 'Please try again after refresh.'}`;
                         }
                     }
                 }
@@ -568,6 +883,9 @@ const PurchaseFlow: React.FC<PurchaseFlowProps> = ({
                 errorMessage += 'Insufficient funds for gas or tokens';
             } else if (error?.message?.includes('paused')) {
                 errorMessage += 'Swap contract is temporarily paused';
+            } else if (error?.message?.includes('Insufficient output')) {
+                errorMessage +=
+                    'The trade moved too much for the limits we set — try again with a slightly smaller amount.';
             } else {
                 errorMessage += error?.message || 'Unknown error occurred';
             }
@@ -675,24 +993,55 @@ const PurchaseFlow: React.FC<PurchaseFlowProps> = ({
                     Purchase Options
                 </h3>
                 
-                {/* Universal Amount Slider - Always visible for all swaps */}
+                {user && sellingFromToken && !swapTokenBalancesReady && (
+                    <div className="mb-4 p-3 bg-blue-900/30 border border-blue-600 rounded-lg">
+                        <p className="text-sm text-blue-100">Loading your Artistock balances…</p>
+                    </div>
+                )}
+
                 <div className="mb-6">
                     <label className="block text-sm font-medium text-gray-300 mb-2">
-                        {swapFromAsset === "USD" ? "Amount Slider ($)" : `Amount Slider (${swapFromAsset})`}
+                        {swapFromAsset === 'USD' ? 'Amount Slider ($)' : `Amount Slider (${swapFromAsset} balance)`}
                     </label>
-                    <input
-                        type="range"
-                        min={swapFromAsset === "USD" ? minSliderValue : 1}
-                        max={swapFromAsset === "USD" ? maxSliderValue : Number(userTokenBalances[swapFromAsset] || 1000)}
-                        value={parseFloat(swapFromAmount || "0")}
-                        onChange={handleSliderChange}
-                        className="custom-token-slider w-full"
-                        step={swapFromAsset === "USD" ? "0.01" : "1"}
-                    />
-                    <div className="flex justify-between text-xs text-gray-400 mt-1">
-                        <span>{swapFromAsset === "USD" ? `$${minSliderValue}` : "1"}</span>
-                        <span>{swapFromAsset === "USD" ? `$${maxSliderValue}` : `${userTokenBalances[swapFromAsset] || 1000}`}</span>
-                    </div>
+                    {swapFromAsset === 'USD' ? (
+                      <>
+                        <input
+                          type="range"
+                          min={minSliderValue}
+                          max={maxSliderValue}
+                          value={Math.min(Math.max(sliderValueUsd || minSliderValue, minSliderValue), maxSliderValue)}
+                          onChange={handleUsdSliderChange}
+                          className="custom-token-slider w-full"
+                          step="0.01"
+                        />
+                        <div className="flex justify-between text-xs text-gray-400 mt-1">
+                          <span>${minSliderValue}</span>
+                          <span>${maxSliderValue}</span>
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <input
+                          type="range"
+                          min={0}
+                          max={TOKEN_SLIDER_PERMILLE_MAX}
+                          step={1}
+                          disabled={!swapTokenBalancesReady || rawTokenBalanceWei <= 0n || isSwapping}
+                          value={Math.min(Math.max(tokenSliderPermille, 0), TOKEN_SLIDER_PERMILLE_MAX)}
+                          onChange={handleTokenSliderChange}
+                          className="custom-token-slider w-full"
+                        />
+                        <div className="flex justify-between text-xs text-gray-400 mt-1">
+                          <span>0%</span>
+                          <span>100%</span>
+                        </div>
+                        <p className="text-xs text-gray-500 mt-2">
+                          Slide to choose what share of your balance to swap. Available:~{' '}
+                          {formattedTokenBalanceLabel} {swapFromAsset}
+                          {!swapTokenBalancesReady ? ' (confirming…)' : ''}.
+                        </p>
+                      </>
+                    )}
                 </div>
                 
                 <div className="mb-4">
@@ -702,7 +1051,20 @@ const PurchaseFlow: React.FC<PurchaseFlowProps> = ({
                         id="fromAsset"
                         value={swapFromAsset} 
                         onChange={(e) => {
-                        setSwapFromAsset(e.target.value);
+                        const prev = swapFromAsset;
+                        const next = e.target.value;
+                        setSwapFromAsset(next);
+                        if (next === 'USD' && prev !== 'USD') {
+                            setSwapFromAmount('20.00');
+                            setIncludeDownload(true);
+                            setTokenSliderPermille(0);
+                        }
+                        if (next !== 'USD') {
+                            if (prev !== next) {
+                              setSwapFromAmount('');
+                              setTokenSliderPermille(0);
+                            }
+                        }
                         }}
                         className="w-2/5 p-2 border border-gray-600 rounded-md bg-gray-700 text-white focus:ring-accentColor focus:border-accentColor"
                     >
@@ -712,15 +1074,15 @@ const PurchaseFlow: React.FC<PurchaseFlowProps> = ({
                         {allArtistsConfig && Object.entries(allArtistsConfig).map(([id, artist]) => {
                           if (!artist || !artist.tokenName) return null;
 
-                          const userBalance = userTokenBalances[artist.tokenName] || 0;
-                          const hasTokens = userBalance > 0;
+                          const userBalanceBn = coerceBalanceToBigInt(userTokenBalances[artist.tokenName]);
+                          const hasTokens = userBalanceBn > 0n;
                           const isCurrentArtist = artist.tokenName === artistConfig?.tokenName;
 
                           // Show current artist OR artists user owns
                           if (artist.tokenName && (isCurrentArtist || hasTokens)) {
                             return (
                               <option key={`from-${id}-${artist.tokenName}`} value={artist.tokenName!}>
-                                {artist.tokenName} {hasTokens ? `(${Number(ethers.formatUnits(userBalance, 18)).toLocaleString(undefined, {maximumFractionDigits: 0})})` : '(0)'}
+                                {artist.tokenName} {hasTokens ? `(${Number(ethers.formatUnits(userBalanceBn, 18)).toLocaleString(undefined, {maximumFractionDigits: 0})})` : '(0)'}
                               </option>
                             );
                           }
@@ -732,6 +1094,7 @@ const PurchaseFlow: React.FC<PurchaseFlowProps> = ({
                         id="fromAmount"
                         value={swapFromAmount}
                         onChange={handleSwapFromAmountChange}
+                        onBlur={swapFromAsset === 'USD' ? undefined : normalizeDisplayedTokenSwapFromAmount}
                         className="flex-grow p-2 border border-gray-600 rounded-md bg-gray-700 text-white focus:ring-accentColor focus:border-accentColor custom-token-input"
                     />
                     </div>
@@ -769,8 +1132,8 @@ const PurchaseFlow: React.FC<PurchaseFlowProps> = ({
                                     if (!artist || !artist.tokenName) return null;
                                     
                                     const isCurrentArtist = artist.tokenName === artistConfig?.tokenName;
-                                    const userBalance = userTokenBalances[artist.tokenName] || 0;
-                                    const hasTokens = userBalance > 0;
+                                    const ub = coerceBalanceToBigInt(userTokenBalances[artist.tokenName]);
+                                    const hasTokens = ub > 0n;
                                     
                                     // Show current artist OR artists user owns
                                     if (isCurrentArtist || hasTokens) {
@@ -790,8 +1153,8 @@ const PurchaseFlow: React.FC<PurchaseFlowProps> = ({
                                         if (!artist || !artist.tokenName) return null;
                                         
                                         const isCurrentArtist = artist.tokenName === artistConfig?.tokenName;
-                                        const userBalance = userTokenBalances[artist.tokenName] || 0;
-                                        const hasTokens = userBalance > 0;
+                                        const ub = coerceBalanceToBigInt(userTokenBalances[artist.tokenName]);
+                                        const hasTokens = ub > 0n;
                                         
                                         // Show if different from FROM asset AND (current OR owned)
                                         if (artist.tokenName !== swapFromAsset && (isCurrentArtist || hasTokens)) {
@@ -865,9 +1228,11 @@ const PurchaseFlow: React.FC<PurchaseFlowProps> = ({
                     <div className="mt-2 p-2 bg-gray-700 rounded-lg">
                         {artistConfig.hasLiquidityPool ? (
                             <div>
-                                <p className="text-green-400">🏊 AMM Pools Active</p>
-                                <p className="text-xs">Live pricing via liquidity pools</p>
-                                <p className="text-xs">Cross-token trading enabled</p>
+                                <p className="text-green-400">🏊 Market active</p>
+                                <p className="text-xs">Buying Artistocks (wallet balance) and Cash out work while the pool is active.</p>
+                                <p className="text-xs text-gray-400 mt-1">
+                                    Trading one Artistock for another isn&apos;t available yet — cash out first, then buy.
+                                </p>
                             </div>
                         ) : artistConfig.swap && !artistConfig.paused ? (
                             <div>
@@ -882,50 +1247,79 @@ const PurchaseFlow: React.FC<PurchaseFlowProps> = ({
                         )}
                     </div>
                     
-                    <p className="text-xs mt-2">Minimum purchase: $1.00</p>
+                    <p className="text-xs mt-2">
+                        Minimum purchase (USD → Artistocks): $1.00
+                    </p>
+                    <p className="text-xs mt-1 text-gray-500">
+                        Cash-outs can be small on testnet; keep a little ETH for gas.
+                    </p>
                 </div>
 
-                <div className="flex items-center justify-between mt-6">
+                <div className="mt-6 space-y-2">
                     <div className="flex items-center">
                     <input
                         id="includeDownload"
                         type="checkbox"
                         checked={includeDownload}
                         onChange={handleIncludeDownloadChange}
-                        className="h-4 w-4 rounded border-gray-300 text-accentColor focus:ring-accentColor"
+                        disabled={resolvedDownloadPrice == null}
+                        className="h-4 w-4 rounded border-gray-300 text-accentColor focus:ring-accentColor disabled:opacity-40"
                     />
                     <label htmlFor="includeDownload" className="ml-2 block text-sm text-gray-200">
                         {`Include Featured Download ($${downloadPriceLabel})`}
                     </label>
                     </div>
+                    {resolvedDownloadPrice == null ? (
+                      <p className="text-xs text-gray-500 ml-6">
+                        Featured download pricing isn&apos;t loaded for this asset yet.
+                      </p>
+                    ) : sellingFromToken && isCashOutToUsd ? (
+                      <p className="text-xs text-gray-400 ml-6">
+                        After cash-out, we&apos;ll try to unlock the featured download if your wallet looks like it has enough value for it (separate step from the swap).
+                      </p>
+                    ) : swapFromAsset === 'USD' ? (
+                      <p className="text-xs text-gray-400 ml-6">
+                        Included in the same ETH spend as your buy when you confirm.
+                      </p>
+                    ) : null}
                 </div>
 
-                {/* Payment Method Pills - Only shown in confirm mode */}
+                {/* Confirm: wallet + future checkout rails (stub only — wallet is live) */}
                 {confirmationMode === 'confirm' && confirmationSnapshot && (
-                    <div className="mb-4">
+                    <div className="mb-4 mt-4">
                         <div className="grid grid-cols-2 gap-2">
-                            {/* Wallet Balance - Active */}
                             <button
+                                type="button"
                                 className="p-2 bg-blue-600 text-white rounded text-xs font-medium border-2 border-blue-500 flex items-center justify-center gap-1"
                                 disabled
                             >
                                 <span className="text-xs">💰</span>
-                                <span className="text-xs">Wallet</span>
+                                <span className="text-xs">Wallet (approx.)</span>
                                 <span className="text-xs font-semibold">
                                     {ethBalanceUsd > 0 ? `$${ethBalanceUsd.toFixed(2)}` : '$0.00'}
                                 </span>
                             </button>
-                            
-                            {/* Coming Soon Options - Subtle */}
-                            <button className="p-2 bg-gray-700 text-gray-400 rounded text-xs border border-gray-600 flex items-center justify-center gap-1" disabled>
+                            <button
+                                type="button"
+                                className="p-2 bg-gray-700 text-gray-400 rounded text-xs border border-gray-600 flex items-center justify-center gap-1"
+                                disabled
+                            >
                                 <span className="text-xs opacity-50">Venmo</span>
                                 <span className="text-[10px] opacity-50">soon</span>
                             </button>
-                            <button className="p-2 bg-gray-700 text-gray-400 rounded text-xs border border-gray-600 flex items-center justify-center gap-1" disabled>
+                            <button
+                                type="button"
+                                className="p-2 bg-gray-700 text-gray-400 rounded text-xs border border-gray-600 flex items-center justify-center gap-1"
+                                disabled
+                            >
                                 <span className="text-xs opacity-50">PayPal</span>
                                 <span className="text-[10px] opacity-50">soon</span>
                             </button>
-                            <button className="p-2 bg-gray-700 text-gray-400 rounded text-xs border border-gray-600 flex items-center justify-center gap-1" disabled>
+                            <button
+                                type="button"
+                                className="p-2 bg-gray-700 text-gray-400 rounded text-xs border border-gray-600 flex items-center justify-center gap-1"
+                                disabled
+                            >
                                 <span className="text-xs opacity-50">Card</span>
                                 <span className="text-[10px] opacity-50">soon</span>
                             </button>
@@ -933,11 +1327,29 @@ const PurchaseFlow: React.FC<PurchaseFlowProps> = ({
                     </div>
                 )}
 
-                {/* Insufficient Balance Warning - Only show when we have actual numbers */}
-                {confirmationMode === 'confirm' && isInsufficient && (
+                {/* Buy-side only: ETH must cover USD total (never treat token amounts as USD here) */}
+                {confirmationMode === 'confirm' && isInsufficientBuy && confirmationSnapshot && (
                     <div className="mb-4 p-3 bg-red-900 bg-opacity-30 border border-red-600 rounded-lg">
                         <p className="text-sm text-red-400">
-                            Insufficient funds. Add ${(confirmationSnapshot!.total - ethBalanceUsd).toFixed(2)} to continue.
+                            Insufficient funds. Add $
+                            {(confirmationSnapshot.usdSpendTotalCombined != null ? confirmationSnapshot.usdSpendTotalCombined - ethBalanceUsd : 0).toFixed(2)} to continue.
+                        </p>
+                    </div>
+                )}
+
+                {confirmationMode === 'confirm' && isCashOutToUsd && isInsufficientCashOutTokens && (
+                    <div className="mb-4 p-3 bg-amber-900/30 border border-amber-600 rounded-lg">
+                        <p className="text-sm text-amber-200">
+                            Not enough {swapFromAsset} for this cash-out. Reduce the amount or adjust your
+                            balance.
+                        </p>
+                    </div>
+                )}
+
+                {confirmationMode === 'confirm' && showLowGasCashOutHint && swapTokenBalancesReady && !isInsufficientCashOutTokens && (
+                    <div className="mb-4 p-3 bg-gray-800 border border-gray-600 rounded-lg">
+                        <p className="text-sm text-gray-300">
+                            Low ETH balance—you may need more Sepolia ETH for gas (approve / router transaction).
                         </p>
                     </div>
                 )}
@@ -947,6 +1359,7 @@ const PurchaseFlow: React.FC<PurchaseFlowProps> = ({
                     <button
                         onClick={confirmationMode === 'config' 
                             ? () => {
+                                if (swapFromAsset !== 'USD' && user && !swapTokenBalancesReady) return;
                                 const snapshot = captureSnapshot();
                                 setConfirmationSnapshot(snapshot);
                                 setConfirmationMode('confirm');
@@ -965,10 +1378,12 @@ const PurchaseFlow: React.FC<PurchaseFlowProps> = ({
                             }
                         }
                         disabled={isSwapping || 
-                                  (!includeDownload && (!swapFromAmount || parseFloat(swapFromAmount) <= 0)) ||
-                                  (confirmationMode === 'confirm' && isInsufficient)}
+                                  (!!user && sellingFromToken && !swapTokenBalancesReady) ||
+                                  (includeDownload && resolvedDownloadPrice == null) ||
+                                  !hasValidSwapFromAmount() ||
+                                  confirmBlockedInsufficient}
                         className={`w-full py-4 px-6 rounded-lg font-bold text-lg transition-all duration-200 ${
-                            isSwapping || (confirmationMode === 'confirm' && isInsufficient)
+                            isSwapping || confirmBlockedInsufficient || (!!user && sellingFromToken && !swapTokenBalancesReady)
                                 ? 'bg-gray-600 cursor-not-allowed' 
                                 : 'bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 transform hover:scale-105 shadow-lg'
                         } text-white`}
@@ -982,31 +1397,56 @@ const PurchaseFlow: React.FC<PurchaseFlowProps> = ({
                                 Processing Transaction...
                             </span>
                         ) : confirmationMode === 'confirm' && confirmationSnapshot ? (
-                            swapFromAsset === "USD" ? (
-                                confirmationSnapshot.includeDownload 
-                                    ? `🔄 GET DOWNLOAD + ${confirmationSnapshot.artistocks.toLocaleString()} ARTISTOCKS ($${confirmationSnapshot.total.toFixed(2)})`
-                                    : `🔄 GET ${confirmationSnapshot.artistocks.toLocaleString()} ARTISTOCKS ($${confirmationSnapshot.amount.toFixed(2)})`
+                            swapFromAsset === 'USD' ? (
+                                confirmationSnapshot.includeDownload &&
+                                confirmationSnapshot.usdSpendTotalCombined != null ? (
+                                    `🔄 GET DOWNLOAD + ${confirmationSnapshot.artistocks.toLocaleString()} ARTISTOCKS ($${confirmationSnapshot.usdSpendTotalCombined.toFixed(2)})`
+                                ) : (
+                                    `🔄 GET ${confirmationSnapshot.artistocks.toLocaleString()} ARTISTOCKS ($${(confirmationSnapshot.usdSwapDollars ?? 0).toFixed(2)})`
+                                )
+                            ) : swapToAsset === 'USD' ? (
+                                cashOutCtaSingleLine({
+                                  fromAmountTrimmed: confirmationSnapshot.fromAmountTrimmed,
+                                  tokenSymbol: swapFromAsset,
+                                  proceedsUsd:
+                                    confirmationSnapshot.cashOutUsdEstimate ??
+                                    parseQuotedUsdRough(swapToAmount),
+                                  includeDownload: confirmationSnapshot.includeDownload,
+                                  downloadUsd:
+                                    confirmationSnapshot.downloadPrice > 0
+                                      ? confirmationSnapshot.downloadPrice
+                                      : null,
+                                })
                             ) : (
-                                swapToAsset === "USD" ? 
-                                    `🔄 Cash Out ${swapFromAmount || '0'} ${swapFromAsset} for $${parseFloat(swapToAmount || '0').toFixed(2)} USD` :
-                                    `🔄 Swap ${swapFromAmount || '0'} ${swapFromAsset} for ${confirmationSnapshot.artistocks.toLocaleString()} ${swapToAsset || artistConfig.tokenName}`
+                                `🔄 Swap ${formatSwapFromDisplay(confirmationSnapshot.fromAmountTrimmed)} ${swapFromAsset} for ${confirmationSnapshot.artistocks.toLocaleString()} ${swapToAsset || artistConfig.tokenName}`
                             )
+                        ) : swapFromAsset === 'USD' ? (
+                                includeDownload && resolvedDownloadPrice != null ? (
+                                    `🔄 GET DOWNLOAD + ${Math.floor(parseFloat(swapToAmount || artistocksInput || '0')).toLocaleString()} ARTISTOCKS ($${(parseFloat(swapFromAmount || '0') + resolvedDownloadPrice).toFixed(2)})`
+                                ) : (
+                                    `🔄 GET ${Math.floor(parseFloat(swapToAmount || artistocksInput || '0')).toLocaleString()} ARTISTOCKS ($${parseFloat(swapFromAmount || '0').toFixed(2)})`
+                                )
+                        ) : swapToAsset === 'USD' ? (
+                                cashOutCtaSingleLine({
+                                  fromAmountTrimmed: (swapFromAmount || '').replace(/,/g, '').trim(),
+                                  tokenSymbol: swapFromAsset,
+                                  proceedsUsd: parseQuotedUsdRough(swapToAmount),
+                                  includeDownload,
+                                  downloadUsd:
+                                    includeDownload && resolvedDownloadPrice != null
+                                      ? resolvedDownloadPrice
+                                      : null,
+                                })
                         ) : (
-                            swapFromAsset === "USD" ? (
-                                includeDownload 
-                                    ? `🔄 GET DOWNLOAD + ${Math.floor(parseFloat(swapToAmount || artistocksInput || '0')).toLocaleString()} ARTISTOCKS ($${(parseFloat(swapFromAmount || '0') + (resolvedDownloadPrice ?? 0)).toFixed(2)})`
-                                    : `🔄 GET ${Math.floor(parseFloat(swapToAmount || artistocksInput || '0')).toLocaleString()} ARTISTOCKS ($${swapFromAmount || '0'})`
-                            ) : (
-                                swapToAsset === "USD" ? 
-                                    `🔄 Cash Out ${swapFromAmount || '0'} ${swapFromAsset} for $${parseFloat(swapToAmount || '0').toFixed(2)} USD` :
-                                    `🔄 Swap ${swapFromAmount || '0'} ${swapFromAsset} for ${Math.floor(parseFloat(swapToAmount || artistocksInput || '0')).toLocaleString()} ${swapToAsset || artistConfig.tokenName}`
-                            )
+                                `🔄 Swap ${formatSwapFromDisplay((swapFromAmount || '').replace(/,/g, '').trim())} ${swapFromAsset} for ${Math.floor(parseFloat(swapToAmount || artistocksInput || '0')).toLocaleString()} ${swapToAsset || artistConfig.tokenName}`
                         )}
                     </button>
                     
                     {/* Helpful hints */}
                     <div className="mt-3 text-xs text-gray-400">
-                        {!swapFromAmount || parseFloat(swapFromAmount) <= 0 ? (
+                        {!!user && sellingFromToken && !swapTokenBalancesReady ? (
+                            <p className="text-blue-300">⏳ Confirming balances from the chain…</p>
+                        ) : !hasValidSwapFromAmount() ? (
                             <p>💡 Set an amount above to enable swapping</p>
                         ) : (
                             <p>💡 Transaction will be confirmed in your wallet</p>

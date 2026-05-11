@@ -51,10 +51,11 @@ const useArtistConfig = (artistIdOverride?: string | null): UseArtistConfigRetur
           if (config.swap && config.contract) {
             console.log(`💰 Fetching live AMM price for ${artistId}...`);
             
-            // Create provider (use public RPC in browser)
-            const rpcUrl = typeof window !== 'undefined' 
-              ? 'https://sepolia.base.org' 
-              : (process.env.NEXT_PUBLIC_BASE_SEPOLIA_RPC_URL || 'https://sepolia.base.org');
+            // Align pricing reads with Magic/swap path (NEXT_PUBLIC_RPC); avoid browser-only public RPC mismatch.
+            const rpcUrl =
+              process.env.NEXT_PUBLIC_RPC?.trim() ||
+              process.env.NEXT_PUBLIC_BASE_SEPOLIA_RPC_URL?.trim() ||
+              'https://sepolia.base.org';
             const provider = new ethers.JsonRpcProvider(rpcUrl);
             
             // FIXED: Query the correct AMM (config.swap, not hardcoded legacy AMM)

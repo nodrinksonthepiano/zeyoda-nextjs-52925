@@ -1589,6 +1589,8 @@ const ArtistPageContent: React.FC<{
   const [swapToAsset, setSwapToAsset] = useState<string>("");
   const [swapFromAmount, setSwapFromAmount] = useState<string>("20.00");
   const [swapToAmount, setSwapToAmount] = useState<string>("");
+  /** True after live balance fetch (walletBalancesUpdated); avoids false "insufficient Artistocks" before RPC. */
+  const [swapTokenBalancesReady, setSwapTokenBalancesReady] = useState(false);
 
   const [isVideoError, setIsVideoError] = useState(false);
 
@@ -1678,6 +1680,12 @@ const ArtistPageContent: React.FC<{
       setUserTokenBalances({});
     }
   }, [searchParams, artistIdFromUrl, allArtistsConfig, user]);
+
+  useEffect(() => {
+    if (!user) {
+      setSwapTokenBalancesReady(false);
+    }
+  }, [user]);
 
   useEffect(() => {
     if (user && artistConfig && hasPurchasedDownload) {
@@ -2281,6 +2289,7 @@ const ArtistPageContent: React.FC<{
       console.log('📊 Balance update received:', event.detail);
       const newBalances = event.detail;
       setUserTokenBalances(newBalances);
+      setSwapTokenBalancesReady(true);
       
       // Update localStorage with new balances
       try {
@@ -2309,23 +2318,28 @@ const ArtistPageContent: React.FC<{
           if (parsed.userAddress === user && 
               Date.now() - parsed.timestamp < 5 * 60 * 1000) {
             setUserTokenBalances(parsed.balances);
+            setSwapTokenBalancesReady(true);
           } else {
             // Clear outdated balances
             localStorage.removeItem('zeyodaUserTokenBalances');
             setUserTokenBalances({});
+            setSwapTokenBalancesReady(false);
           }
         } catch (e) {
           console.error("Error parsing token balances from localStorage", e);
           setUserTokenBalances({});
+          setSwapTokenBalancesReady(false);
         }
       } else {
         setUserTokenBalances({});
+        setSwapTokenBalancesReady(false);
       }
 
       // ... rest of the user data loading code ...
     } else {
       // Clear user data when no Magic Link user
       setUserTokenBalances({});
+      setSwapTokenBalancesReady(false);
     }
   }, [searchParams, artistIdFromUrl, allArtistsConfig, user]);
 
@@ -2806,6 +2820,9 @@ const ArtistPageContent: React.FC<{
               setSwapToAsset={setSwapToAsset}
               unlockedArtistStates={unlockedArtistStates}
               userTokenBalances={userTokenBalances}
+              swapTokenBalancesReady={!user || swapTokenBalancesReady}
+              setSwapFromAmount={setSwapFromAmount}
+              setIncludeDownload={setIncludeDownload}
               swapFromAmount={swapFromAmount}
               handleSwapFromAmountChange={handleSwapFromAmountChange}
               artistocksInput={artistocksInput}

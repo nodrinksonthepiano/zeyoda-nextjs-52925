@@ -92,7 +92,9 @@ const Wallet: React.FC<WalletProps> = ({
     magic,
     userAddress: userAddress || null,
     allArtistsConfig,
-    autoRefreshOnMount: showAssetsPanel,
+    // Fetch on mount whenever the user session is live so PurchaseFlow (and the rest of the page)
+    // has fresh balances without opening the wallet panel first.
+    autoRefreshOnMount: Boolean(userAddress && magic && allArtistsConfig),
     suspendAutoRefresh: (window as any).onboardingMode || false
   });
 
