@@ -6,6 +6,12 @@ import { createGuardedProvider, createGuardedSigner } from '@/app/utils/guardedS
 import { getMagicAuthFromBearer } from '@/app/utils/server/magicBearerEmail';
 import { normalizeReservedEmail } from '@/app/utils/server/normalizeReservedEmail';
 import { assertMagicTreasuryArtist } from '@/app/utils/server/assertMagicTreasuryArtist';
+import { AMM_GET_POOL_ABI, resolveArtistAmmPool } from '@/app/utils/server/resolveArtistAmm';
+import {
+  poolReservesToOnChainLpWithdrawableUsd,
+  remainingLpWithdrawableUsd,
+  sumVirtualLpWithdrawnUsd,
+} from '@/app/utils/server/lpVirtualTreasury';
 
 // Use service role key to bypass RLS
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
@@ -18,17 +24,8 @@ const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey, {
   }
 });
 
-// Swap contract for LP operations (existing working contract)
-const SWAP_CONTRACT_ADDRESS = "0xdBBfFD696484bBFCa3dA059FB1d8e2Cf40c450dE";
-const SWAP_ABI = [
-  "function getPool(address token) view returns (tuple(address token, uint256 tokenReserve, uint256 ethReserve, bool active))",
-  "function emergencyWithdraw(address token) external"
-];
-
-const ERC20_ABI = [
-  "function balanceOf(address owner) view returns (uint256)",
-  "function transfer(address to, uint256 amount) external returns (bool)"
-];
+/** Pool reads + optional owner escape hatch — swap address comes from resolveArtistAmmPool */
+const SWAP_ABI = [...AMM_GET_POOL_ABI, 'function emergencyWithdraw(address token) external'] as const;
 
 interface WithdrawRequest {
   artistId: string;
@@ -121,21 +118,13 @@ export async function POST(request: NextRequest) {
       }, { status: 404 });
     }
 
-    // Get token address from registry
-    const { data: registry, error: registryError } = await supabaseAdmin
-      .from('artist_registry')
-      .select('token, swap')
-      .eq('id', artistId)
-      .single();
-
-    if (registryError || !registry?.token) {
-      return NextResponse.json({ 
-        error: `Token contract not found for artist: ${artistId}` 
-      }, { status: 404 });
+    const resolved = await resolveArtistAmmPool(supabaseAdmin, artistId);
+    if (!resolved.ok) {
+      return NextResponse.json({ error: resolved.error }, { status: 404 });
     }
 
-    const tokenAddress = registry.token;
-    console.log('🪙 Token for withdrawal:', tokenAddress.slice(0, 8) + '...');
+    const { tokenAddress, swapAddress } = resolved;
+    console.log('🪙 LP pool:', { token: tokenAddress.slice(0, 10) + '…', swap: swapAddress.slice(0, 10) + '…' });
 
     // Setup guarded provider and signer (enforces Base Sepolia network)
     const rpcUrl = process.env.SERVER_BASE_SEPOLIA_RPC_URL;
@@ -150,7 +139,7 @@ export async function POST(request: NextRequest) {
     
     const provider = await createGuardedProvider(rpcUrl);
     const custodyWallet = await createGuardedSigner(serverPrivateKey, rpcUrl);
-    const swapContract = new ethers.Contract(SWAP_CONTRACT_ADDRESS, SWAP_ABI, custodyWallet);
+    const swapContract = new ethers.Contract(swapAddress, SWAP_ABI, custodyWallet);
 
     console.log('🔑 Using custody wallet:', custodyWallet.address.slice(0, 8) + '...');
 
@@ -163,73 +152,170 @@ export async function POST(request: NextRequest) {
       }, { status: 400 });
     }
 
-    // Calculate quote (expected USD proceeds)
+    // Calculate quote from remaining mock-LP capacity (on-chain ceiling minus prior ledger exits)
     const ethReserve = Number(ethers.formatEther(pool.ethReserve));
     const tokenReserve = Number(ethers.formatUnits(pool.tokenReserve, 18));
-    const ethUsdRate = 2500; // Fallback ETH price
-    const tokenPriceUsd = (ethReserve / tokenReserve) * ethUsdRate;
-    
-    const totalPoolUsd = (ethReserve * ethUsdRate) + (tokenReserve * tokenPriceUsd);
-    const lpWithdrawableUsd = totalPoolUsd * 0.997; // Artist's 99.7% share
-    const quoteUsd = lpWithdrawableUsd * (clampedPercent / 100);
+    const ethUsdRate = 2500;
+
+    const onChainLpWithdrawableUsd = poolReservesToOnChainLpWithdrawableUsd(
+      ethReserve,
+      tokenReserve,
+      ethUsdRate
+    );
+    const virtualWithdrawnBefore = await sumVirtualLpWithdrawnUsd(supabaseAdmin, artistId);
+    const lpRemainingUsd = remainingLpWithdrawableUsd(
+      onChainLpWithdrawableUsd,
+      virtualWithdrawnBefore
+    );
+
+    if (lpRemainingUsd <= 0) {
+      return NextResponse.json(
+        {
+          error: 'No remaining LP to withdraw (ledger capacity exhausted for this pool)',
+        },
+        { status: 400 }
+      );
+    }
+
+    const quoteUsd = lpRemainingUsd * (clampedPercent / 100);
 
     console.log('💰 LP withdrawal quote:', {
-      totalPoolUsd: totalPoolUsd.toFixed(2),
-      lpWithdrawableUsd: lpWithdrawableUsd.toFixed(2),
+      onChainLpWithdrawableUsd: onChainLpWithdrawableUsd.toFixed(2),
+      virtualWithdrawnBefore: virtualWithdrawnBefore.toFixed(2),
+      lpRemainingUsd: lpRemainingUsd.toFixed(2),
       requestedPercent: percent,
-      quoteUsd: quoteUsd.toFixed(2)
+      quoteUsd: quoteUsd.toFixed(2),
     });
+
+    const treasury = (artist.treasury_wallet || '').trim().toLowerCase();
+    if (!treasury) {
+      return NextResponse.json(
+        { error: 'Artist treasury wallet not configured' },
+        { status: 400 }
+      );
+    }
 
     try {
       // For testnet MVP: Ledger-only withdrawal (no chain call to preserve pools)
       console.log('📝 Recording testnet LP withdrawal (ledger-only)...');
       
-      const actualUsd = quoteUsd; // Use quote amount
-      
+      const actualUsd = Number(Number(quoteUsd).toFixed(2));
+      if (!(actualUsd > 0) || !Number.isFinite(actualUsd)) {
+        return NextResponse.json({ error: 'Invalid withdrawal amount' }, { status: 400 });
+      }
+
       // Generate synthetic txHash for idempotency and demo purposes
       const syntheticTxHash = `0x${Buffer.from(`lp-withdraw-${artistId}-${percent}-${Date.now()}`).toString('hex').padStart(64, '0').slice(0, 64)}`;
 
-      // Record withdrawal in artist earnings
+      // Record withdrawal in artist earnings (payment_method must match DB constraints — same as LP fees / sales)
       const { data: insertResult, error: insertError } = await supabaseAdmin
         .from('artist_earnings')
         .insert({
           artist_id: artistId,
-          buyer_address: artist.treasury_wallet.toLowerCase(),
+          buyer_address: treasury,
           asset_id: null,
           gross_amount_usd: actualUsd,
           protocol_fee_usd: 0, // No protocol fee on withdrawals
           processor_fee_usd: 0,
           net_earnings_usd: actualUsd,
-          payment_method: 'internal',
-          source: 'eth', // Use existing constraint-compliant value
-        external_id: syntheticTxHash,
-        tx_hash: syntheticTxHash,
+          payment_method: 'eth_balance',
+          source: 'eth',
+          external_id: syntheticTxHash,
+          tx_hash: syntheticTxHash,
           collectible_minted: false,
           status: 'minted',
-          error_reason: 'LP_WITHDRAWAL' // Mark as LP withdrawal
+          created_at: new Date().toISOString(),
+          error_reason: 'LP_WITHDRAWAL',
         })
         .select();
 
       if (insertError) {
         if (insertError.code === '23505') {
-          return NextResponse.json({ 
+          return NextResponse.json({
             duplicate: true,
-            message: 'Withdrawal already recorded'
+            message: 'Withdrawal already recorded',
           }, { status: 409 });
         }
-        throw insertError;
+        console.error('❌ LP withdraw: artist_earnings insert failed:', insertError);
+        return NextResponse.json(
+          {
+            error: 'Withdrawal transaction failed',
+            details: insertError.message,
+            code: insertError.code,
+          },
+          { status: 500 }
+        );
       }
 
-      // Update artist totals
-      await supabaseAdmin
+      const prevTotalUsd = parseFloat(String(artist.total_earnings_usd || '0'));
+      const prevSalesCount = artist.total_sales_count || 0;
+
+      const { error: artistUpdateError } = await supabaseAdmin
         .from('artists')
         .update({
-          total_earnings_usd: (parseFloat(artist.total_earnings_usd || '0') + actualUsd),
-          total_sales_count: (artist.total_sales_count || 0) + 1
+          total_earnings_usd: prevTotalUsd + actualUsd,
+          total_sales_count: prevSalesCount + 1,
         })
         .eq('id', artistId);
 
-      console.log('✅ LP withdrawal recorded:', { earningId: insertResult?.[0]?.id, actualUsd });
+      if (artistUpdateError) {
+        console.error('❌ LP withdraw: artist totals update failed:', artistUpdateError);
+        const earningId = insertResult?.[0]?.id;
+        if (earningId != null) {
+          await supabaseAdmin.from('artist_earnings').delete().eq('id', earningId);
+        }
+        return NextResponse.json(
+          {
+            error: 'Withdrawal transaction failed',
+            details: artistUpdateError.message,
+            code: artistUpdateError.code,
+          },
+          { status: 500 }
+        );
+      }
+
+      const { data: cashRow } = await supabaseAdmin
+        .from('cash_balances')
+        .select('usd_balance')
+        .eq('wallet_address', treasury)
+        .maybeSingle();
+
+      const prevCash = parseFloat(String(cashRow?.usd_balance ?? '0')) || 0;
+      const nextCash = prevCash + actualUsd;
+
+      const { error: cashError } = await supabaseAdmin.from('cash_balances').upsert(
+        {
+          wallet_address: treasury,
+          usd_balance: nextCash.toFixed(2),
+          last_updated: new Date().toISOString(),
+        },
+        { onConflict: 'wallet_address' }
+      );
+
+      if (cashError) {
+        console.error('❌ LP withdraw: cash_balances upsert failed:', cashError);
+        const earningId = insertResult?.[0]?.id;
+        if (earningId != null) {
+          await supabaseAdmin.from('artist_earnings').delete().eq('id', earningId);
+        }
+        await supabaseAdmin
+          .from('artists')
+          .update({
+            total_earnings_usd: prevTotalUsd,
+            total_sales_count: prevSalesCount,
+          })
+          .eq('id', artistId);
+        return NextResponse.json(
+          { error: 'Failed to credit Treasure balance', details: cashError.message },
+          { status: 500 }
+        );
+      }
+
+      console.log('✅ LP withdrawal recorded:', {
+        earningId: insertResult?.[0]?.id,
+        actualUsd,
+        treasureUsd: nextCash.toFixed(2),
+      });
 
       return NextResponse.json({
         success: true,
@@ -237,19 +323,32 @@ export async function POST(request: NextRequest) {
         usdProceeds: actualUsd,
         breakdown: {
           percent,
-          lpWithdrawableUsdBefore: lpWithdrawableUsd,
+          onChainLpWithdrawableUsd,
+          virtualWithdrawnUsdBefore: virtualWithdrawnBefore,
+          lpRemainingUsdBefore: lpRemainingUsd,
           quoteUsd,
-          actualUsd
-        }
+          actualUsd,
+          treasureUsdBalance: nextCash,
+        },
       });
 
-    } catch (chainError: any) {
-      console.error('❌ Chain withdrawal error:', chainError);
-      return NextResponse.json({
-        error: 'Withdrawal transaction failed',
-        details: chainError.message,
-        code: chainError.code
-      }, { status: 500 });
+    } catch (chainError: unknown) {
+      const msg =
+        chainError instanceof Error
+          ? chainError.message
+          : typeof chainError === 'object' &&
+              chainError !== null &&
+              'message' in chainError
+            ? String((chainError as { message: unknown }).message)
+            : String(chainError);
+      console.error('❌ LP withdrawal unexpected error:', chainError);
+      return NextResponse.json(
+        {
+          error: 'Withdrawal transaction failed',
+          details: msg,
+        },
+        { status: 500 }
+      );
     }
 
   } catch (error: any) {

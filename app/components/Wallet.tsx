@@ -324,8 +324,10 @@ const Wallet: React.FC<WalletProps> = ({
 
     setIsQuoting(true);
     try {
-      const response = await fetch(
-        `/api/lp/quote?artistId=${encodeURIComponent(artistId)}&percent=${percent}`
+      const response = await authenticatedFetch(
+        `/api/lp/quote?artistId=${encodeURIComponent(artistId)}&percent=${percent}`,
+        { method: 'GET' },
+        getDidToken
       );
       const result = await response.json();
 
@@ -376,7 +378,8 @@ const Wallet: React.FC<WalletProps> = ({
         } else if (result.duplicate) {
           showToast('Withdrawal already processed', 'info');
         } else {
-          showToast(result.error || 'Withdrawal failed', 'error');
+          const hint = result.details ? `${result.error} — ${result.details}` : result.error;
+          showToast(hint || 'Withdrawal failed', 'error');
         }
         return;
       }
@@ -391,6 +394,7 @@ const Wallet: React.FC<WalletProps> = ({
       }, 800);
 
       window.dispatchEvent(new CustomEvent('balanceUpdate'));
+      await refreshUsdBalance();
       await refetchCreatorEarnings();
     } catch (error: unknown) {
       console.error('❌ LP withdrawal error:', error);

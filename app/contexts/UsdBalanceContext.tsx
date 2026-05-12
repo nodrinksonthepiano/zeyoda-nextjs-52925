@@ -1,6 +1,8 @@
 'use client';
 
-import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
+import { useWallet } from '../components/MagicProvider';
+import { authenticatedFetch } from '../utils/authenticatedFetch';
 import { supabase } from '../utils/supabaseClient';
 
 interface UsdBalanceContextType {
@@ -23,44 +25,51 @@ export function UsdBalanceProvider({ children, userAddress }: UsdBalanceProvider
   const [usdBalance, setUsdBalanceState] = useState<number>(0);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const { getDidToken } = useWallet();
 
-  // Load balance from Supabase when user address changes
-  const loadBalance = async (address: string) => {
-    if (!address) return;
-    
-    setIsLoading(true);
-    setError(null);
-    
-    try {
-      console.log('💰 Loading USD balance for:', address);
-      
-      const { data, error: dbError } = await supabase
-        .from('cash_balances')
-        .select('usd_balance')
-        .eq('wallet_address', address.toLowerCase())
-        .single();
+  /** Treasure balance — server reads `cash_balances` with service role (avoids browser RLS gaps). */
+  const loadBalance = useCallback(
+    async (address: string) => {
+      if (!address) return;
 
-      if (dbError) {
-        if (dbError.code === 'PGRST116') {
-          // No record found - this is fine, user has no balance yet
-          console.log('📝 No existing USD balance found for user');
-          setUsdBalanceState(0);
-        } else {
-          throw dbError;
+      setIsLoading(true);
+      setError(null);
+
+      try {
+        console.log('💰 Loading Treasure balance for:', address);
+
+        const response = await authenticatedFetch('/api/me/cash-balance', { method: 'GET' }, getDidToken);
+        const body = await response.json();
+
+        if (!response.ok) {
+          throw new Error(body.error || body.message || `HTTP ${response.status}`);
         }
-      } else {
-        const balance = parseFloat(data.usd_balance || '0');
-        console.log('✅ Loaded USD balance:', balance);
-        setUsdBalanceState(balance);
+
+        const apiWallet = typeof body.walletAddress === 'string' ? body.walletAddress.toLowerCase() : '';
+        if (apiWallet && apiWallet !== address.toLowerCase()) {
+          console.warn('[UsdBalance] Session wallet differs from userAddress prop', {
+            apiWallet,
+            address,
+          });
+        }
+
+        const raw = body.usdBalance;
+        const balance =
+          typeof raw === 'number' ? raw : parseFloat(String(raw ?? '0'));
+        const safe = Number.isFinite(balance) ? balance : 0;
+        console.log('✅ Loaded Treasure (USD) via API:', safe);
+        setUsdBalanceState(safe);
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : 'Failed to load USD balance';
+        console.error('❌ Error loading Treasure balance:', err);
+        setError(msg);
+        setUsdBalanceState(0);
+      } finally {
+        setIsLoading(false);
       }
-    } catch (err: any) {
-      console.error('❌ Error loading USD balance:', err);
-      setError(err.message || 'Failed to load USD balance');
-      setUsdBalanceState(0);
-    } finally {
-      setIsLoading(false);
-    }
-  };
+    },
+    [getDidToken]
+  );
 
   // Save balance to Supabase
   const saveBalance = async (balance: number) => {
@@ -121,7 +130,7 @@ export function UsdBalanceProvider({ children, userAddress }: UsdBalanceProvider
       setUsdBalanceState(0);
       setError(null);
     }
-  }, [userAddress]);
+  }, [userAddress, loadBalance]);
 
   // Keep Treasure (cash_balances) in sync after purchases / withdrawals (same event as token refresh)
   useEffect(() => {
@@ -132,7 +141,7 @@ export function UsdBalanceProvider({ children, userAddress }: UsdBalanceProvider
     };
     window.addEventListener('balanceUpdate', onBalanceUpdate);
     return () => window.removeEventListener('balanceUpdate', onBalanceUpdate);
-  }, [userAddress]);
+  }, [userAddress, loadBalance]);
 
   const contextValue: UsdBalanceContextType = {
     usdBalance,

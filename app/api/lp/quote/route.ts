@@ -1,6 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { ethers } from 'ethers';
+import {
+  AMM_GET_POOL_ABI,
+  getBaseSepoliaReadRpcUrl,
+  resolveArtistAmmPool,
+} from '@/app/utils/server/resolveArtistAmm';
+import {
+  poolReservesToOnChainLpWithdrawableUsd,
+  remainingLpWithdrawableUsd,
+  sumVirtualLpWithdrawnUsd,
+} from '@/app/utils/server/lpVirtualTreasury';
 
 // Use service role key to bypass RLS
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
@@ -12,12 +22,6 @@ const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey, {
     persistSession: false
   }
 });
-
-// Swap contract for LP operations
-const SWAP_CONTRACT_ADDRESS = "0xdBBfFD696484bBFCa3dA059FB1d8e2Cf40c450dE";
-const SWAP_ABI = [
-  "function getPool(address token) view returns (tuple(address token, uint256 tokenReserve, uint256 ethReserve, bool active))"
-];
 
 export async function POST() {
   return NextResponse.json({ error: 'Method not allowed' }, { status: 405 });
@@ -35,24 +39,23 @@ export async function GET(request: NextRequest) {
       }, { status: 400 });
     }
 
-    // Get token address from registry
-    const { data: registry, error: registryError } = await supabaseAdmin
-      .from('artist_registry')
-      .select('token')
-      .eq('id', artistId)
-      .single();
-
-    if (registryError || !registry?.token) {
-      return NextResponse.json({ 
-        error: `Token contract not found for artist: ${artistId}` 
-      }, { status: 404 });
+    const resolved = await resolveArtistAmmPool(supabaseAdmin, artistId);
+    if (!resolved.ok) {
+      return NextResponse.json({ error: resolved.error }, { status: 404 });
     }
 
-    const tokenAddress = registry.token;
+    const rpcUrl = getBaseSepoliaReadRpcUrl();
+    if (!rpcUrl) {
+      return NextResponse.json(
+        { error: 'Server misconfigured: SERVER_BASE_SEPOLIA_RPC_URL or BASE_SEPOLIA_RPC_URL required' },
+        { status: 500 }
+      );
+    }
 
-    // Setup provider and contract
-    const provider = new ethers.JsonRpcProvider(process.env.BASE_SEPOLIA_RPC_URL);
-    const swapContract = new ethers.Contract(SWAP_CONTRACT_ADDRESS, SWAP_ABI, provider);
+    const { tokenAddress, swapAddress } = resolved;
+
+    const provider = new ethers.JsonRpcProvider(rpcUrl);
+    const swapContract = new ethers.Contract(swapAddress, AMM_GET_POOL_ABI, provider);
 
     // Get current pool state
     const pool = await swapContract.getPool(tokenAddress);
@@ -63,14 +66,23 @@ export async function GET(request: NextRequest) {
       }, { status: 400 });
     }
 
-    // Calculate quote
     const ethReserve = Number(ethers.formatEther(pool.ethReserve));
     const tokenReserve = Number(ethers.formatUnits(pool.tokenReserve, 18));
-    const ethUsdRate = 2500; // Fallback ETH price
+    const ethUsdRate = 2500;
+
+    const onChainLpWithdrawableUsd = poolReservesToOnChainLpWithdrawableUsd(
+      ethReserve,
+      tokenReserve,
+      ethUsdRate
+    );
     const tokenPriceUsd = (ethReserve / tokenReserve) * ethUsdRate;
-    
-    const totalPoolUsd = (ethReserve * ethUsdRate) + (tokenReserve * tokenPriceUsd);
-    const lpWithdrawableUsd = totalPoolUsd * 0.997; // Artist's 99.7% share
+    const totalPoolUsd = ethReserve * ethUsdRate + tokenReserve * tokenPriceUsd;
+
+    const virtualWithdrawnUsd = await sumVirtualLpWithdrawnUsd(supabaseAdmin, artistId);
+    const lpWithdrawableUsd = remainingLpWithdrawableUsd(
+      onChainLpWithdrawableUsd,
+      virtualWithdrawnUsd
+    );
     const quoteUsd = lpWithdrawableUsd * (percent / 100);
 
     const ethAmount = ethReserve * (percent / 100);
@@ -83,6 +95,8 @@ export async function GET(request: NextRequest) {
       tokenAmount,
       breakdown: {
         totalPoolUsd,
+        onChainLpWithdrawableUsd,
+        virtualWithdrawnUsd,
         lpWithdrawableUsd,
         percent,
         ethUsdRate,
