@@ -65,6 +65,20 @@ contract UupsAMM is
     event TreasuryUpdated(address indexed oldTreasury, address indexed newTreasury);
     event FeeBpsUpdated(uint16 oldFeeBps, uint16 newFeeBps);
 
+    /**
+     * @dev Artist Cashout (truth path): ETH skim from one pool above a fixed floor.
+     * Does not preserve x*y=k; tokenReserve unchanged (money-only ETH to artist treasury).
+     */
+    event ArtistCashoutEth(
+        address indexed token,
+        address indexed recipient,
+        uint256 amountWei,
+        uint256 ethReserveAfter
+    );
+
+    /// @notice Minimum ETH that must remain in a pool after Artist Cashout (V1 pilot rule).
+    uint256 public constant ARTIST_CASHOUT_MIN_ETH_WEI = 5 ether / 1000; // 0.005 ether
+
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
         _disableInitializers();
@@ -416,6 +430,36 @@ contract UupsAMM is
      */
     function togglePool(address token) external onlyOwner {
         pools[token].active = !pools[token].active;
+    }
+
+    /**
+     * @dev Withdraw surplus ETH from one artist pool down to ARTIST_CASHOUT_MIN_ETH_WEI floor.
+     * @param token Artist ERC20 pool key
+     * @param recipient Artist treasury (or designated payout wallet)
+     * @param amountWei Gross ETH to send (must leave pool.ethReserve >= floor after)
+     */
+    function withdrawArtistCashoutEth(
+        address token,
+        address payable recipient,
+        uint256 amountWei
+    ) external onlyOwner nonReentrant {
+        require(token != address(0), "Invalid token");
+        require(recipient != address(0), "Invalid recipient");
+        require(amountWei > 0, "Amount zero");
+
+        Pool storage pool = pools[token];
+        require(pool.token != address(0), "Unknown pool");
+        require(pool.active, "Pool inactive");
+
+        uint256 reserve = pool.ethReserve;
+        require(reserve >= ARTIST_CASHOUT_MIN_ETH_WEI + amountWei, "Exceeds surplus");
+
+        pool.ethReserve = reserve - amountWei;
+
+        (bool ok, ) = recipient.call{value: amountWei}("");
+        require(ok, "Transfer failed");
+
+        emit ArtistCashoutEth(token, recipient, amountWei, pool.ethReserve);
     }
 
     /**

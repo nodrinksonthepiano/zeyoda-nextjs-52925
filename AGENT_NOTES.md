@@ -104,7 +104,7 @@ This repo is currently the **private testnet rehearsal space**, not the final pu
 
 **Routes using `assertMagicTreasuryArtist`:**
 
-- `app/api/lp/withdraw/route.ts` — internal: `requireSecret`, required **`x-verified-email`**, Bearer identity must match verified email, then treasury check
+- `app/api/lp/withdraw/route.ts` — internal: `requireSecret`, **`x-verified-email`**, Bearer identity match, **`assertMagicTreasuryArtist`**; truth-path **Artist Cashout** calls **`withdrawArtistCashoutEth`** on shared UupsAMM — **`SERVER_AMM_OWNER_PRIVATE_KEY`** (else **`MINTER_PRIVATE_KEY`**) must be **AMM `owner`**; **no** synthetic tx hash; **no** `cash_balances` / `artist_earnings` credits for this path
 - `app/api/public/lpWithdraw/route.ts` — must forward **`Authorization`** (same idea as `public/uploadAsset`)
 - `app/api/artist/withdraw/route.ts`
 

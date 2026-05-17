@@ -7,11 +7,7 @@ import {
   getBaseSepoliaReadRpcUrl,
   resolveArtistAmmPool,
 } from '@/app/utils/server/resolveArtistAmm';
-import {
-  poolReservesToOnChainLpWithdrawableUsd,
-  remainingLpWithdrawableUsd,
-  sumVirtualLpWithdrawnUsd,
-} from '@/app/utils/server/lpVirtualTreasury';
+import { surplusEthUsd } from '@/app/utils/server/lpVirtualTreasury';
 
 // Use service role key to bypass RLS
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
@@ -24,8 +20,8 @@ const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey, {
   }
 });
 
-/** On-chain LP ceiling (99.7% of pool USD), before virtual withdrawals */
-async function fetchOnChainLpWithdrawableUsd(
+/** ETH skim ceiling above fixed pool floor (USD label @ fixed ETH/USD rate). */
+async function fetchOnChainArtistCashoutUsd(
   artistId: string,
   tokenAddress: string,
   swapAddress: string
@@ -59,16 +55,22 @@ async function fetchOnChainLpWithdrawableUsd(
     const ethReserve = Number(ethers.formatEther(pool.ethReserve));
     const tokenReserve = Number(ethers.formatUnits(pool.tokenReserve, 18));
     const ethUsdRate = 2500;
-    const onChainLp = poolReservesToOnChainLpWithdrawableUsd(ethReserve, tokenReserve, ethUsdRate);
-    const tokenPriceUsd = (ethReserve / tokenReserve) * ethUsdRate;
-    const totalPoolUsd = ethReserve * ethUsdRate + tokenReserve * tokenPriceUsd;
+    const onChainLp = surplusEthUsd(pool.ethReserve, ethUsdRate);
+    const tokenPriceUsd =
+      tokenReserve > 0 && Number.isFinite(ethReserve)
+        ? (ethReserve / tokenReserve) * ethUsdRate
+        : 0;
+    const totalPoolUsd =
+      Number.isFinite(ethReserve) && Number.isFinite(tokenReserve)
+        ? ethReserve * ethUsdRate + tokenReserve * tokenPriceUsd
+        : 0;
 
     console.log(`  📊 Pool analysis for ${artistId}:`, {
       ethReserve: ethReserve.toFixed(6),
       tokenReserve: tokenReserve.toFixed(0),
       tokenPriceUsd: tokenPriceUsd.toFixed(8),
       totalPoolUsd: totalPoolUsd.toFixed(2),
-      onChainLpWithdrawableUsd: onChainLp.toFixed(2),
+      artistCashoutCeilingUsd: onChainLp.toFixed(2),
     });
 
     return onChainLp;
@@ -178,7 +180,7 @@ export async function GET(request: NextRequest) {
     const resolved = await resolveArtistAmmPool(supabaseAdmin, artistId);
     let onChainLpUsd = 0;
     if (resolved.ok) {
-      onChainLpUsd = await fetchOnChainLpWithdrawableUsd(
+      onChainLpUsd = await fetchOnChainArtistCashoutUsd(
         artistId,
         resolved.tokenAddress,
         resolved.swapAddress
@@ -187,8 +189,7 @@ export async function GET(request: NextRequest) {
       console.warn(`⚠️ LP pool resolution failed for ${artistId}:`, resolved.error);
     }
 
-    const virtualWithdrawn = await sumVirtualLpWithdrawnUsd(supabaseAdmin, artistId);
-    const lpWithdrawable = remainingLpWithdrawableUsd(onChainLpUsd, virtualWithdrawn);
+    const lpWithdrawable = onChainLpUsd;
 
     const totalEarnings = artist.total_earnings_usd || 0;
     const totalSales = artist.total_sales_count || 0;

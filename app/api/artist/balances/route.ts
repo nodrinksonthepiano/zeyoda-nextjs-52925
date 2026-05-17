@@ -1,5 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { ethers } from 'ethers';
+import {
+  AMM_GET_POOL_ABI,
+  getBaseSepoliaReadRpcUrl,
+  resolveArtistAmmPool,
+} from '@/app/utils/server/resolveArtistAmm';
+import { surplusEthUsd } from '@/app/utils/server/lpVirtualTreasury';
 
 // Use service role key to bypass RLS
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
@@ -71,23 +78,18 @@ export async function GET(request: NextRequest) {
     // Calculate LP withdrawable (reuse existing logic from artist-earnings)
     let lpWithdrawableUsd = 0;
     try {
-      // Get registry for swap contract
-      const { data: registry } = await supabaseAdmin
-        .from('artist_registry')
-        .select('token, swap')
-        .eq('id', artistId)
-        .single();
-
-      if (registry?.swap && registry?.token) {
-        // Calculate LP withdrawable amount (99.7% of pool value)
-        // This is a simplified version - you can reuse the exact logic from artist-earnings API
-        const ethUsdRate = 2500; // Simplified - use your actual rate logic
-        
-        // For now, return 0 - this will be calculated properly in the existing LP logic
-        lpWithdrawableUsd = 0; // TODO: Implement proper LP calculation
+      const rpcUrl = getBaseSepoliaReadRpcUrl();
+      const resolved = await resolveArtistAmmPool(supabaseAdmin, artistId);
+      if (rpcUrl && resolved.ok) {
+        const provider = new ethers.JsonRpcProvider(rpcUrl);
+        const swapContract = new ethers.Contract(resolved.swapAddress, AMM_GET_POOL_ABI, provider);
+        const pool = await swapContract.getPool(resolved.tokenAddress);
+        if (pool.active && pool.ethReserve !== 0n && pool.tokenReserve !== 0n) {
+          lpWithdrawableUsd = surplusEthUsd(pool.ethReserve, 2500);
+        }
       }
     } catch (error) {
-      console.warn('LP calculation failed:', error);
+      console.warn('Artist Cashout surplus read failed:', error);
     }
 
     return NextResponse.json({

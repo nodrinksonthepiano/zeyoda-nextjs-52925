@@ -1,216 +1,25 @@
-'use client'
+import Link from 'next/link';
 
-import { useState } from 'react';
-import { useRouter } from 'next/navigation';
-import { ethers } from 'ethers';
-import { useWallet } from '../components/MagicProvider'; // Adjust path if needed
-import ArtistTokenArtifact from '../../artifacts/contracts/ArtistToken.sol/ArtistToken.json';
-import { supabase } from '../utils/supabaseClient';
-
-export default function CreateProfilePage() {
-  const { magic, provider: walletProvider } = useWallet(); // Renamed to avoid confusion
-  const [artistName, setArtistName] = useState('');
-  const [tokenName, setTokenName] = useState('');
-  const [tokenSymbol, setTokenSymbol] = useState('');
-  const [artworkTitle, setArtworkTitle] = useState('');
-  const [videoSrc, setVideoSrc] = useState('');
-  const [primaryColor, setPrimaryColor] = useState('#1a0a3b');
-  const [accentColor, setAccentColor] = useState('#7f40ff');
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const router = useRouter();
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!magic) { // Check for the magic instance instead
-      setError("Wallet not connected. Please go back and log in.");
-      return;
-    }
-    setIsSubmitting(true);
-    setError(null);
-
-    try {
-      const provider = magic.rpcProvider;
-      
-      const browserProvider = new ethers.BrowserProvider(provider as any);
-      const signer = await browserProvider.getSigner();
-      const ownerAddress = await signer.getAddress();
-
-      const factory = new ethers.ContractFactory(ArtistTokenArtifact.abi, ArtistTokenArtifact.bytecode, signer);
-      
-      console.log(`Deploying ArtistToken for ${tokenName} (${tokenSymbol}) with artist ${ownerAddress}...`);
-      
-      // Deploy with artist wallet and protocol vault addresses
-      const protocolVault = "0x615258a5263DBEe0DDEED3166ddC1f442D937eB3"; // Protocol vault
-      const contract = await factory.deploy(tokenName, tokenSymbol, ownerAddress, protocolVault);
-      await contract.waitForDeployment();
-      
-      const contractAddress = await contract.getAddress();
-      console.log("Contract deployed successfully at:", contractAddress);
-
-      // Create ArtistToken instance and mint 10B supply with automatic distribution
-      const artistToken = new ethers.Contract(contractAddress, ArtistTokenArtifact.abi, signer);
-
-      console.log(`Minting 10B ${tokenSymbol} with automatic distribution...`);
-      const mintTx = await artistToken.initialMint();
-      await mintTx.wait();
-      console.log("10B supply minted and distributed. Tx:", mintTx.hash);
-      console.log("Distribution: 1B to artist, 100M to protocol (LP seeding), 8.9B to vault");
-
-      // 1. Create the full artist config object.
-      const artistId = tokenSymbol.toLowerCase();
-      const newProfile = {
-        id: artistId,
-        name: tokenName,
-        displayName: artistName,
-        tokenName: tokenName,
-        artworkTitle: artworkTitle,
-        artworkYear: new Date().getFullYear().toString(),
-        tokenPrice: 0.0005,
-        videoSrc: videoSrc,
-        contract: contractAddress,
-        theme: {
-          primaryColor: primaryColor,
-          accentColor: accentColor,
-          gradientStart: "#d4af37",
-          gradientMiddle: "#f9f295",
-          gradientEnd: "#d4af37",
-          fontFamily: "Bungee, cursive"
-        },
-        orbitalTokens: []
-      };
-
-      // 2. Insert this data into our Supabase table.
-      const { error: insertError } = await supabase
-        .from('artists')
-        .insert([newProfile]);
-
-      if (insertError) {
-        throw new Error(`Failed to save profile to Supabase: ${insertError.message}`);
-      }
-      
-      alert(`Profile for ${artistName} created and saved successfully!`);
-      
-      // Redirect to the new artist's page
-      router.push(`/?artist=${artistId}`);
-
-    } catch (err) {
-      console.error("Profile creation failed", err);
-      setError(err instanceof Error ? err.message : "An unknown error occurred during profile creation.");
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
+/**
+ * Legacy standalone create flow — forbidden for production (unsafe legacy vault baked in historically).
+ * `middleware.ts` redirects `/create` → `/`; this stub is a fallback if middleware is bypassed in dev tooling.
+ */
+export default function LegacyCreateBlockedPage() {
   return (
     <main className="flex min-h-screen flex-col items-center justify-center p-8 bg-gray-900 text-white">
-      <div className="w-full max-w-2xl p-8 space-y-8 bg-gray-800 rounded-lg shadow-lg">
-        <h1 className="text-3xl font-bold text-center">Create Your Artist Profile</h1>
-        <form onSubmit={handleSubmit} className="space-y-6">
-          <div>
-            <label htmlFor="artistName" className="block text-sm font-medium text-gray-300">Artist Display Name</label>
-            <input
-              id="artistName"
-              type="text"
-              value={artistName}
-              onChange={(e) => setArtistName(e.target.value)}
-              required
-              className="w-full px-3 py-2 mt-1 text-gray-300 bg-gray-700 border border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-accentColor"
-              placeholder="e.g., Da Vinci"
-            />
-          </div>
-
-          <div>
-            <label htmlFor="tokenName" className="block text-sm font-medium text-gray-300">Token Name</label>
-            <input
-              id="tokenName"
-              type="text"
-              value={tokenName}
-              onChange={(e) => setTokenName(e.target.value)}
-              required
-              className="w-full px-3 py-2 mt-1 text-gray-300 bg-gray-700 border border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-accentColor"
-              placeholder="e.g., Mona Lisa Token"
-            />
-          </div>
-          
-          <div>
-            <label htmlFor="tokenSymbol" className="block text-sm font-medium text-gray-300">Token Symbol</label>
-            <input
-              id="tokenSymbol"
-              type="text"
-              value={tokenSymbol}
-              onChange={(e) => setTokenSymbol(e.target.value.toUpperCase())}
-              required
-              maxLength={5}
-              className="w-full px-3 py-2 mt-1 text-gray-300 bg-gray-700 border border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-accentColor"
-              placeholder="e.g., MONA"
-            />
-          </div>
-
-          <div>
-            <label htmlFor="artworkTitle" className="block text-sm font-medium text-gray-300">Featured Artwork Title</label>
-            <input
-              id="artworkTitle"
-              type="text"
-              value={artworkTitle}
-              onChange={(e) => setArtworkTitle(e.target.value)}
-              required
-              className="w-full px-3 py-2 mt-1 text-gray-300 bg-gray-700 border border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-accentColor"
-              placeholder="e.g., The Masterpiece"
-            />
-          </div>
-          
-          <div>
-            <label htmlFor="videoSrc" className="block text-sm font-medium text-gray-300">Video Path</label>
-            <input
-              id="videoSrc"
-              type="text"
-              value={videoSrc}
-              onChange={(e) => setVideoSrc(e.target.value)}
-              required
-              className="w-full px-3 py-2 mt-1 text-gray-300 bg-gray-700 border border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-accentColor"
-              placeholder="e.g., /1GOSHEESH.mp4"
-            />
-            <p className="text-xs text-gray-400 mt-1">Make sure the video file is in the /public folder.</p>
-          </div>
-
-          <div className="flex space-x-4">
-            <div className="w-1/2">
-              <label htmlFor="primaryColor" className="block text-sm font-medium text-gray-300">Primary Color</label>
-              <input
-                id="primaryColor"
-                type="color"
-                value={primaryColor}
-                onChange={(e) => setPrimaryColor(e.target.value)}
-                className="w-full h-10 mt-1"
-              />
-            </div>
-            <div className="w-1/2">
-              <label htmlFor="accentColor" className="block text-sm font-medium text-gray-300">Accent Color</label>
-              <input
-                id="accentColor"
-                type="color"
-                value={accentColor}
-                onChange={(e) => setAccentColor(e.target.value)}
-                className="w-full h-10 mt-1"
-              />
-            </div>
-          </div>
-
-          {error && <p className="text-sm text-red-500">{error}</p>}
-
-          <div>
-            <button
-              type="submit"
-              disabled={isSubmitting}
-              className="w-full px-4 py-2 font-bold text-white bg-accentColor rounded-md hover:bg-opacity-80 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-accentColor disabled:bg-gray-500"
-            >
-              {isSubmitting ? 'Creating Profile...' : 'Create Profile'}
-            </button>
-          </div>
-        </form>
+      <div className="w-full max-w-lg space-y-4 text-center rounded-lg bg-gray-800 p-10 shadow-lg">
+        <h1 className="text-2xl font-semibold">Create via onboarding</h1>
+        <p className="text-gray-400 text-sm">
+          Artist setup runs from the main experience (type zeyoda on <code>/</code> → factory onboarding). This URL is
+          no longer supported.
+        </p>
+        <Link
+          href="/"
+          className="inline-flex items-center justify-center rounded-md bg-violet-600 px-4 py-2 text-sm font-medium text-white hover:bg-violet-500"
+        >
+          Go home
+        </Link>
       </div>
     </main>
   );
-} 
+}

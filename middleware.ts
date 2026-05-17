@@ -3,16 +3,21 @@ import { NextRequest, NextResponse } from 'next/server';
 /**
  * Next.js Middleware - Lightweight Security Guard (Edge Runtime Compatible)
  * 
- * Intercepts ALL API requests and checks:
- * 1. Authorization header with Bearer token is present (for protected routes)
- * 
- * NOTE: Actual Magic token verification happens in API routes (Node.js runtime)
- * This middleware provides first-line defense by blocking requests without tokens.
- * 
+ * Intercepts:
+ * - Requests to `/create` → redirect `/` (legacy route disabled).
+ * - API routes: Bearer token OR internal secret (first-line guard; APIs verify Magic in Node).
+ *
  * Runs BEFORE route handlers execute.
  */
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
+
+  // Legacy /create shipped historical protocol vault defaults — block direct URL navigation
+  if (pathname === '/create' || pathname === '/create/') {
+    const url = request.nextUrl.clone();
+    url.pathname = '/';
+    return NextResponse.redirect(url);
+  }
 
   // Only process API routes
   if (!pathname.startsWith('/api/')) {

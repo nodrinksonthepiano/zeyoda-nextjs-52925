@@ -1,5 +1,9 @@
 const { ethers } = require("hardhat");
 
+/**
+ * Legacy CANCAKES redeploy helper. Requires PROTOCOL_VAULT in env — no insecure default.
+ */
+
 async function redeployCancakesComplete() {
   console.log("🍰 COMPLETE CANCAKES REDEPLOYMENT");
   console.log("================================");
@@ -15,7 +19,12 @@ async function redeployCancakesComplete() {
   }
   
   const CANCAKES_WALLET = "0xe42C291143e03f3Bd7D5a095815DAD3e82835C05";
-  const PROTOCOL_VAULT = "0x615258a5263DBEe0DDEED3166ddC1f442D937eB3";
+  const PROTOCOL_VAULT = (process.env.PROTOCOL_VAULT || '').trim();
+  if (!PROTOCOL_VAULT || !ethers.isAddress(PROTOCOL_VAULT)) {
+    throw new Error(
+      'Set PROTOCOL_VAULT=0x... explicitly (historic script — no insecure default)'
+    );
+  }
   
   try {
     // 1. Deploy CANCAKES Token (ArtistToken)

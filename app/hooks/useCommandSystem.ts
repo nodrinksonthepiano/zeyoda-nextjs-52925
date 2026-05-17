@@ -126,7 +126,7 @@ export const useCommandSystem = (
         }
         showToast('🎉 Treasure discovered! Welcome to artist creation!', 'success');
       } else {
-        router.push('/create');
+        router.push('/');
       }
       setSafewordInput('');
       return;

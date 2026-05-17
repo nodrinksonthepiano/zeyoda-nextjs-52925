@@ -25,9 +25,9 @@ export async function GET() {
     const symbol = await contract.symbol();
     const totalSupply = await contract.totalSupply();
     
-    // Check key wallets
+    /** Historical wallet used for canned balance probes — not a live vault assignment */
     const wallets = {
-      deployer: "0x615258a5263DBEe0DDEED3166ddC1f442D937eB3",
+      legacyBalanceProbe: "0x615258a5263DBEe0DDEED3166ddC1f442D937eB3",
       cancakes: "0xe42C291143e03f3Bd7D5a095815DAD3e82835C05", 
       gosheesh: "0xeE699E81717F03B745bf21EC08c2978B8e6aa0e8",
       jaitea: "0x0B893D9D0dA09096C75e43c310316dC61b2773be"

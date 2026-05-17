@@ -1,48 +1,25 @@
-import type { SupabaseClient } from '@supabase/supabase-js';
+import { ethers } from 'ethers';
 
-export const LP_WITHDRAWAL_REASON = 'LP_WITHDRAWAL' as const;
+/** Must match `UupsAMM.ARTIST_CASHOUT_MIN_ETH_WEI` (0.005 ether). */
+export const ARTIST_CASHOUT_FLOOR_WEI = 5_000_000_000_000_000n;
 
-/** Sum ledger LP exits for mock remaining-LP math (same convention as `error_reason` on insert). */
-export async function sumVirtualLpWithdrawnUsd(
-  supabase: SupabaseClient,
-  artistId: string
-): Promise<number> {
-  const { data, error } = await supabase
-    .from('artist_earnings')
-    .select('net_earnings_usd')
-    .eq('artist_id', artistId)
-    .eq('error_reason', LP_WITHDRAWAL_REASON);
-
-  if (error) {
-    console.error('[sumVirtualLpWithdrawnUsd]', error.message);
-    return 0;
-  }
-
-  let sum = 0;
-  for (const row of data ?? []) {
-    sum += parseFloat(String(row.net_earnings_usd ?? 0)) || 0;
-  }
-  return sum;
+export function ethWeiSurplusAboveFloor(ethReserveWei: bigint): bigint {
+  return ethReserveWei > ARTIST_CASHOUT_FLOOR_WEI ? ethReserveWei - ARTIST_CASHOUT_FLOOR_WEI : 0n;
 }
 
-export function remainingLpWithdrawableUsd(
-  onChainLpWithdrawableUsd: number,
-  virtualWithdrawnUsd: number
-): number {
-  const r = onChainLpWithdrawableUsd - virtualWithdrawnUsd;
-  return r > 0 ? r : 0;
+/** Gross USD label for ETH skim above floor (fixed-rate UI); settlement is ETH on-chain. */
+export function surplusEthUsd(ethReserveWei: bigint, ethUsdRate: number): number {
+  const surplusWei = ethWeiSurplusAboveFloor(ethReserveWei);
+  const surplusEth = Number(ethers.formatEther(surplusWei));
+  if (!Number.isFinite(surplusEth) || !(surplusEth > 0)) return 0;
+  return surplusEth * ethUsdRate;
 }
 
-/** Same USD math as lp/quote / artist-earnings (99.7% of pool, $2500/ETH). */
-export function poolReservesToOnChainLpWithdrawableUsd(
-  ethReserve: number,
-  tokenReserve: number,
-  ethUsdRate = 2500
-): number {
-  if (!(tokenReserve > 0) || !Number.isFinite(ethReserve) || !Number.isFinite(tokenReserve)) {
-    return 0;
-  }
-  const tokenPriceUsd = (ethReserve / tokenReserve) * ethUsdRate;
-  const totalPoolUsd = ethReserve * ethUsdRate + tokenReserve * tokenPriceUsd;
-  return totalPoolUsd * 0.997;
+/**
+ * Basis-point slice of surplus wei (percent 1–100, same rounding as withdraw route).
+ */
+export function surplusWeiForWithdrawPercent(surplusWei: bigint, percent: number): bigint {
+  const clampedPercent = Math.max(1, Math.min(100, Math.round(percent * 10) / 10));
+  const bps = Math.round(clampedPercent * 100); // 100.0% → 10000
+  return (surplusWei * BigInt(bps)) / 10000n;
 }

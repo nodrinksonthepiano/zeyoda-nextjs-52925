@@ -1,5 +1,7 @@
 const { ethers } = require("hardhat");
 
+/** Requires `PROTOCOL_VAULT` — no insecure default vault. */
+
 async function main() {
   console.log("🚀 Deploying ArtistTokenUUPS (Manual ERC1967 Proxy) to Base Sepolia...\n");
 
@@ -13,7 +15,10 @@ async function main() {
   const NAME = process.env.TOKEN_NAME || "TESTARTIST";
   const SYMBOL = process.env.TOKEN_SYMBOL || "TESTARTIST";
   const ARTIST_WALLET = process.env.ARTIST_WALLET || deployer.address;
-  const PROTOCOL_VAULT = process.env.PROTOCOL_VAULT || "0x615258a5263DBEe0DDEED3166ddC1f442D937eB3";
+  const PROTOCOL_VAULT = (process.env.PROTOCOL_VAULT || '').trim();
+  if (!PROTOCOL_VAULT || !ethers.isAddress(PROTOCOL_VAULT)) {
+    throw new Error('Set PROTOCOL_VAULT=0x... explicitly (no insecure default)');
+  }
 
   console.log("⚙️  Configuration:");
   console.log("   Token Name:", NAME);
