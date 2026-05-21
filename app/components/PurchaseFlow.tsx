@@ -978,8 +978,7 @@ const PurchaseFlow: React.FC<PurchaseFlowProps> = ({
                     }
                     }}
                     disabled={isSwapping || (isActionLoading && !!user)}
-                    className={`w-full font-bold py-3 px-6 rounded-lg text-lg shadow-md transition duration-150 ease-in-out transform hover:scale-105 
-                    ${!user ? 'bg-blue-600 hover:bg-blue-700' : 'bg-green-500 hover:bg-green-600'} text-white`}
+                    className="custom-buy-button purchase-download-cta w-full text-lg"
                 >
                     {isSwapping ? 'Processing...' : 
                     !user ? `$${downloadPriceLabel} INCLUDES PERMANENT ACCESS (SIGN IN TO SELECT)` : `GET DOWNLOAD ($${downloadPriceLabel})`}
@@ -988,7 +987,7 @@ const PurchaseFlow: React.FC<PurchaseFlowProps> = ({
             )}
 
             {user && globalSafewordVerified && !purchaseConfirmationData && (
-                <div className="swap-panel-halo-wrap max-w-2xl mx-auto mb-8">
+                <div className="swap-panel-halo-wrap swap-panel-halo-wrap--linen max-w-2xl mx-auto mb-8">
                 <div className="purchase-slider-section mock-ui-section swap-panel-glimmer p-4 md:p-6 shadow-xl rounded-lg border border-gray-700 backdrop-blur-md">
                 <h3 className="text-xl font-semibold mb-3 text-center text-white">
                     Purchase Options
@@ -1387,11 +1386,11 @@ const PurchaseFlow: React.FC<PurchaseFlowProps> = ({
                                   (includeDownload && resolvedDownloadPrice == null) ||
                                   !hasValidSwapFromAmount() ||
                                   confirmBlockedInsufficient}
-                        className={`w-full py-4 px-6 rounded-lg font-bold text-lg transition-all duration-200 ${
+                        className={`w-full font-bold text-lg transition-all duration-200 ${
                             isSwapping || confirmBlockedInsufficient || (!!user && sellingFromToken && !swapTokenBalancesReady)
-                                ? 'bg-gray-600 cursor-not-allowed' 
-                                : 'bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 transform hover:scale-105 shadow-lg'
-                        } text-white`}
+                                ? 'py-4 px-6 rounded-lg bg-gray-600 cursor-not-allowed text-white'
+                                : 'custom-buy-button text-white'
+                        }`}
                     >
                         {isSwapping ? (
                             <span className="flex items-center justify-center">

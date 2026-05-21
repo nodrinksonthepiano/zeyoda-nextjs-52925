@@ -1165,6 +1165,21 @@ body {
   z-index: 1;
 }
 
+/* Onboarding / light workshop canvas — stronger halo so panel glow reads on bronze/cream page bg */
+.swap-panel-halo-wrap.swap-panel-halo-wrap--linen::before {
+  inset: -24px -32px;
+  background: radial-gradient(
+    ellipse 92% 78% at 50% 42%,
+    rgba(var(--accent-color-rgb, 160, 82, 45), 0.12) 0%,
+    rgba(255, 255, 255, 0.11) 30%,
+    transparent 72%
+  );
+  box-shadow:
+    0 0 72px 20px rgba(255, 255, 255, 0.14),
+    0 0 36px 12px rgba(255, 255, 255, 0.08),
+    0 0 28px 8px rgba(var(--accent-color-rgb, 160, 82, 45), 0.14);
+}
+
 /* Purchase Button Styles */
 .custom-buy-button {
   display: flex;
@@ -1217,6 +1232,51 @@ body {
   transform: none;
   box-shadow: none;
   filter: none;
+}
+
+/* Purchase panel — gold CTA matching custom-token-slider thumb palette */
+.purchase-slider-section .custom-buy-button:not(:disabled),
+.purchase-download-cta.custom-buy-button:not(:disabled),
+.treasure-claim-cta.custom-buy-button:not(:disabled) {
+  background: linear-gradient(to bottom, #ffef85 0%, #d4af37 55%, #b08d23 100%);
+  color: #1a1408;
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.35);
+  box-shadow:
+    0 2px 8px rgba(0, 0, 0, 0.35),
+    inset 0 1px 0 rgba(255, 255, 255, 0.45),
+    inset 0 -2px 0 rgba(0, 0, 0, 0.25);
+}
+
+.purchase-slider-section .custom-buy-button:hover:not(:disabled),
+.purchase-download-cta.custom-buy-button:hover:not(:disabled),
+.treasure-claim-cta.custom-buy-button:hover:not(:disabled) {
+  background: linear-gradient(to bottom, #fff3a8 0%, #e0c04a 50%, #c49a2a 100%);
+  filter: none;
+  transform: translateY(-2px);
+  box-shadow:
+    0 4px 12px rgba(0, 0, 0, 0.4),
+    inset 0 1px 0 rgba(255, 255, 255, 0.5),
+    inset 0 -2px 0 rgba(0, 0, 0, 0.28);
+}
+
+.purchase-slider-section .custom-buy-button:active:not(:disabled),
+.purchase-download-cta.custom-buy-button:active:not(:disabled),
+.treasure-claim-cta.custom-buy-button:active:not(:disabled) {
+  transform: translateY(1px);
+  box-shadow:
+    0 2px 5px rgba(0, 0, 0, 0.4),
+    inset 0 1px 2px rgba(0, 0, 0, 0.3);
+}
+
+.purchase-slider-section .custom-buy-button:focus:not(:disabled),
+.purchase-download-cta.custom-buy-button:focus:not(:disabled),
+.treasure-claim-cta.custom-buy-button:focus:not(:disabled) {
+  outline: none;
+  box-shadow:
+    0 0 0 3px rgba(212, 175, 55, 0.55),
+    0 4px 10px rgba(0, 0, 0, 0.35),
+    inset 0 1px 0 rgba(255, 255, 255, 0.45),
+    inset 0 -2px 0 rgba(0, 0, 0, 0.25);
 }
 
 /* Ensure CSS variables used by custom classes are defined if not already global */

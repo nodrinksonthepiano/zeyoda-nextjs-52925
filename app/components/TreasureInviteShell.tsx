@@ -599,7 +599,7 @@ export default function TreasureInviteShell({
                     type="button"
                     onClick={handleClaimTreasureClick}
                     disabled={busyLogin}
-                    className="w-full font-bold py-3 px-6 rounded-lg text-lg shadow-md transition duration-150 ease-in-out transform hover:scale-105 bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-70 disabled:hover:scale-100 min-h-[44px]"
+                    className="custom-buy-button treasure-claim-cta w-full text-lg disabled:opacity-70 min-h-[44px]"
                   >
                     {busyLogin ? TREASURE_SENDING_CODE : envelope.status === 'draft' ? CLAIM_CTA_LABEL : TREASURE_CLAIMED_PRIMARY_CTA}
                   </button>
@@ -712,7 +712,7 @@ export default function TreasureInviteShell({
                 <button
                   type="button"
                   onClick={onContinueLaunch}
-                  className="custom-buy-button w-full py-4 rounded-xl font-bold text-lg shadow-lg"
+                  className="custom-buy-button treasure-claim-cta w-full py-4 rounded-xl font-bold text-lg shadow-lg"
                 >
                   {CONTINUE_LAUNCH_SETUP}
                 </button>

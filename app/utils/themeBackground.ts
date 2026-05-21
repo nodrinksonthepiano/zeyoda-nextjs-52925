@@ -1,5 +1,35 @@
 import { ArtistConfig } from '../../types/artist-types';
 
+/** Hex or rgb() accent → comma-separated r, g, b for CSS rgba(var(--accent-color-rgb), α). */
+export function accentColorToRgbCsv(color: string): string {
+  const h = color.trim();
+  if (h.startsWith('#')) {
+    const n =
+      h.length === 4
+        ? h.slice(1).split('').map((c) => c + c).join('')
+        : h.slice(1);
+    const r = parseInt(n.slice(0, 2), 16);
+    const g = parseInt(n.slice(2, 4), 16);
+    const b = parseInt(n.slice(4, 6), 16);
+    return `${r}, ${g}, ${b}`;
+  }
+  if (h.startsWith('rgb')) {
+    const parts = h.match(/\d+/g);
+    if (parts && parts.length >= 3) {
+      return `${parts[0]}, ${parts[1]}, ${parts[2]}`;
+    }
+  }
+  return '160, 82, 45';
+}
+
+export function setAccentColorCssVars(accentColor: string) {
+  document.documentElement.style.setProperty('--accent-color', accentColor);
+  document.documentElement.style.setProperty(
+    '--accent-color-rgb',
+    accentColorToRgbCsv(accentColor),
+  );
+}
+
 /**
  * Applies background with strict precedence:
  * 1) background_image_url (if background_use_image is true)
@@ -31,11 +61,7 @@ export function applyArtistBackground(config: ArtistConfig | null) {
   document.documentElement.style.setProperty("--primary-color", primary);
 
   if (t.accentColor) {
-    document.documentElement.style.setProperty("--accent-color", t.accentColor);
-    document.documentElement.style.setProperty(
-      "--accent-color-rgb",
-      t.accentColor.match(/\d+/g)?.join(", ") ?? "0,0,0"
-    );
+    setAccentColorCssVars(t.accentColor);
   }
 
   document.documentElement.style.setProperty("--gradient-start", t.gradientStart || "#ffffff");

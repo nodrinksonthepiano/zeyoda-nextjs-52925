@@ -31,7 +31,7 @@ import {
   RenderableToken,
   UserTokenBalances
 } from '../types/artist-types';
-import { applyArtistBackground } from './utils/themeBackground';
+import { applyArtistBackground, setAccentColorCssVars } from './utils/themeBackground';
 import { useCommandSystem } from './hooks/useCommandSystem';
 import { ArtistFactoryABI } from './utils/abis/ArtistFactoryABI';
 import { clearAllSafewordStorage } from './utils/safewordStorage';
@@ -1925,15 +1925,16 @@ const ArtistPageContent: React.FC<{
         );
         console.log('[page.tsx] 🎨 Onboarding canvas: invite handoff stub (draft theme, not linen)');
       } else {
-        // Blank onboarding: tan/linen canvas for new artists
-        document.documentElement.style.setProperty('--primary-color', '#FAF0E6');
-        document.documentElement.style.setProperty('--accent-color', '#B8860B');
-        document.documentElement.style.setProperty('--gradient-start', '#FAF0E6');
-        document.documentElement.style.setProperty('--gradient-middle', '#FDF5E6');
-        document.documentElement.style.setProperty('--gradient-end', '#F5F5DC');
-        document.body.style.background = 'linear-gradient(135deg, #FAF0E6 0%, #FDF5E6 50%, #F5F5DC 100%)';
+        // Blank onboarding: bronze workshop canvas (matches COLOR_PRESETS.bronze)
+        document.documentElement.style.setProperty('--primary-color', '#CD7F32');
+        setAccentColorCssVars('#A0522D');
+        document.documentElement.style.setProperty('--gradient-start', '#CD7F32');
+        document.documentElement.style.setProperty('--gradient-middle', '#D4934A');
+        document.documentElement.style.setProperty('--gradient-end', '#A0522D');
+        document.body.style.background =
+          'linear-gradient(135deg, #CD7F32 0%, #D4934A 50%, #A0522D 100%)';
         document.body.style.fontFamily = 'Bungee, cursive';
-        console.log('[page.tsx] 🎨 Applied onboarding linen canvas background');
+        console.log('[page.tsx] 🎨 Applied onboarding bronze workshop canvas background');
       }
     } else {
       // Clear onboarding flag when exiting onboarding mode
@@ -2612,7 +2613,7 @@ const ArtistPageContent: React.FC<{
               <>
                 <ArtistPortalTitle
                   fontFamily={appMode === 'onboarding' ? 'Bungee, cursive' : artistConfig.theme.fontFamily}
-                  color={appMode === 'onboarding' ? '#B8860B' : artistConfig.theme.accentColor}
+                  color={appMode === 'onboarding' ? '#FFD700' : artistConfig.theme.accentColor}
                   title={appMode === 'onboarding' ? 'Double-click to edit' : undefined}
                   onDoubleClick={
                     appMode === 'onboarding'
@@ -2709,7 +2710,7 @@ const ArtistPageContent: React.FC<{
                                   <div style={{ fontSize: '4rem', marginBottom: '1rem' }}>
                                     {uploadedFile.type.startsWith('audio/') ? '🎵' : '📁'}
                                   </div>
-                                  <div style={{ fontSize: '1rem', color: '#B8860B', fontFamily: 'Bungee, cursive' }}>
+                                  <div style={{ fontSize: '1rem', color: '#FFD700', fontFamily: 'Bungee, cursive' }}>
                                     {uploadedFile.name}
                                   </div>
                                 </div>
@@ -2846,15 +2847,15 @@ const ArtistPageContent: React.FC<{
                             // Show upload prompt - centered over halo
                             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center', padding: '2rem' }}>
                               <div style={{ fontSize: '4rem', marginBottom: '1rem' }}>📁</div>
-                              <div style={{ fontSize: '1.25rem', fontWeight: 'bold', marginBottom: '0.5rem', color: '#B8860B', fontFamily: 'Bungee, cursive' }}>
+                              <div style={{ fontSize: '1.25rem', fontWeight: 'bold', marginBottom: '0.5rem', color: '#FFD700', fontFamily: 'Bungee, cursive' }}>
                                 DROP YOUR CONTENT HERE
                               </div>
-                              <div style={{ fontSize: '0.875rem', marginBottom: '1rem', opacity: 0.8, color: '#B8860B' }}>
+                              <div style={{ fontSize: '0.875rem', marginBottom: '1rem', opacity: 0.8, color: '#FFD700' }}>
                                 Audio, video, images, text - any format
                               </div>
                               <button 
                                 className="px-6 py-3 bg-yellow-600 text-white rounded-lg font-medium hover:bg-yellow-700 transition-colors"
-                                style={{ backgroundColor: '#B8860B' }}
+                                style={{ backgroundColor: '#CD7F32' }}
                               >
                                 Or Click to Upload
                               </button>

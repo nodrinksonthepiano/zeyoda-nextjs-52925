@@ -5,6 +5,7 @@ import {
   buildInviteDraftPayloadV1,
   type InviteDraftFormInput,
 } from '@/app/utils/buildInviteDraftPayloadV1';
+import { setAccentColorCssVars } from '@/app/utils/themeBackground';
 
 interface OnboardingPanelProps {
   artistName: string;
@@ -66,11 +67,11 @@ function createInviteFormBaseline(
     background_use_image: false,
     theme: {
       fontFamily: 'Bungee, cursive',
-      primaryColor: '#FAF0E6',
-      accentColor: '#B8860B',
-      gradientStart: '#FAF0E6',
-      gradientMiddle: '#FDF5E6',
-      gradientEnd: '#F5F5DC',
+      primaryColor: '#CD7F32',
+      accentColor: '#A0522D',
+      gradientStart: '#CD7F32',
+      gradientMiddle: '#D4934A',
+      gradientEnd: '#A0522D',
     },
   };
 }
@@ -183,7 +184,7 @@ function applyWorkshopVisualsFromInviteDraftForm(form: InviteDraftFormInput) {
   );
 
   document.documentElement.style.setProperty('--primary-color', form.theme.primaryColor);
-  document.documentElement.style.setProperty('--accent-color', form.theme.accentColor);
+  setAccentColorCssVars(form.theme.accentColor);
   document.documentElement.style.setProperty('--gradient-start', form.theme.gradientStart);
   document.documentElement.style.setProperty('--gradient-middle', form.theme.gradientMiddle);
   document.documentElement.style.setProperty('--gradient-end', form.theme.gradientEnd);
@@ -240,9 +241,18 @@ const COMMON_FONTS = [
 ];
 
 // Local dropdown component reused for onboarding
-const FontDropdownOnboarding: React.FC<{ onSelect: (font: string) => void; current?: string }> = ({ onSelect, current }) => {
+const FontDropdownOnboarding: React.FC<{
+  onSelect: (font: string) => void;
+  current?: string;
+  onOpenChange?: (open: boolean) => void;
+}> = ({ onSelect, current, onOpenChange }) => {
   const [showFontDropdown, setShowFontDropdown] = useState(false);
   const [fontSearch, setFontSearch] = useState('');
+
+  const setDropdownOpen = (open: boolean) => {
+    setShowFontDropdown(open);
+    onOpenChange?.(open);
+  };
 
   return (
     <div className="relative">
@@ -250,14 +260,14 @@ const FontDropdownOnboarding: React.FC<{ onSelect: (font: string) => void; curre
         type="text"
         value={fontSearch}
         onChange={(e) => setFontSearch(e.target.value)}
-        onFocus={() => setShowFontDropdown(true)}
+        onFocus={() => setDropdownOpen(true)}
         placeholder={current || "Search fonts... (e.g. Arial, Roboto, Times)"}
         className="w-full p-2 bg-gray-700 text-white rounded border border-gray-600 text-sm focus:border-yellow-500"
         style={{ fontFamily: current }}
       />
 
       {showFontDropdown && (
-        <div className="absolute top-full left-0 right-0 mt-1 bg-gray-800 border border-gray-600 rounded max-h-40 overflow-y-auto z-50">
+        <div className="absolute top-full left-0 right-0 mt-1 bg-gray-800 border border-gray-600 rounded max-h-40 overflow-y-auto z-[110] shadow-lg">
           {COMMON_FONTS
             .filter(font => font.toLowerCase().includes(fontSearch.toLowerCase()))
             .map((font) => (
@@ -267,7 +277,7 @@ const FontDropdownOnboarding: React.FC<{ onSelect: (font: string) => void; curre
                   onSelect(font);
                   // Clear the search so reopening shows the full list
                   setFontSearch('');
-                  setShowFontDropdown(false);
+                  setDropdownOpen(false);
                 }}
                 className="w-full text-left p-2 hover:bg-gray-700 text-white text-sm transition-colors"
                 style={{ fontFamily: font }}
@@ -281,8 +291,8 @@ const FontDropdownOnboarding: React.FC<{ onSelect: (font: string) => void; curre
       {/* Close dropdown when clicking outside */}
       {showFontDropdown && (
         <div 
-          className="fixed inset-0 z-40" 
-          onClick={() => setShowFontDropdown(false)}
+          className="fixed inset-0 z-[105]" 
+          onClick={() => setDropdownOpen(false)}
         />
       )}
     </div>
@@ -315,6 +325,7 @@ const OnboardingPanel: React.FC<OnboardingPanelProps> = ({
   const [formData, setFormData] = useState<InviteDraftFormInput>(() =>
     createInviteFormBaseline(mode, ea)
   );
+  const [fontDropdownOpen, setFontDropdownOpen] = useState(false);
 
   const inviteSeedAppliedRef = useRef(false);
 
@@ -449,7 +460,7 @@ const OnboardingPanel: React.FC<OnboardingPanelProps> = ({
           // Dispatch event to update halo
           window.dispatchEvent(new CustomEvent('primaryColorChange', { detail: { color: value } }));
         } else if (themeField === 'accentColor') {
-          document.documentElement.style.setProperty('--accent-color', value);
+          setAccentColorCssVars(value);
           const headerElement = document.querySelector('h1');
           if (headerElement) {
             headerElement.style.color = value;
@@ -1101,10 +1112,8 @@ const OnboardingPanel: React.FC<OnboardingPanelProps> = ({
   );
 
   return (
-    <div className="onboarding-panel bg-gray-800 bg-opacity-90 rounded-lg p-6 mt-8 max-w-2xl mx-auto backdrop-blur-sm border border-gray-600" style={{
-      background: 'linear-gradient(135deg, rgba(30, 41, 59, 0.95) 0%, rgba(51, 65, 85, 0.95) 100%)',
-      boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.8)'
-    }}>
+    <div className="swap-panel-halo-wrap swap-panel-halo-wrap--linen max-w-2xl mx-auto mt-8">
+    <div className="onboarding-panel swap-panel-glimmer p-4 md:p-6 shadow-xl rounded-lg border border-gray-700 backdrop-blur-md">
       
       {/* Header */}
       <div className="flex justify-between items-center mb-6">
@@ -1235,44 +1244,45 @@ const OnboardingPanel: React.FC<OnboardingPanelProps> = ({
 
       {/* Artist Identity Section - Only show for new artists */}
       {mode === 'onboarding' && (
-      <div className="mb-6">
-        <h3 className="text-lg font-semibold text-white mb-3">Artist Identity</h3>
-        <div className="grid grid-cols-1 gap-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-300 mb-2">Artist Name</label>
-            <input
-              type="text"
-              value={formData.displayname}
-              onChange={(e) => {
-                const value = e.target.value;
-                handleFieldChange('displayname', value);
-                // Real-time header update
-                onArtistNameChange(value || 'WELCOME, ARTIST!');
-              }}
-              placeholder="e.g., DJ Nova"
-              className="w-full p-3 bg-gray-700 text-white rounded-lg border border-gray-600 focus:border-yellow-500 focus:ring-1 focus:ring-yellow-500"
-              autoFocus
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-300 mb-2">Token Symbol</label>
-            <input
-              type="text"
-              value={formData.tokenName}
-              onChange={(e) => handleFieldChange('tokenName', e.target.value.toUpperCase().substring(0, 8))}
-              placeholder="e.g., DJNOVA"
-              maxLength={8}
-              className="w-full p-3 bg-gray-700 text-white rounded-lg border border-gray-600 focus:border-yellow-500 focus:ring-1 focus:ring-yellow-500"
-            />
-            <div className="text-xs text-gray-400 mt-1">Max 8 characters • ERC-20 token price set by market</div>
-          </div>
+      <div className="swap-silver-bar mb-6">
+        <div className="swap-silver-bar-row">
+          <label className="swap-silver-bar-label">Artist Name</label>
+          <input
+            type="text"
+            value={formData.displayname}
+            onChange={(e) => {
+              const value = e.target.value;
+              handleFieldChange('displayname', value);
+              // Real-time header update
+              onArtistNameChange(value || 'WELCOME, ARTIST!');
+            }}
+            placeholder="e.g., DJ Nova"
+            className="swap-silver-bar-input w-full p-3 rounded-md"
+            autoFocus
+          />
+        </div>
+        <div className="swap-silver-bar-divider" aria-hidden="true" />
+        <div className="swap-silver-bar-row">
+          <label className="swap-silver-bar-label">Token Symbol</label>
+          <input
+            type="text"
+            value={formData.tokenName}
+            onChange={(e) => handleFieldChange('tokenName', e.target.value.toUpperCase().substring(0, 8))}
+            placeholder="e.g., DJNOVA"
+            maxLength={8}
+            className="swap-silver-bar-input w-full p-3 rounded-md"
+          />
+          <div className="text-xs text-gray-400 mt-1">Max 8 characters • ERC-20 token price set by market</div>
         </div>
       </div>
       )}
 
       {/* Typography Section - Only show for new artists */}
       {mode === 'onboarding' && (
-      <div className="mb-6">
+      <div
+        className="mb-6"
+        style={{ zIndex: fontDropdownOpen ? 100 : undefined }}
+      >
         <h3 className="text-lg font-semibold text-white mb-3">Typography</h3>
         <div className="grid grid-cols-3 gap-3">
           {FONT_OPTIONS.map((font) => (
@@ -1296,6 +1306,7 @@ const OnboardingPanel: React.FC<OnboardingPanelProps> = ({
           <label className="block text-sm text-gray-300 mb-2">Or choose from common fonts:</label>
           <FontDropdownOnboarding
             current={formData.theme.fontFamily}
+            onOpenChange={setFontDropdownOpen}
             onSelect={(font) => {
               handleFieldChange('theme.fontFamily', font);
             }}
@@ -1718,82 +1729,82 @@ const OnboardingPanel: React.FC<OnboardingPanelProps> = ({
       {/* Content Section */}
       <div className="mb-6">
         <h3 className="text-lg font-semibold text-white mb-3">Featured Content</h3>
-        <div className="grid grid-cols-2 gap-4 mb-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-300 mb-2">Content Title</label>
+
+        <div className="swap-silver-bar mb-4">
+          <div className="swap-silver-bar-row">
+            <label className="swap-silver-bar-label">Content Title</label>
             <input
               type="text"
               value={formData.artworktitle}
               onChange={(e) => handleFieldChange('artworktitle', e.target.value)}
               placeholder="e.g., Cosmic Dreams #1"
-              className="w-full p-3 bg-gray-700 text-white rounded-lg border border-gray-600 focus:border-yellow-500 focus:ring-1 focus:ring-yellow-500"
+              className="swap-silver-bar-input w-full p-3 rounded-md"
             />
           </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-300 mb-2">Download Price (USD)</label>
-            
-            {/* Editable price display */}
-            <div className="mb-3 text-center">
-              <div className="inline-flex items-center gap-1">
-                <span className="text-lg text-gray-300">$</span>
-                <input
-                  type="number"
-                  min="0.01"
-                  max="999999999"
-                  step="0.01"
-                  value={formData.downloadPrice}
-                  onChange={(e) => {
-                    const value = parseFloat(e.target.value) || 1.00;
-                    const clampedValue = Math.min(Math.max(value, 0.01), 999999999);
-                    handleFieldChange('downloadPrice', clampedValue);
-                  }}
-                  className="text-xl font-bold text-white bg-gray-700 bg-opacity-50 border border-gray-600 text-center w-32 focus:outline-none focus:border-yellow-500 focus:bg-gray-600 rounded px-2 py-1 hover:bg-gray-600 hover:bg-opacity-50 transition-all"
-                  style={{ fontFamily: 'inherit' }}
-                  placeholder="1.00"
-                />
-                <span className="text-sm text-gray-400 ml-1">per download</span>
-              </div>
-              <div className="text-xs text-gray-400 mt-1">Click to edit • Use slider for quick adjustment</div>
+          <div className="swap-silver-bar-divider" aria-hidden="true" />
+          <div className="swap-silver-bar-row">
+            <label className="swap-silver-bar-label">Download Price (USD)</label>
+            <div className="inline-flex items-center gap-1">
+              <span className="text-sm text-gray-300">$</span>
+              <input
+                type="number"
+                min="0.01"
+                max="999999999"
+                step="0.01"
+                value={formData.downloadPrice}
+                onChange={(e) => {
+                  const value = parseFloat(e.target.value) || 1.00;
+                  const clampedValue = Math.min(Math.max(value, 0.01), 999999999);
+                  handleFieldChange('downloadPrice', clampedValue);
+                }}
+                className="swap-silver-bar-input custom-token-input text-xl font-bold text-center w-32 p-2 rounded-md"
+                style={{ fontFamily: 'inherit' }}
+                placeholder="1.00"
+              />
+              <span className="text-sm text-gray-400 ml-1">per download</span>
             </div>
-            
-            {/* Extended slider (up to $10,000) */}
-            <input
-              type="range"
-              min="1"
-              max="10000"
-              step="1"
-              value={Math.min(formData.downloadPrice, 10000)}
-              onChange={(e) => handleFieldChange('downloadPrice', parseFloat(e.target.value))}
-              className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer slider"
-            />
-            
-            {/* Extended price range indicators */}
-            <div className="flex justify-between text-xs text-gray-500 mt-2">
-              <span>$1</span>
-              <span>$100</span>
-              <span>$1K</span>
-              <span>$5K</span>
-              <span>$10K+</span>
-            </div>
+            <div className="text-xs text-gray-400 mt-1">Click to edit • Use slider for quick adjustment</div>
           </div>
         </div>
-        
-        {/* Description field */}
+
         <div className="mb-4">
-          <label className="block text-sm font-medium text-gray-300 mb-2">
-            Description
-            <span className="text-gray-500 text-xs ml-2">(optional - you can edit later)</span>
-          </label>
-          <textarea
-            value={formData.description}
-            onChange={(e) => handleFieldChange('description', e.target.value)}
-            placeholder="Tell collectors about this piece..."
-            rows={3}
-            maxLength={500}
-            className="w-full p-3 bg-gray-700 text-white rounded-lg border border-gray-600 focus:border-yellow-500 focus:ring-1 focus:ring-yellow-500 resize-none"
+          <input
+            type="range"
+            min="1"
+            max="10000"
+            step="1"
+            value={Math.min(formData.downloadPrice, 10000)}
+            onChange={(e) => handleFieldChange('downloadPrice', parseFloat(e.target.value))}
+            className="custom-token-slider w-full"
           />
-          <div className="text-xs text-gray-400 mt-1 text-right">
-            {formData.description.length}/500 characters
+          <div className="flex justify-between text-xs text-gray-400 mt-1">
+            <span>$1</span>
+            <span>$100</span>
+            <span>$1K</span>
+            <span>$5K</span>
+            <span>$10K+</span>
+          </div>
+        </div>
+
+        <div className="swap-silver-bar mb-4">
+          <div className="swap-silver-bar-row">
+            <label className="swap-silver-bar-label">
+              Description
+              <span className="normal-case font-normal tracking-normal text-gray-400 text-xs ml-2">
+                (optional — you can edit later)
+              </span>
+            </label>
+            <textarea
+              value={formData.description}
+              onChange={(e) => handleFieldChange('description', e.target.value)}
+              placeholder="Tell collectors about this piece..."
+              rows={3}
+              maxLength={500}
+              className="swap-silver-bar-input w-full p-3 rounded-md resize-none"
+            />
+            <div className="text-xs text-gray-400 mt-1 text-right">
+              {formData.description.length}/500 characters
+            </div>
           </div>
         </div>
         
@@ -1930,6 +1941,7 @@ const OnboardingPanel: React.FC<OnboardingPanelProps> = ({
           )}
         </div>
       </div>
+    </div>
     </div>
   );
 };
