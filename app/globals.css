@@ -1615,6 +1615,7 @@ body {
     border-radius: 50%;
     animation: floatParticle 20s infinite linear;
     opacity: 0; /* Start invisible, fade in with animation delay */
+    box-shadow: 0 0 8px 1px rgba(255, 255, 255, 0.12);
 }
 
 @keyframes floatParticle {

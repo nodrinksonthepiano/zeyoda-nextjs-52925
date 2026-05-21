@@ -166,6 +166,7 @@ const PurchaseFlow: React.FC<PurchaseFlowProps> = ({
     const [isSwapping, setIsSwapping] = useState(false);
     const [downloadingAssets, setDownloadingAssets] = useState<Set<number>>(new Set());
     const [confirmationMode, setConfirmationMode] = useState<'config' | 'confirm'>('config');
+    const [downloadConfirmMode, setDownloadConfirmMode] = useState<'idle' | 'confirm'>('idle');
     const [confirmationSnapshot, setConfirmationSnapshot] = useState<{
         fromAmountTrimmed: string;
         artistocks: number;
@@ -186,6 +187,10 @@ const PurchaseFlow: React.FC<PurchaseFlowProps> = ({
 
     const resolvedDownloadPrice = getDownloadPrice(featuredAsset);
     const downloadPriceLabel = resolvedDownloadPrice == null ? '—' : resolvedDownloadPrice.toFixed(2);
+
+    useEffect(() => {
+        if (!user) setDownloadConfirmMode('idle');
+    }, [user]);
 
     // Calculate slider value for proper positioning (USD buy only)
     const maxSliderValue = 1000; // Maximum slider range
@@ -953,6 +958,52 @@ const PurchaseFlow: React.FC<PurchaseFlowProps> = ({
         <>
             {!hasPurchasedDownload && (!user || (user && !globalSafewordVerified)) && (
                 <div className="my-4 w-full max-w-md mx-auto">
+                {user && downloadConfirmMode === 'confirm' && (
+                    <>
+                        <p className="text-center text-gray-200 mb-4 text-sm">
+                            Complete your download purchase for ${downloadPriceLabel}
+                        </p>
+                        <div className="mb-4">
+                            <div className="grid grid-cols-2 gap-2">
+                                <button
+                                    type="button"
+                                    className="p-2 bg-blue-600 text-white rounded text-xs font-medium border-2 border-blue-500 flex items-center justify-center gap-1"
+                                    disabled
+                                >
+                                    <span className="text-xs">💰</span>
+                                    <span className="text-xs">Wallet (approx.)</span>
+                                    <span className="text-xs font-semibold">
+                                        {ethBalanceUsd > 0 ? `$${ethBalanceUsd.toFixed(2)}` : '$0.00'}
+                                    </span>
+                                </button>
+                                <button
+                                    type="button"
+                                    className="p-2 bg-gray-700 text-gray-400 rounded text-xs border border-gray-600 flex items-center justify-center gap-1"
+                                    disabled
+                                >
+                                    <span className="text-xs opacity-50">Venmo</span>
+                                    <span className="text-[10px] opacity-50">soon</span>
+                                </button>
+                                <button
+                                    type="button"
+                                    className="p-2 bg-gray-700 text-gray-400 rounded text-xs border border-gray-600 flex items-center justify-center gap-1"
+                                    disabled
+                                >
+                                    <span className="text-xs opacity-50">PayPal</span>
+                                    <span className="text-[10px] opacity-50">soon</span>
+                                </button>
+                                <button
+                                    type="button"
+                                    className="p-2 bg-gray-700 text-gray-400 rounded text-xs border border-gray-600 flex items-center justify-center gap-1"
+                                    disabled
+                                >
+                                    <span className="text-xs opacity-50">Card</span>
+                                    <span className="text-[10px] opacity-50">soon</span>
+                                </button>
+                            </div>
+                        </div>
+                    </>
+                )}
                 <button
                     onClick={() => {
                     if (!user) {
@@ -972,17 +1023,36 @@ const PurchaseFlow: React.FC<PurchaseFlowProps> = ({
                             chatInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
                             setTimeout(() => chatInput?.focus(), 600);
                         }
+                    } else if (downloadConfirmMode === 'idle') {
+                        setDownloadConfirmMode('confirm');
                     } else {
-                        // Call dedicated download-only function (clean, no artistocks logic)
-                        handleDownloadOnlyPurchase();
+                        void (async () => {
+                            try {
+                                await handleDownloadOnlyPurchase();
+                            } finally {
+                                setDownloadConfirmMode('idle');
+                            }
+                        })();
                     }
                     }}
-                    disabled={isSwapping || (isActionLoading && !!user)}
+                    disabled={isSwapping || (isActionLoading && !!user) || (user && downloadConfirmMode === 'confirm' && resolvedDownloadPrice == null)}
                     className="custom-buy-button purchase-download-cta w-full text-lg"
                 >
                     {isSwapping ? 'Processing...' : 
-                    !user ? `$${downloadPriceLabel} INCLUDES PERMANENT ACCESS (SIGN IN TO SELECT)` : `GET DOWNLOAD ($${downloadPriceLabel})`}
+                    !user ? `$${downloadPriceLabel} INCLUDES PERMANENT ACCESS (SIGN IN TO SELECT)` :
+                    downloadConfirmMode === 'confirm' ? `CONFIRM DOWNLOAD ($${downloadPriceLabel})` :
+                    `GET DOWNLOAD ($${downloadPriceLabel})`}
                 </button>
+                {user && downloadConfirmMode === 'confirm' && (
+                    <button
+                        type="button"
+                        onClick={() => setDownloadConfirmMode('idle')}
+                        disabled={isSwapping}
+                        className="mt-3 w-full px-4 py-2 text-sm text-gray-300 hover:text-white border border-gray-600 hover:border-gray-500 rounded-lg transition-colors disabled:opacity-50"
+                    >
+                        Cancel
+                    </button>
+                )}
                 </div>
             )}
 

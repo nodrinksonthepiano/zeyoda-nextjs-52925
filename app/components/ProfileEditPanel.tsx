@@ -9,6 +9,8 @@ interface ProfileEditPanelProps {
   userAddress: string;
   onClose: () => void;
   onSave: (updates: any) => void;
+  /** Live preview while toggling stardust during profile edit */
+  onStardustPreviewChange?: (enabled: boolean) => void;
 }
 
 const COLOR_PRESETS = {
@@ -70,7 +72,8 @@ const ProfileEditPanel: React.FC<ProfileEditPanelProps> = ({
   artistConfig,
   userAddress,
   onClose,
-  onSave
+  onSave,
+  onStardustPreviewChange,
 }) => {
   const { getDidToken } = useWallet();
   const [formData, setFormData] = useState({
@@ -79,6 +82,7 @@ const ProfileEditPanel: React.FC<ProfileEditPanelProps> = ({
     font_family: artistConfig?.theme?.fontFamily || 'Bungee, cursive',
     gradient_start: artistConfig?.theme?.gradientStart || '#FFD700',
     gradient_end: artistConfig?.theme?.gradientEnd || '#B8860B',
+    stardust: artistConfig?.theme?.stardust === true,
     logo_url: artistConfig?.logo_url || null,
     background_image_url: artistConfig?.background_image_url || null,
     logo_use_background: artistConfig?.logo_use_background || false,
@@ -113,6 +117,10 @@ const ProfileEditPanel: React.FC<ProfileEditPanelProps> = ({
     backgroundPreviewRef.current = backgroundPreview;
   }, [backgroundPreview]);
 
+  useEffect(() => {
+    onStardustPreviewChange?.(formData.stardust === true);
+  }, [formData.stardust, onStardustPreviewChange]);
+
   // Store original theme on mount
   useEffect(() => {
     setOriginalTheme({
@@ -139,6 +147,7 @@ const ProfileEditPanel: React.FC<ProfileEditPanelProps> = ({
         gradientStart: formData.gradient_start,
         gradientEnd: formData.gradient_end,
         fontFamily: formData.font_family,
+        stardust: formData.stardust === true,
       },
       logo_url: logoPreview || formData.logo_url || null,
       background_image_url: backgroundPreview || formData.background_image_url || null,
@@ -265,6 +274,10 @@ const ProfileEditPanel: React.FC<ProfileEditPanelProps> = ({
   const handleFieldChange = useCallback((field: string, value: string | boolean) => {
     setFormData(prev => {
       const updated = { ...prev, [field]: value };
+
+      if (field === 'stardust') {
+        onStardustPreviewChange?.(value === true);
+      }
       
       // Build preview config and apply via decider for consistency
       if (field === 'primary_color' || field === 'accent_color' || field === 'font_family' || field === 'gradient_start' || field === 'gradient_end') {
@@ -314,7 +327,7 @@ const ProfileEditPanel: React.FC<ProfileEditPanelProps> = ({
         headerElement.style.fontFamily = value as string;
       }
     }
-  }, [artistConfig, logoPreview, backgroundPreview]);
+  }, [artistConfig, logoPreview, backgroundPreview, onStardustPreviewChange]);
 
   const applyPrimaryPreset = useCallback((presetKey: string) => {
     const preset = COLOR_PRESETS[presetKey as keyof typeof COLOR_PRESETS];
@@ -349,7 +362,7 @@ const ProfileEditPanel: React.FC<ProfileEditPanelProps> = ({
         logo_use_background: formData.logo_use_background,
         background_use_image: formData.background_use_image
       })
-      });
+      }, getDidToken);
 
       const result = await response.json();
 
@@ -372,7 +385,7 @@ const ProfileEditPanel: React.FC<ProfileEditPanelProps> = ({
     } finally {
       setIsSaving(false);
     }
-  }, [artistConfig, userAddress, formData, onSave, onClose]);
+  }, [artistConfig, userAddress, formData, onSave, onClose, getDidToken]);
 
   const handleCancel = useCallback(() => {
     // Revert logo/background state
@@ -422,9 +435,11 @@ const ProfileEditPanel: React.FC<ProfileEditPanelProps> = ({
     // CRITICAL: Clear preview config when exiting edit mode (cancel)
     // This ensures coins revert to saved state
     window.dispatchEvent(new CustomEvent('artistConfigPreviewClear'));
+
+    onStardustPreviewChange?.(originalTheme.stardust === true);
     
     onClose();
-  }, [originalTheme, onClose, artistConfig]);
+  }, [originalTheme, onClose, artistConfig, onStardustPreviewChange]);
 
   return (
     <div className="profile-edit-panel bg-gray-800 bg-opacity-70 shadow-xl rounded-lg border border-gray-700 backdrop-blur-md mb-8 max-w-2xl mx-auto p-6">
@@ -524,6 +539,24 @@ const ProfileEditPanel: React.FC<ProfileEditPanelProps> = ({
         </div>
       </div>
 
+      {/* Stardust atmosphere */}
+      <div className="mb-6">
+        <h3 className="text-lg font-semibold text-white mb-3">Atmosphere</h3>
+        <label className="flex items-center gap-3 cursor-pointer">
+          <input
+            id="profileStardust"
+            type="checkbox"
+            checked={formData.stardust === true}
+            onChange={(e) => handleFieldChange('stardust', e.target.checked)}
+            className="h-4 w-4 rounded border-gray-300 text-accentColor focus:ring-accentColor"
+          />
+          <span className="text-sm text-gray-200">Stardust</span>
+        </label>
+        <p className="text-xs text-gray-400 mt-2 ml-7">
+          Floating starfield behind your portal. Off by default — check to enable.
+        </p>
+      </div>
+
       {/* Logo Upload Section */}
       <div className="mb-6">
         <h3 className="text-lg font-semibold text-white mb-3">Logo Upload</h3>
@@ -544,7 +577,7 @@ const ProfileEditPanel: React.FC<ProfileEditPanelProps> = ({
                       body: JSON.stringify({
                         artistId: artistConfig.id || artistConfig.name.toLowerCase()
                       })
-                    });
+                    }, getDidToken);
 
                     if (response.ok) {
                       const result = await response.json();
@@ -746,7 +779,7 @@ const ProfileEditPanel: React.FC<ProfileEditPanelProps> = ({
                       body: JSON.stringify({
                         artistId: artistConfig.id || artistConfig.name.toLowerCase()
                       })
-                    });
+                    }, getDidToken);
 
                     if (response.ok) {
                       const result = await response.json();

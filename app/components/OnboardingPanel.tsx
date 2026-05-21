@@ -40,6 +40,8 @@ interface OnboardingPanelProps {
   ) => void;
   /** Parent locks primary CTA during async artist launch ceremony */
   artistLaunchLocksPrimaryButton?: boolean;
+  /** Live preview: stardust checkbox toggled during onboarding workshop */
+  onStardustPreviewChange?: (enabled: boolean) => void;
 }
 
 type TreasureCommittedSnapshot = {
@@ -72,6 +74,7 @@ function createInviteFormBaseline(
       gradientStart: '#CD7F32',
       gradientMiddle: '#D4934A',
       gradientEnd: '#A0522D',
+      stardust: false,
     },
   };
 }
@@ -319,6 +322,7 @@ const OnboardingPanel: React.FC<OnboardingPanelProps> = ({
   onClearWorkshopHeroStaging,
   onRegisterWorkshopFeaturedHandlers,
   artistLaunchLocksPrimaryButton = false,
+  onStardustPreviewChange,
 }) => {
   const { showToast } = useToast();
   const ea = existingArtist as Record<string, unknown> | undefined;
@@ -326,6 +330,11 @@ const OnboardingPanel: React.FC<OnboardingPanelProps> = ({
     createInviteFormBaseline(mode, ea)
   );
   const [fontDropdownOpen, setFontDropdownOpen] = useState(false);
+
+  useEffect(() => {
+    if (mode !== 'onboarding') return;
+    onStardustPreviewChange?.(formData.theme.stardust === true);
+  }, [formData.theme.stardust, mode, onStardustPreviewChange]);
 
   const inviteSeedAppliedRef = useRef(false);
 
@@ -471,6 +480,8 @@ const OnboardingPanel: React.FC<OnboardingPanelProps> = ({
           if (headerElement) {
             headerElement.style.fontFamily = value;
           }
+        } else if (themeField === 'stardust') {
+          onStardustPreviewChange?.(value === true);
         }
       } else if (field === 'logo_use_background' || field === 'background_use_image') {
         // Handle logo/background checkboxes with mutual exclusivity
@@ -527,7 +538,7 @@ const OnboardingPanel: React.FC<OnboardingPanelProps> = ({
       
       return updated;
     });
-  }, [onArtistNameChange, formData.background_use_image, formData.logo_use_background, backgroundPreview, logoPreview]);
+  }, [onArtistNameChange, formData.background_use_image, formData.logo_use_background, backgroundPreview, logoPreview, onStardustPreviewChange]);
 
   const applyPrimaryPreset = useCallback((presetKey: string) => {
     const preset = COLOR_PRESETS[presetKey as keyof typeof COLOR_PRESETS];
@@ -1400,6 +1411,26 @@ const OnboardingPanel: React.FC<OnboardingPanelProps> = ({
             placeholder="#RRGGBB"
           />
         </div>
+      </div>
+      )}
+
+      {/* Stardust atmosphere — only for new artists */}
+      {mode === 'onboarding' && (
+      <div className="mb-6">
+        <h3 className="text-lg font-semibold text-white mb-3">Atmosphere</h3>
+        <label className="flex items-center gap-3 cursor-pointer">
+          <input
+            id="themeStardust"
+            type="checkbox"
+            checked={formData.theme.stardust === true}
+            onChange={(e) => handleFieldChange('theme.stardust', e.target.checked)}
+            className="h-4 w-4 rounded border-gray-300 text-accentColor focus:ring-accentColor"
+          />
+          <span className="text-sm text-gray-200">Stardust</span>
+        </label>
+        <p className="text-xs text-gray-400 mt-2 ml-7">
+          Floating starfield behind your portal. Off by default — check to enable.
+        </p>
       </div>
       )}
 

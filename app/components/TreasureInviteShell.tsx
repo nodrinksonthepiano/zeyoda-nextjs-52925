@@ -50,6 +50,7 @@ import {
   draftRecordFromTreasureEnvelope,
 } from '@/app/utils/inviteLaunchBridge';
 import { applyArtistBackground } from '@/app/utils/themeBackground';
+import { useCosmicStardust } from '@/app/hooks/useCosmicStardust';
 
 import { useWallet } from '@/app/components/MagicProvider';
 import { useToast } from '@/app/contexts/ToastContext';
@@ -188,6 +189,8 @@ export default function TreasureInviteShell({
   useEffect(() => {
     applyArtistBackground(stubConfig);
   }, [stubConfig]);
+
+  useCosmicStardust(stubConfig.theme.stardust === true);
 
   useEffect(() => {
     claimAttemptedForEmailRef.current = null;

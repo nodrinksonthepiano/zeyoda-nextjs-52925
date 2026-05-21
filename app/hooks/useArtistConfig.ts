@@ -210,6 +210,7 @@ const useArtistConfig = (artistIdOverride?: string | null): UseArtistConfigRetur
               gradientMiddle: themeData.gradientMiddle || themeData.accentColor || artistData.gradient_middle || '#FFD700',
               gradientEnd: themeData.gradientEnd || themeData.accentColor || artistData.gradient_end || '#FFD700',
               fontFamily: themeData.fontFamily || artistData.font_family || 'Geist',
+              stardust: themeData.stardust === true,
             },
             orbitalTokens: artistData.orbital_tokens,
             // Logo and background image fields

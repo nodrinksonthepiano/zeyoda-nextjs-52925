@@ -88,6 +88,7 @@ export function buildStubArtistConfigFromDraft(draft: Record<string, unknown>): 
     gradientMiddle: typeof themeRaw?.gradientMiddle === 'string' ? themeRaw.gradientMiddle : '#FDF5E6',
     gradientEnd: typeof themeRaw?.gradientEnd === 'string' ? themeRaw.gradientEnd : '#F5F5DC',
     fontFamily: typeof themeRaw?.fontFamily === 'string' ? themeRaw.fontFamily : 'Bungee, cursive',
+    stardust: themeRaw?.stardust === true,
   };
   const rawVs = typeof draft.videosrc === 'string' ? draft.videosrc.trim() : '';
   const featuredHttps =

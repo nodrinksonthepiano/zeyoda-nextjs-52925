@@ -22,6 +22,7 @@ const SAFE_PROFILE_PATCH_KEYS = new Set([
   'font_family',
   'gradient_start',
   'gradient_end',
+  'stardust',
   'logo_url',
   'background_image_url',
   'logo_use_background',
@@ -39,6 +40,7 @@ interface ProfileUpdateRequest {
   font_family?: string;
   gradient_start?: string;
   gradient_end?: string;
+  stardust?: boolean;
   logo_url?: string;
   background_image_url?: string;
   logo_use_background?: boolean;
@@ -94,8 +96,8 @@ export async function PATCH(request: NextRequest) {
 
     // Validate and sanitize inputs - build theme JSONB object
     const validationErrors: string[] = [];
-    const currentTheme = (artist.theme || {}) as Record<string, string>;
-    const newTheme = { ...currentTheme };
+    const currentTheme = (artist.theme || {}) as Record<string, unknown>;
+    const newTheme: Record<string, unknown> = { ...currentTheme };
 
     // Validate colors (hex format)
     const hexRegex = /^#([0-9a-fA-F]{6})$/;
@@ -139,6 +141,10 @@ export async function PATCH(request: NextRequest) {
       } else {
         validationErrors.push('font_family must be a valid font string');
       }
+    }
+
+    if (updateData.stardust !== undefined) {
+      newTheme.stardust = updateData.stardust === true;
     }
 
     let videosrcUpdate: string | undefined;
@@ -234,6 +240,7 @@ export async function PATCH(request: NextRequest) {
         font_family: themeData.fontFamily || updateData.font_family,
         gradient_start: themeData.gradientStart || updateData.gradient_start,
         gradient_end: themeData.gradientEnd || updateData.gradient_end,
+        stardust: themeData.stardust === true,
         logo_url: updateResult.logo_url,
         background_image_url: updateResult.background_image_url,
         logo_use_background: updateResult.logo_use_background,

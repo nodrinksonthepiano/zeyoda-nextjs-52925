@@ -33,6 +33,7 @@ import {
 } from '../types/artist-types';
 import { applyArtistBackground, setAccentColorCssVars } from './utils/themeBackground';
 import { useCommandSystem } from './hooks/useCommandSystem';
+import { useCosmicStardust } from './hooks/useCosmicStardust';
 import { ArtistFactoryABI } from './utils/abis/ArtistFactoryABI';
 import { clearAllSafewordStorage } from './utils/safewordStorage';
 import { useOrbitTokens } from './hooks/useOrbitTokens';
@@ -132,6 +133,8 @@ const ArtistPageContent: React.FC<{
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
   const [onboardingAspectRatio, setOnboardingAspectRatio] = useState<number | null>(null);
   const [onboardingData, setOnboardingData] = useState<any>({});
+  const [onboardingStardustPreview, setOnboardingStardustPreview] = useState(false);
+  const [profileStardustPreview, setProfileStardustPreview] = useState(false);
   const [editingAsset, setEditingAsset] = useState<any | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const inviteLaunchCoinRef = useRef<string | null>(null);
@@ -1662,6 +1665,7 @@ const ArtistPageContent: React.FC<{
       gradientMiddle: artistData.theme?.gradientMiddle,
       gradientEnd: artistData.theme?.gradientEnd,
       fontFamily: artistData.theme?.fontFamily,
+      stardust: artistData.theme?.stardust === true,
       
       // Treasury wallet
       treasuryWallet: await signer.getAddress(),
@@ -1705,6 +1709,7 @@ const ArtistPageContent: React.FC<{
       return null;
     });
     setOnboardingAspectRatio(null);
+    setOnboardingStardustPreview(false);
     setWorkshopTreasureCoinId(null);
     setWorkshopFeaturedHttpsUrl(null);
     workshopFeaturedHandlersRef.current = null;
@@ -2567,6 +2572,14 @@ const ArtistPageContent: React.FC<{
   }
   if (showPurchaseModal) buyButtonDisabled = true;
 
+  const stardustEnabled =
+    appMode === 'onboarding' || appMode === 'upload-asset'
+      ? onboardingStardustPreview
+      : appMode === 'profile-edit'
+        ? profileStardustPreview
+        : artistConfig?.theme?.stardust === true;
+  useCosmicStardust(stardustEnabled);
+
   return (
     <UsdBalanceProvider userAddress={user || null}>
       <div className="flex min-h-screen flex-col items-center justify-between pt-10 px-6 pb-6 relative bg-primary text-white font-sans">
@@ -3127,6 +3140,7 @@ const ArtistPageContent: React.FC<{
               onClearWorkshopHeroStaging={handleClearWorkshopHeroStaging}
               onRegisterWorkshopFeaturedHandlers={registerWorkshopFeaturedHandlers}
               artistLaunchLocksPrimaryButton={artistLaunchLocksPrimaryButton}
+              onStardustPreviewChange={setOnboardingStardustPreview}
             />
           )}
 
@@ -3149,13 +3163,15 @@ const ArtistPageContent: React.FC<{
               artistConfig={artistConfig}
               userAddress={user}
               onClose={() => setAppMode('normal')}
+              onStardustPreviewChange={setProfileStardustPreview}
               onSave={(updates) => {
                 console.log('[page.tsx] ✅ Profile updates received:', {
                   logo_url: updates.logo_url,
                   logo_use_background: updates.logo_use_background,
                   background_image_url: updates.background_image_url,
                   background_use_image: updates.background_use_image,
-                  hasThemeUpdates: !!(updates.primary_color || updates.accent_color || updates.font_family)
+                  stardust: updates.stardust,
+                  hasThemeUpdates: !!(updates.primary_color || updates.accent_color || updates.font_family || updates.stardust !== undefined)
                 });
                 
                 // Record save time to prevent state sync overwrite
@@ -3165,15 +3181,27 @@ const ArtistPageContent: React.FC<{
                 setArtistConfig(prev => {
                   if (!prev) return prev;
                   
+                  const hasThemePatch =
+                    updates.primary_color ||
+                    updates.accent_color ||
+                    updates.font_family ||
+                    updates.gradient_start ||
+                    updates.gradient_end ||
+                    updates.stardust !== undefined;
+
                   const updated = {
                     ...prev,
-                    theme: updates.primary_color || updates.accent_color || updates.font_family || updates.gradient_start || updates.gradient_end ? {
+                    theme: hasThemePatch ? {
                       ...prev.theme,
                       primaryColor: updates.primary_color ?? prev.theme?.primaryColor,
                       accentColor: updates.accent_color ?? prev.theme?.accentColor,
                       gradientStart: updates.gradient_start ?? prev.theme?.gradientStart,
                       gradientEnd: updates.gradient_end ?? prev.theme?.gradientEnd,
                       fontFamily: updates.font_family ?? prev.theme?.fontFamily,
+                      stardust:
+                        updates.stardust !== undefined
+                          ? updates.stardust === true
+                          : prev.theme?.stardust === true,
                     } : prev.theme,
                     logo_url: updates.logo_url !== undefined ? updates.logo_url : prev.logo_url,
                     background_image_url: updates.background_image_url !== undefined ? updates.background_image_url : prev.background_image_url,

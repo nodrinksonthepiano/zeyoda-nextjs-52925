@@ -55,6 +55,7 @@ export async function POST(request: NextRequest) {
         gradientMiddle: artistData.gradientMiddle,
         gradientEnd: artistData.gradientEnd,
         fontFamily: artistData.fontFamily,
+        stardust: artistData.stardust === true,
       },
       orbitaltokens: artistData.orbitaltokens || [],
       paused: true,

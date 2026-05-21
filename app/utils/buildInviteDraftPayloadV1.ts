@@ -10,6 +10,7 @@ export interface InviteDraftThemeInput {
   gradientStart: string;
   gradientMiddle: string;
   gradientEnd: string;
+  stardust?: boolean;
 }
 
 export interface InviteDraftFormInput {
@@ -102,6 +103,7 @@ export function buildInviteDraftPayloadV1(input: InviteDraftFormInput): Record<s
       gradientStart: input.theme.gradientStart,
       gradientMiddle: input.theme.gradientMiddle,
       gradientEnd: input.theme.gradientEnd,
+      ...(input.theme.stardust ? { stardust: true } : {}),
     },
     orbitaltokens: [],
     paused: false,
@@ -195,6 +197,7 @@ export function applyInviteDraftPayloadToForm(prev: InviteDraftFormInput, d: Rec
         typeof themeRaw.gradientEnd === 'string'
           ? themeRaw.gradientEnd
           : prev.theme.gradientEnd,
+      stardust: themeRaw.stardust === true,
     },
   };
 }

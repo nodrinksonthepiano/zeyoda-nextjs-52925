@@ -14,6 +14,7 @@ export type TreasureResolveTheme = {
   gradientStart?: string;
   gradientMiddle?: string;
   gradientEnd?: string;
+  stardust?: boolean;
 };
 
 /** Subset of draft_payload.schema_version === 1 for public preview shells. */

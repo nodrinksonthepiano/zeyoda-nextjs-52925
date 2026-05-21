@@ -40,6 +40,8 @@ export interface ArtistDatabaseEntry {
     gradientMiddle: string;
     gradientEnd: string;
     fontFamily: string;
+    /** When true, show floating cosmic stardust particles on the artist portal. */
+    stardust?: boolean;
   };
   // Fallback separate columns (legacy structure)
   primary_color?: string;
@@ -83,6 +85,7 @@ export interface ArtistConfig {
     gradientMiddle: string;
     gradientEnd: string;
     fontFamily: string;
+    stardust?: boolean;
   };
   orbitalTokens: OrbitalToken[];
   // Logo and background image fields
