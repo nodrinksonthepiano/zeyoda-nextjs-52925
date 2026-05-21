@@ -1017,6 +1017,154 @@ body {
   box-shadow: 0 0 0 2px rgba(var(--accent-color-rgb), 0.2), inset 0 1px 3px rgba(0, 0, 0, 0.3);
 }
 
+/* Silver swap bar — FROM/TO pair (static deeper silver, no sweep) */
+.swap-silver-bar {
+  position: relative;
+  border-radius: 12px;
+  padding: 12px 14px;
+  background: linear-gradient(
+    180deg,
+    #8a9098 0%,
+    #6e747c 22%,
+    #525860 50%,
+    #656b73 78%,
+    #787e86 100%
+  );
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.22),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.35),
+    0 6px 18px rgba(0, 0, 0, 0.3);
+}
+
+@keyframes swap-silver-glimmer {
+  0%,
+  70% {
+    transform: translateX(-120%);
+  }
+  100% {
+    transform: translateX(120%);
+  }
+}
+
+.swap-silver-bar-row {
+  position: relative;
+  z-index: 1;
+}
+
+.swap-silver-bar-row + .swap-silver-bar-row {
+  margin-top: 0;
+}
+
+.swap-silver-bar-divider {
+  position: relative;
+  z-index: 1;
+  height: 1px;
+  margin: 10px 0;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(0, 0, 0, 0.22) 20%,
+    rgba(0, 0, 0, 0.22) 80%,
+    transparent
+  );
+}
+
+.swap-silver-bar-label {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #d1d5db;
+  text-shadow: 0 1px 1px rgba(0, 0, 0, 0.45);
+}
+
+.swap-silver-bar-select,
+.swap-silver-bar-input {
+  background: rgba(0, 0, 0, 0.28);
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  color: #fff;
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.35);
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.swap-silver-bar-select:focus,
+.swap-silver-bar-input:focus {
+  outline: none;
+  border-color: rgba(255, 255, 255, 0.45);
+  box-shadow:
+    0 0 0 2px rgba(255, 255, 255, 0.15),
+    inset 0 1px 3px rgba(0, 0, 0, 0.35);
+}
+
+.swap-silver-bar .custom-token-input {
+  color: #ffef85;
+}
+
+/* Purchase panel — subtle silver glimmer on the whole swap card */
+.swap-panel-glimmer {
+  position: relative;
+  overflow: hidden;
+  background: linear-gradient(
+    165deg,
+    rgba(38, 44, 54, 0.98) 0%,
+    rgba(52, 58, 68, 0.96) 28%,
+    rgba(30, 36, 46, 0.99) 62%,
+    rgba(44, 50, 60, 0.97) 100%
+  );
+}
+
+.swap-panel-glimmer::after {
+  content: "";
+  position: absolute;
+  inset: -50% -70%;
+  z-index: 0;
+  background: linear-gradient(
+    105deg,
+    transparent 44%,
+    rgba(255, 255, 255, 0.09) 50%,
+    transparent 56%
+  );
+  transform: translateX(-120%);
+  animation: swap-silver-glimmer 8s ease-in-out infinite;
+  pointer-events: none;
+}
+
+.swap-panel-glimmer > * {
+  position: relative;
+  z-index: 1;
+}
+
+/* Hero-style backglow behind purchase panel (static, scaled-down OvalGlowBackdrop recipe) */
+.swap-panel-halo-wrap {
+  position: relative;
+}
+
+.swap-panel-halo-wrap::before {
+  content: "";
+  position: absolute;
+  inset: -20px -28px;
+  z-index: 0;
+  border-radius: 18px;
+  pointer-events: none;
+  background: radial-gradient(
+    ellipse 90% 75% at 50% 42%,
+    rgba(var(--accent-color-rgb, 64, 115, 255), 0.04) 0%,
+    rgba(255, 255, 255, 0.05) 28%,
+    transparent 70%
+  );
+  box-shadow:
+    0 0 56px 14px rgba(255, 255, 255, 0.07),
+    0 0 28px 8px rgba(255, 255, 255, 0.04);
+}
+
+.swap-panel-halo-wrap > .swap-panel-glimmer {
+  position: relative;
+  z-index: 1;
+}
+
 /* Purchase Button Styles */
 .custom-buy-button {
   display: flex;
@@ -1596,7 +1744,8 @@ body {
 @media (prefers-reduced-motion: reduce) {
   .vault-launch-step-active-shimmer,
   .vault-launch-line-emphasis,
-  .vault-launch-pulse {
+  .vault-launch-pulse,
+  .swap-panel-glimmer::after {
     animation: none !important;
   }
 }

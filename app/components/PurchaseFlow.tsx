@@ -988,7 +988,8 @@ const PurchaseFlow: React.FC<PurchaseFlowProps> = ({
             )}
 
             {user && globalSafewordVerified && !purchaseConfirmationData && (
-                <div className="purchase-slider-section mock-ui-section p-4 md:p-6 bg-gray-800 bg-opacity-70 shadow-xl rounded-lg border border-gray-700 backdrop-blur-md mb-8 max-w-2xl mx-auto">
+                <div className="swap-panel-halo-wrap max-w-2xl mx-auto mb-8">
+                <div className="purchase-slider-section mock-ui-section swap-panel-glimmer p-4 md:p-6 shadow-xl rounded-lg border border-gray-700 backdrop-blur-md">
                 <h3 className="text-xl font-semibold mb-3 text-center text-white">
                     Purchase Options
                 </h3>
@@ -1044,8 +1045,9 @@ const PurchaseFlow: React.FC<PurchaseFlowProps> = ({
                     )}
                 </div>
                 
-                <div className="mb-4">
-                    <label className="block text-sm font-medium text-gray-300 mb-1">FROM</label>
+                <div className="swap-silver-bar mb-4">
+                <div className="swap-silver-bar-row">
+                    <label className="swap-silver-bar-label">FROM</label>
                     <div className="flex items-center space-x-2">
                     <select 
                         id="fromAsset"
@@ -1066,7 +1068,7 @@ const PurchaseFlow: React.FC<PurchaseFlowProps> = ({
                             }
                         }
                         }}
-                        className="w-2/5 p-2 border border-gray-600 rounded-md bg-gray-700 text-white focus:ring-accentColor focus:border-accentColor"
+                        className="swap-silver-bar-select w-2/5 p-2 rounded-md"
                     >
                         <option value="USD">USD (Cash)</option>
 
@@ -1095,13 +1097,15 @@ const PurchaseFlow: React.FC<PurchaseFlowProps> = ({
                         value={swapFromAmount}
                         onChange={handleSwapFromAmountChange}
                         onBlur={swapFromAsset === 'USD' ? undefined : normalizeDisplayedTokenSwapFromAmount}
-                        className="flex-grow p-2 border border-gray-600 rounded-md bg-gray-700 text-white focus:ring-accentColor focus:border-accentColor custom-token-input"
+                        className="swap-silver-bar-input flex-grow p-2 rounded-md custom-token-input"
                     />
                     </div>
                 </div>
-                
-                <div className="mb-4">
-                    <label className="block text-sm font-medium text-gray-300 mb-1">TO</label>
+
+                <div className="swap-silver-bar-divider" aria-hidden="true" />
+
+                <div className="swap-silver-bar-row">
+                    <label className="swap-silver-bar-label">TO</label>
                     <div className="flex items-center space-x-2">
                         <select 
                             id="toAsset"
@@ -1124,7 +1128,7 @@ const PurchaseFlow: React.FC<PurchaseFlowProps> = ({
                                     setSwapFromAsset(oppositeAsset);
                                 }
                             }}
-                            className="w-2/5 p-2 border border-gray-600 rounded-md bg-gray-700 text-white focus:ring-accentColor focus:border-accentColor"
+                            className="swap-silver-bar-select w-2/5 p-2 rounded-md"
                             >
                             {swapFromAsset === "USD" ? (
                                 // For USD swaps, show all available artist tokens
@@ -1178,10 +1182,11 @@ const PurchaseFlow: React.FC<PurchaseFlowProps> = ({
                                     : Math.floor(parseFloat(swapToAmount || artistocksInput || '0')).toLocaleString()
                             }
                             onChange={handleArtistocksInputChange}
-                            className="flex-grow p-2 border border-gray-600 rounded-md bg-gray-700 text-white focus:ring-accentColor focus:border-accentColor custom-token-input"
+                            className="swap-silver-bar-input flex-grow p-2 rounded-md custom-token-input"
                             readOnly={true}
                         />
                     </div>
+                </div>
                 </div>
 
                 {/* Token Price Info and Swap System Status */}
@@ -1452,6 +1457,7 @@ const PurchaseFlow: React.FC<PurchaseFlowProps> = ({
                             <p>💡 Transaction will be confirmed in your wallet</p>
                         )}
                     </div>
+                </div>
                 </div>
                 </div>
             )}

@@ -171,6 +171,20 @@ export default function TreasureInviteShell({
     [stubConfig],
   );
 
+  const treasureOrbitCoin = useMemo(
+    () => [
+      {
+        coinPublicId: envelope.coin_public_id,
+        label:
+          treasure.displayname?.trim() ||
+          treasure.tokenName?.trim() ||
+          envelope.coin_public_id.slice(0, 8),
+        theme: treasure.theme ?? null,
+      },
+    ],
+    [envelope.coin_public_id, treasure.tokenName, treasure.displayname, treasure.theme],
+  );
+
   useEffect(() => {
     applyArtistBackground(stubConfig);
   }, [stubConfig]);
@@ -516,6 +530,8 @@ export default function TreasureInviteShell({
                 <ThemeOrbitRenderer
                   artistConfig={stubConfig}
                   orbitTokens={[]}
+                  supplementalDraftOrbitTokens={treasureOrbitCoin}
+                  onSupplementalDraftClick={() => {}}
                   videoContainerRef={videoContainerRef}
                   isOrbitAnimationPaused={isOrbitAnimationPaused}
                   allArtistsConfig={giftAllArtistsConfig}
@@ -550,6 +566,8 @@ export default function TreasureInviteShell({
                 <ThemeOrbitRenderer
                   artistConfig={stubConfig}
                   orbitTokens={[]}
+                  supplementalDraftOrbitTokens={treasureOrbitCoin}
+                  onSupplementalDraftClick={() => {}}
                   videoContainerRef={videoContainerRef}
                   isOrbitAnimationPaused={isOrbitAnimationPaused}
                   allArtistsConfig={giftAllArtistsConfig}
