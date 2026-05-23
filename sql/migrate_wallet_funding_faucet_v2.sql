@@ -75,3 +75,7 @@ CREATE INDEX IF NOT EXISTS idx_faucet_alerts_type_created
   ON faucet_alerts (alert_type, created_at DESC);
 
 COMMENT ON TABLE faucet_alerts IS 'Abnormal faucet v2 events (cap hit, low balance, client body rejected, etc.)';
+
+-- 10. RLS: block browser/anon clients; service role (faucet API) bypasses RLS by design
+ALTER TABLE wallet_funding ENABLE ROW LEVEL SECURITY;
+ALTER TABLE faucet_alerts ENABLE ROW LEVEL SECURITY;
