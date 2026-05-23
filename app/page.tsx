@@ -11,7 +11,7 @@ import { useToast } from './contexts/ToastContext';
 import { authenticatedFetch } from './utils/authenticatedFetch';
 import { UsdBalanceProvider } from './contexts/UsdBalanceContext';
 import { ethers } from "ethers";
-import ArtistockArtifact from '../artifacts/contracts/Artistock.sol/Artistock.json';
+import { ArtistockABI } from './utils/abis/ArtistockABI';
 import useArtistConfig from "./hooks/useArtistConfig";
 import { useFeaturedAsset } from "./hooks/useFeaturedAsset";
 import OwnerControls from "./components/OwnerControls";
@@ -38,8 +38,6 @@ import { ArtistFactoryABI } from './utils/abis/ArtistFactoryABI';
 import { clearAllSafewordStorage } from './utils/safewordStorage';
 import { useOrbitTokens } from './hooks/useOrbitTokens';
 import { supabase } from './utils/supabaseClient';
-import ArtistTokenArtifact from '../artifacts/contracts/ArtistToken.sol/ArtistToken.json';
-import ArtistDownloadsArtifact from '../artifacts/contracts/ArtistDownloads.sol/ArtistDownloads.json';
 import TreasureAwareHome from './components/TreasureAwareHome';
 import BurialWizard from './components/BurialWizard';
 
@@ -1420,160 +1418,6 @@ const ArtistPageContent: React.FC<{
     }
   }, [editingAsset, user, artistIdFromUrl, showToast]);
 
-  // DEPLOYMENT HELPER FUNCTIONS
-  const checkExistingToken = async (artistId: string) => {
-    try {
-      // Check Supabase for existing token address
-      const { data, error } = await supabase
-        .from('artists')
-        .select('token_address')
-        .eq('id', artistId)
-        .single();
-      
-      if (error || !data?.token_address) {
-        return null;
-      }
-      
-      console.log(`🔍 Found existing token for ${artistId}: ${data.token_address}`);
-      return data.token_address;
-    } catch (error) {
-      console.warn('Error checking existing token:', error);
-      return null;
-    }
-  };
-
-  const deployArtistToken = async (artistData: any) => {
-    if (!magic) throw new Error('Magic not initialized');
-    
-    const provider = new ethers.BrowserProvider(magic.rpcProvider as any);
-    const signer = await provider.getSigner();
-    const ownerAddress = await signer.getAddress();
-    
-    const factory = new ethers.ContractFactory(
-      ArtistTokenArtifact.abi,
-      ArtistTokenArtifact.bytecode,
-      signer
-    );
-    
-    // Generate token symbol from artist name (like CANCAKES -> CANCAKES)
-    const tokenName = artistData.tokenName || artistData.name;
-    const tokenSymbol = (artistData.tokenName || artistData.name).replace(/\s+/g, '').toUpperCase();
-    
-    console.log(`Deploying ArtistToken for ${tokenName} (${tokenSymbol}) with artist ${ownerAddress}...`);
-    
-    const protocolVault = "0x615258a5263DBEe0DDEED3166ddC1f442D937eB3";
-    const contract = await factory.deploy(
-      tokenName,      // ✅ Token name (e.g., "CANCAKES")
-      tokenSymbol,    // ✅ Token symbol (e.g., "CANCAKES") 
-      ownerAddress,   // ✅ Artist wallet
-      protocolVault   // ✅ Protocol vault
-    );
-    
-    await contract.waitForDeployment();
-    const address = await contract.getAddress();
-    console.log("✅ Contract deployed successfully at:", address);
-    
-    // Execute initial mint (10B distribution) - using contract interface
-    const artistToken = new ethers.Contract(address, ArtistTokenArtifact.abi, signer);
-    console.log(`Minting 10B ${tokenSymbol} with automatic distribution...`);
-    const mintTx = await artistToken.initialMint();
-    await mintTx.wait();
-    console.log("✅ 10B supply minted and distributed. Tx:", mintTx.hash);
-    console.log("Distribution: 1B to artist, 100M to protocol (LP seeding), 8.9B to vault");
-    
-    return { address, contract };
-  };
-  
-  const deployArtistDownloads = async (artistData: any, tokenAddress: string) => {
-    if (!magic) throw new Error('Magic not initialized');
-    
-    const provider = new ethers.BrowserProvider(magic.rpcProvider as any);
-    const signer = await provider.getSigner();
-    
-    const factory = new ethers.ContractFactory(
-      ArtistDownloadsArtifact.abi,
-      ArtistDownloadsArtifact.bytecode,
-      signer
-    );
-    
-    console.log(`Deploying ArtistDownloads for ${artistData.id}...`);
-    
-    // ArtistDownloads constructor: (artistId, baseURI)
-    const baseURI = `https://api.zeyoda.com/metadata/${artistData.id}/`;
-    const contract = await factory.deploy(
-      artistData.id,    // ✅ Artist ID (e.g., "cancakes")
-      baseURI          // ✅ Base URI for metadata
-    );
-    
-    await contract.waitForDeployment();
-    const address = await contract.getAddress();
-    
-    console.log('✅ ArtistDownloads deployed successfully at:', address);
-    return { address, contract };
-  };
-  
-  const createLiquidityPool = async (tokenAddress: string, artistData: any) => {
-    if (!magic) throw new Error('Magic not initialized');
-    
-    console.log('🏊 Creating liquidity pool for', artistData.name);
-    
-    const provider = new ethers.BrowserProvider(magic.rpcProvider as any);
-    const signer = await provider.getSigner();
-    
-    // Use the NEW main swap contract (deployer-owned)
-    const MAIN_SWAP_ADDRESS = "0xdBBfFD696484bBFCa3dA059FB1d8e2Cf40c450dE";
-    
-    const swapABI = [
-      "function createPool(address token, uint256 tokenAmount) external payable",
-      "function getPool(address token) external view returns (tuple(address token, uint256 tokenReserve, uint256 ethReserve, bool active))"
-    ];
-    
-    const erc20ABI = [
-      "function approve(address spender, uint256 amount) external returns (bool)",
-      "function balanceOf(address owner) external view returns (uint256)"
-    ];
-    
-    try {
-      const swapContract = new ethers.Contract(MAIN_SWAP_ADDRESS, swapABI, signer);
-      const tokenContract = new ethers.Contract(tokenAddress, erc20ABI, signer);
-      
-      // Check if pool already exists
-      const existingPool = await swapContract.getPool(tokenAddress);
-      if (existingPool.active) {
-        console.log('✅ Liquidity pool already exists');
-        return MAIN_SWAP_ADDRESS;
-      }
-      
-      // LP amounts: 100M tokens + 0.01 ETH (same as other artists)
-      const LP_TOKENS = ethers.parseUnits("100000000", 18);  // 100M tokens
-      const LP_ETH = ethers.parseEther("0.01");               // 0.01 ETH
-      
-      console.log(`Creating pool with ${ethers.formatUnits(LP_TOKENS, 18)} tokens + ${ethers.formatEther(LP_ETH)} ETH`);
-      
-      // Approve tokens for the swap contract
-      const approveTx = await tokenContract.approve(MAIN_SWAP_ADDRESS, LP_TOKENS);
-      await approveTx.wait();
-      console.log('✅ Tokens approved for LP creation');
-      
-      // Create the liquidity pool
-      const createTx = await swapContract.createPool(tokenAddress, LP_TOKENS, {
-        value: LP_ETH,
-        gasLimit: 500000
-      });
-      
-      await createTx.wait();
-      console.log('✅ Liquidity pool created successfully!');
-      
-      return MAIN_SWAP_ADDRESS;
-      
-    } catch (error: any) {
-      console.error('❌ LP creation failed:', error.message);
-      // Don't fail the entire onboarding - LP can be created later
-      showToast('⚠️ LP creation failed, but artist created successfully', 'warning');
-      return MAIN_SWAP_ADDRESS;
-    }
-  };
-  
   const uploadFeaturedContent = async (
     file: File | null,
     artistId: string,
@@ -1876,7 +1720,7 @@ const ArtistPageContent: React.FC<{
         if (user && artistConfig && artistConfig.contract && magic) {
             try {
                 const provider = new ethers.BrowserProvider(magic.rpcProvider as any);
-                const contract = new ethers.Contract(artistConfig.contract, ArtistockArtifact.abi, provider);
+                const contract = new ethers.Contract(artistConfig.contract, ArtistockABI, provider);
                 
                 const owner = await contract.owner();
                 const isUserOwner = owner.toLowerCase() === user.toLowerCase();
@@ -2429,7 +2273,7 @@ const ArtistPageContent: React.FC<{
     try {
         const provider = new ethers.BrowserProvider(magic.rpcProvider as any);
         const signer = await provider.getSigner();
-        const contract = new ethers.Contract(artistConfig.contract, ArtistockArtifact.abi, signer);
+        const contract = new ethers.Contract(artistConfig.contract, ArtistockABI, signer);
         
         const amountToMint = ethers.parseUnits(mintAmount, 18);
 
