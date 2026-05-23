@@ -412,6 +412,7 @@ export default function TreasureInviteShell({
             body: JSON.stringify({
               coin_public_id: envelope.coin_public_id,
               artist_slug: envelope.artist_slug,
+              claimed_by_wallet: user?.trim() || null,
             }),
           },
           getDidToken,
@@ -421,6 +422,19 @@ export default function TreasureInviteShell({
 
         if (res.ok) {
           showToast(TOAST_CLAIM_SUCCESS, 'success');
+          try {
+            const fundingResponse = await authenticatedFetch(
+              '/api/faucet/v2',
+              { method: 'POST' },
+              getDidToken,
+            );
+            const fundingResult = await fundingResponse.json();
+            if (fundingResult.success) {
+              showToast(fundingResult.message || 'Wallet ready.', 'success');
+            }
+          } catch (fundingError) {
+            console.warn('⚠️ Treasure auto-funding failed:', fundingError);
+          }
           try {
             await onInviteClaimedRefetch?.();
           } catch {
@@ -467,6 +481,7 @@ export default function TreasureInviteShell({
     magicEmailNorm,
     showToast,
     onInviteClaimedRefetch,
+    user,
   ]);
 
   /** Logged in as Magic user who is not the coin claimant (after /api/invite/me-state). */

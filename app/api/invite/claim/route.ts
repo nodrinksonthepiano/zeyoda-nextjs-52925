@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
-import { getMagicEmailFromBearer } from '@/app/utils/server/magicBearerEmail';
+import { getMagicAuthFromBearer } from '@/app/utils/server/magicBearerEmail';
 import { normalizeReservedEmail } from '@/app/utils/server/normalizeReservedEmail';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
@@ -18,13 +18,14 @@ interface ClaimBody {
 
 export async function POST(request: NextRequest) {
   try {
-    const email = await getMagicEmailFromBearer(request);
-    if (!email) {
+    const auth = await getMagicAuthFromBearer(request);
+    if (!auth?.email) {
       return NextResponse.json(
         { code: 'unauthorized', message: 'Authentication required' },
         { status: 401 },
       );
     }
+    const email = auth.email;
 
     let body: ClaimBody;
     try {
@@ -79,7 +80,9 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      const wallet = typeof body.claimed_by_wallet === 'string' ? body.claimed_by_wallet.trim() : null;
+      const bodyWallet =
+        typeof body.claimed_by_wallet === 'string' ? body.claimed_by_wallet.trim() : null;
+      const wallet = bodyWallet || auth.publicAddress || null;
 
       const { error: updErr } = await supabaseAdmin
         .from('artist_invites')
