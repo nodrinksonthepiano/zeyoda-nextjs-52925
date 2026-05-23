@@ -2375,23 +2375,18 @@ const ArtistPageContent: React.FC<{
       if (meta.publicAddress && meta.email) {
         localStorage.setItem('zeyodaUserEmail', meta.email);
         
-        // Auto-fund new wallets
+        // Auto-fund new wallets (non-blocking — login continues if faucet fails)
         try {
-          console.log('🏴‍☠️ Checking if wallet needs treasure...');
-          const fundingResponse = await authenticatedFetch('/api/fundWallet', {
-            method: 'POST',
-            body: JSON.stringify({ 
-              userAddress: meta.publicAddress, 
-              email: meta.email 
-            })
-          }, getDidToken);
-          
+          const fundingResponse = await authenticatedFetch(
+            '/api/faucet/v2',
+            { method: 'POST' },
+            getDidToken,
+          );
+
           const fundingResult = await fundingResponse.json();
-          
+
           if (fundingResult.success) {
-            showToast(fundingResult.treasureMessage, 'success');
-          } else if (fundingResult.treasureMessage) {
-            showToast(fundingResult.treasureMessage, 'info');
+            showToast(fundingResult.message || 'Wallet ready.', 'success');
           }
         } catch (fundingError) {
           console.warn('⚠️ Auto-funding failed:', fundingError);

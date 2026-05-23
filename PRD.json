@@ -1,7 +1,7 @@
 {
   "version": 1,
   "project": "Zeyoda",
-  "updatedAt": "2026-05-07T03:23:01.852Z",
+  "updatedAt": "2026-05-21T07:19:53.250Z",
   "sections": [
     {
       "id": "critical",
@@ -451,6 +451,33 @@
           "status": "todo",
           "feedbackId": "89ab3bfe-3805-4053-85e1-73399aa0e7bc",
           "createdAt": "2026-05-07T02:07:08.966754+00:00"
+        },
+        {
+          "id": "FB-d72a8859",
+          "title": "create a dropdown menu in the send $ to reveal all the artists wallets in your orbit that you can send to, put the 0x or email or type/search artist name",
+          "description": "create a dropdown menu in the send $ to reveal all the artists wallets in your orbit that you can send to, put the 0x or email or type/search artist name",
+          "location": "?artist=jait333a",
+          "status": "todo",
+          "feedbackId": "d72a8859-7e0d-4d1d-8f2a-51cffc9ceb77",
+          "createdAt": "2026-05-21T07:11:37.07462+00:00"
+        },
+        {
+          "id": "FB-bb2eafbe",
+          "title": "need a tx history in the cash section of the wallet so if you sent money or recieved you can see the history",
+          "description": "need a tx history in the cash section of the wallet so if you sent money or recieved you can see the history",
+          "location": "?artist=gosh333h",
+          "status": "todo",
+          "feedbackId": "bb2eafbe-8dbb-4d9f-a857-62380433e4ff",
+          "createdAt": "2026-05-21T07:15:15.727008+00:00"
+        },
+        {
+          "id": "FB-659ea7a4",
+          "title": "we need to make the toasts stop coming up as popups above the screen and have them show up in the chat like they used to, when a tx is complete, the panel shows that the purchase was successful, to re",
+          "description": "we need to make the toasts stop coming up as popups above the screen and have them show up in the chat like they used to, when a tx is complete, the panel shows that the purchase was successful, to refresh and check the wallet, and some other recommended next artistocks to check out",
+          "location": "?artist=gosh333h",
+          "status": "todo",
+          "feedbackId": "659ea7a4-fa97-47d3-9f3a-809731519b38",
+          "createdAt": "2026-05-21T07:16:24.4027+00:00"
         }
       ]
     }

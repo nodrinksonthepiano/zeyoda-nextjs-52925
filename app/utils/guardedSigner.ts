@@ -76,13 +76,14 @@ export async function createGuardedProvider(
 }
 
 /**
- * Wrap an existing wallet with network guard
- * 
- * Useful when you already have a wallet but want to add guard enforcement.
- * 
+ * Wrap an existing wallet with network guard (cached getNetwork check).
+ *
+ * For pre-send checks, prefer requireFreshBaseSepolia(provider) in networkGuard.ts —
+ * getNetwork() may return cached chainId on the same provider instance.
+ *
  * @param wallet - Existing ethers Wallet instance
  * @returns Promise<Wallet> - Same wallet, but network-verified
- * @throws Error if network is not Base Sepolia
+ * @throws ChainGuardError if network is not Base Sepolia
  */
 export async function guardExistingWallet(wallet: Wallet): Promise<Wallet> {
   if (!wallet.provider) {
