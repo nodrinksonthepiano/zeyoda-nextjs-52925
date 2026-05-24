@@ -1180,7 +1180,7 @@ const PurchaseFlow: React.FC<PurchaseFlowProps> = ({
                             }
                         }
                         }}
-                        className="swap-silver-bar-select w-2/5 p-2 rounded-md"
+                        className="swap-silver-bar-select w-2/5 shrink-0 p-2 rounded-md"
                     >
                         <option value="USD">USD (Cash)</option>
 
@@ -1240,7 +1240,7 @@ const PurchaseFlow: React.FC<PurchaseFlowProps> = ({
                                     setSwapFromAsset(oppositeAsset);
                                 }
                             }}
-                            className="swap-silver-bar-select w-2/5 p-2 rounded-md"
+                            className="swap-silver-bar-select w-2/5 shrink-0 p-2 rounded-md"
                             >
                             {swapFromAsset === "USD" ? (
                                 // For USD swaps, show all available artist tokens
