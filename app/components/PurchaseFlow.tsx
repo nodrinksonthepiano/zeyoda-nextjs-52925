@@ -954,6 +954,43 @@ const PurchaseFlow: React.FC<PurchaseFlowProps> = ({
         }
     };
 
+    const renderPurchaseLivePrice = () => {
+        if (swapFromAsset === 'USD' && artistConfig) {
+            return (
+                <p>
+                    1 {artistConfig.tokenName} = ${(artistConfig.realTimePrice || artistConfig.tokenPrice).toFixed(10)} USD
+                    {artistConfig.hasLiquidityPool ? (
+                        <span className="ml-2 text-green-400">● Live Price</span>
+                    ) : (
+                        <span className="ml-2 text-yellow-400">● Fallback Price</span>
+                    )}
+                </p>
+            );
+        }
+
+        if (swapFromAsset !== 'USD' && allArtistsConfig) {
+            const fromTokenConfig = Object.values(allArtistsConfig).find(
+                (config) => config.tokenName === swapFromAsset
+            );
+            if (fromTokenConfig) {
+                return (
+                    <p>
+                        1 {fromTokenConfig.tokenName} = ${(fromTokenConfig.realTimePrice || fromTokenConfig.tokenPrice).toFixed(10)} USD
+                        {fromTokenConfig.hasLiquidityPool ? (
+                            <span className="ml-2 text-green-400">● Live Price</span>
+                        ) : (
+                            <span className="ml-2 text-yellow-400">● Fallback Price</span>
+                        )}
+                    </p>
+                );
+            }
+        }
+
+        return null;
+    };
+
+    const purchaseLivePrice = renderPurchaseLivePrice();
+
     return (
         <>
             {!hasPurchasedDownload && (!user || (user && !globalSafewordVerified)) && (
@@ -1058,8 +1095,8 @@ const PurchaseFlow: React.FC<PurchaseFlowProps> = ({
 
             {user && globalSafewordVerified && !purchaseConfirmationData && (
                 <div className="swap-panel-halo-wrap swap-panel-halo-wrap--linen max-w-2xl mx-auto mb-8">
-                <div className="purchase-slider-section mock-ui-section swap-panel-glimmer p-4 md:p-6 shadow-xl rounded-lg border border-gray-700 backdrop-blur-md">
-                <h3 className="text-xl font-semibold mb-3 text-center text-white">
+                <div className="purchase-slider-section mock-ui-section swap-panel-glimmer p-3 sm:p-4 md:p-6 shadow-xl rounded-lg border border-gray-700 backdrop-blur-md">
+                <h3 className="purchase-panel-title text-xl font-semibold text-center text-white">
                     Purchase Options
                 </h3>
                 
@@ -1069,8 +1106,8 @@ const PurchaseFlow: React.FC<PurchaseFlowProps> = ({
                     </div>
                 )}
 
-                <div className="mb-6">
-                    <label className="block text-sm font-medium text-gray-300 mb-2">
+                <div className="mb-1">
+                    <label className="block text-sm font-medium text-gray-300 mb-1">
                         {swapFromAsset === 'USD' ? 'Amount Slider ($)' : `Amount Slider (${swapFromAsset} balance)`}
                     </label>
                     {swapFromAsset === 'USD' ? (
@@ -1113,11 +1150,17 @@ const PurchaseFlow: React.FC<PurchaseFlowProps> = ({
                       </>
                     )}
                 </div>
+
+                {purchaseLivePrice ? (
+                    <div className="purchase-live-price text-center text-xs leading-tight text-gray-400">
+                        {purchaseLivePrice}
+                    </div>
+                ) : null}
                 
-                <div className="swap-silver-bar mb-4">
-                <div className="swap-silver-bar-row">
-                    <label className="swap-silver-bar-label">FROM</label>
-                    <div className="flex items-center space-x-2">
+                <div className="swap-silver-bar mb-3">
+                <div className="swap-silver-bar-row swap-silver-bar-row--inline">
+                    <label className="swap-silver-bar-label swap-silver-bar-label--inline">FROM</label>
+                    <div className="swap-silver-bar-controls flex items-center space-x-2 min-w-0 flex-1">
                     <select 
                         id="fromAsset"
                         value={swapFromAsset} 
@@ -1173,9 +1216,9 @@ const PurchaseFlow: React.FC<PurchaseFlowProps> = ({
 
                 <div className="swap-silver-bar-divider" aria-hidden="true" />
 
-                <div className="swap-silver-bar-row">
-                    <label className="swap-silver-bar-label">TO</label>
-                    <div className="flex items-center space-x-2">
+                <div className="swap-silver-bar-row swap-silver-bar-row--inline">
+                    <label className="swap-silver-bar-label swap-silver-bar-label--inline">TO</label>
+                    <div className="swap-silver-bar-controls flex items-center space-x-2 min-w-0 flex-1">
                         <select 
                             id="toAsset"
                             value={swapToAsset || "USD"}
@@ -1258,55 +1301,12 @@ const PurchaseFlow: React.FC<PurchaseFlowProps> = ({
                 </div>
                 </div>
 
-                {/* Token Price Info and Swap System Status */}
-                <div className="text-center text-sm text-gray-400 mb-4">
-                    {/* Price Information - Show price for the token being swapped FROM */}
-                    {(() => {
-                        // For USD swaps, show current artist price
-                        if (swapFromAsset === "USD" && artistConfig) {
-                            return (
-                                <p>
-                                    1 {artistConfig.tokenName} = ${(artistConfig.realTimePrice || artistConfig.tokenPrice).toFixed(10)} USD
-                                    {artistConfig.hasLiquidityPool ? (
-                                        <span className="ml-2 text-green-400">● Live Price</span>
-                                    ) : (
-                                        <span className="ml-2 text-yellow-400">● Fallback Price</span>
-                                    )}
-                                </p>
-                            );
-                        }
-                        
-                        // For token swaps, show price of the FROM token
-                        if (swapFromAsset !== "USD" && allArtistsConfig) {
-                            const fromTokenConfig = Object.values(allArtistsConfig).find(
-                                config => config.tokenName === swapFromAsset
-                            );
-                            if (fromTokenConfig) {
-                                return (
-                                    <p>
-                                        1 {fromTokenConfig.tokenName} = ${(fromTokenConfig.realTimePrice || fromTokenConfig.tokenPrice).toFixed(10)} USD
-                                        {fromTokenConfig.hasLiquidityPool ? (
-                                            <span className="ml-2 text-green-400">● Live Price</span>
-                                        ) : (
-                                            <span className="ml-2 text-yellow-400">● Fallback Price</span>
-                                        )}
-                                    </p>
-                                );
-                            }
-                        }
-                        
-                        return null;
-                    })()}
-                    
-                    {/* Swap System Status */}
-                    <div className="mt-2 p-2 bg-gray-700 rounded-lg">
+                {/* Swap System Status */}
+                <div className="text-center text-sm text-gray-400 mb-3">
+                    <div className="purchase-market-status p-2 bg-gray-700 rounded-lg">
                         {artistConfig.hasLiquidityPool ? (
                             <div>
                                 <p className="text-green-400">🏊 Market active</p>
-                                <p className="text-xs">Buying Artistocks (wallet balance) and Cash out work while the pool is active.</p>
-                                <p className="text-xs text-gray-400 mt-1">
-                                    Trading one Artistock for another isn&apos;t available yet — cash out first, then buy.
-                                </p>
                             </div>
                         ) : artistConfig.swap && !artistConfig.paused ? (
                             <div>
@@ -1320,16 +1320,9 @@ const PurchaseFlow: React.FC<PurchaseFlowProps> = ({
                             </div>
                         )}
                     </div>
-                    
-                    <p className="text-xs mt-2">
-                        Minimum purchase (USD → Artistocks): $1.00
-                    </p>
-                    <p className="text-xs mt-1 text-gray-500">
-                        Cash-outs can be small on testnet; keep a little ETH for gas.
-                    </p>
                 </div>
 
-                <div className="mt-6 space-y-2">
+                <div className="mt-4 space-y-2">
                     <div className="flex items-center">
                     <input
                         id="includeDownload"
@@ -1350,10 +1343,6 @@ const PurchaseFlow: React.FC<PurchaseFlowProps> = ({
                     ) : sellingFromToken && isCashOutToUsd ? (
                       <p className="text-xs text-gray-400 ml-6">
                         After cash-out, we&apos;ll try to unlock the featured download if your wallet looks like it has enough value for it (separate step from the swap).
-                      </p>
-                    ) : swapFromAsset === 'USD' ? (
-                      <p className="text-xs text-gray-400 ml-6">
-                        Included in the same ETH spend as your buy when you confirm.
                       </p>
                     ) : null}
                 </div>
@@ -1456,9 +1445,9 @@ const PurchaseFlow: React.FC<PurchaseFlowProps> = ({
                                   (includeDownload && resolvedDownloadPrice == null) ||
                                   !hasValidSwapFromAmount() ||
                                   confirmBlockedInsufficient}
-                        className={`w-full font-bold text-lg transition-all duration-200 ${
+                        className={`purchase-panel-cta w-full font-bold text-lg transition-all duration-200 ${
                             isSwapping || confirmBlockedInsufficient || (!!user && sellingFromToken && !swapTokenBalancesReady)
-                                ? 'py-4 px-6 rounded-lg bg-gray-600 cursor-not-allowed text-white'
+                                ? 'py-3 px-5 rounded-lg bg-gray-600 cursor-not-allowed text-white min-h-[44px]'
                                 : 'custom-buy-button text-white'
                         }`}
                     >
@@ -1516,15 +1505,21 @@ const PurchaseFlow: React.FC<PurchaseFlowProps> = ({
                         )}
                     </button>
                     
-                    {/* Helpful hints */}
-                    <div className="mt-3 text-xs text-gray-400">
-                        {!!user && sellingFromToken && !swapTokenBalancesReady ? (
-                            <p className="text-blue-300">⏳ Confirming balances from the chain…</p>
-                        ) : !hasValidSwapFromAmount() ? (
-                            <p>💡 Set an amount above to enable swapping</p>
-                        ) : (
-                            <p>💡 Transaction will be confirmed in your wallet</p>
-                        )}
+                    {/* Helpful hints + minimum purchase */}
+                    <div className="purchase-panel-hint purchase-panel-footer mt-2 text-xs text-gray-400 text-center">
+                        <p className="inline-flex flex-wrap items-center justify-center gap-x-2 gap-y-0.5">
+                            <span>
+                                {!!user && sellingFromToken && !swapTokenBalancesReady ? (
+                                    <span className="text-blue-300">⏳ Confirming balances from the chain…</span>
+                                ) : !hasValidSwapFromAmount() ? (
+                                    <>💡 Set an amount above to enable swapping</>
+                                ) : (
+                                    <>💡 Transaction will be confirmed in your wallet</>
+                                )}
+                            </span>
+                            <span className="text-gray-500" aria-hidden="true">·</span>
+                            <span className="text-gray-500">$1.00 Minimum Purchase (USD -> Artistocks)</span>
+                        </p>
                     </div>
                 </div>
                 </div>
