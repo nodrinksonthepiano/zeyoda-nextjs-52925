@@ -458,12 +458,12 @@ const ProfileEditPanel: React.FC<ProfileEditPanelProps> = ({
       {/* Primary Color Section */}
       <div className="mb-6">
         <h3 className="text-lg font-semibold text-white mb-3">Primary Color (Background)</h3>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
+          <div className="theme-color-swatch-grid grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
           {Object.entries(COLOR_PRESETS).map(([key, preset]) => (
             <button
               key={`primary-${key}`}
               onClick={() => applyPrimaryPreset(key)}
-              className={`relative w-12 h-12 rounded-lg border-2 transition-all hover:scale-110 ${
+              className={`theme-color-swatch relative w-12 h-12 rounded-lg border-2 transition-all hover:scale-110 ${
                 formData.primary_color === preset.primary
                   ? 'border-white'
                   : 'border-gray-600 hover:border-gray-400'
@@ -473,7 +473,7 @@ const ProfileEditPanel: React.FC<ProfileEditPanelProps> = ({
             >
               {formData.primary_color === preset.primary && (
                 <div className="absolute inset-0 flex items-center justify-center">
-                  <span className="text-white text-lg font-bold">✓</span>
+                  <span className="theme-color-swatch-check text-white text-lg font-bold">✓</span>
                 </div>
               )}
             </button>
@@ -500,12 +500,12 @@ const ProfileEditPanel: React.FC<ProfileEditPanelProps> = ({
       {/* Accent Color Section */}
       <div className="mb-6">
         <h3 className="text-lg font-semibold text-white mb-3">Accent Color (Text/Highlights)</h3>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
+        <div className="theme-color-swatch-grid grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
           {Object.entries(COLOR_PRESETS).map(([key, preset]) => (
             <button
               key={`accent-${key}`}
               onClick={() => applyAccentPreset(key)}
-              className={`relative w-12 h-12 rounded-lg border-2 transition-all hover:scale-110 ${
+              className={`theme-color-swatch relative w-12 h-12 rounded-lg border-2 transition-all hover:scale-110 ${
                 formData.accent_color === preset.accent
                   ? 'border-white'
                   : 'border-gray-600 hover:border-gray-400'
@@ -515,7 +515,7 @@ const ProfileEditPanel: React.FC<ProfileEditPanelProps> = ({
             >
               {formData.accent_color === preset.accent && (
                 <div className="absolute inset-0 flex items-center justify-center">
-                  <span className="text-white text-lg font-bold">✓</span>
+                  <span className="theme-color-swatch-check text-white text-lg font-bold">✓</span>
                 </div>
               )}
             </button>

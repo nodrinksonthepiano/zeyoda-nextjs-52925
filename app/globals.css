@@ -1901,4 +1901,21 @@ body {
   .swap-panel-halo-wrap.swap-panel-halo-wrap--linen::before {
     inset: -10px -12px;
   }
+
+  .onboarding-panel .theme-color-swatch-grid,
+  .profile-edit-panel .theme-color-swatch-grid {
+    gap: 0.375rem;
+    margin-bottom: 0.75rem;
+  }
+
+  .onboarding-panel .theme-color-swatch,
+  .profile-edit-panel .theme-color-swatch {
+    width: 2.25rem;
+    height: 2.25rem;
+  }
+
+  .onboarding-panel .theme-color-swatch-check,
+  .profile-edit-panel .theme-color-swatch-check {
+    font-size: 0.875rem;
+  }
 }
