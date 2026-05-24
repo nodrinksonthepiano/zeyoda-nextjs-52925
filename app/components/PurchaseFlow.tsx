@@ -1180,7 +1180,7 @@ const PurchaseFlow: React.FC<PurchaseFlowProps> = ({
                             }
                         }
                         }}
-                        className="swap-silver-bar-select w-2/5 p-2 rounded-md"
+                        className="swap-silver-bar-select w-2/5 shrink-0 p-2 rounded-md"
                     >
                         <option value="USD">USD (Cash)</option>
 
@@ -1209,7 +1209,7 @@ const PurchaseFlow: React.FC<PurchaseFlowProps> = ({
                         value={swapFromAmount}
                         onChange={handleSwapFromAmountChange}
                         onBlur={swapFromAsset === 'USD' ? undefined : normalizeDisplayedTokenSwapFromAmount}
-                        className="swap-silver-bar-input flex-grow p-2 rounded-md custom-token-input"
+                        className="swap-silver-bar-input flex-1 min-w-0 p-2 rounded-md custom-token-input"
                     />
                     </div>
                 </div>
@@ -1240,7 +1240,7 @@ const PurchaseFlow: React.FC<PurchaseFlowProps> = ({
                                     setSwapFromAsset(oppositeAsset);
                                 }
                             }}
-                            className="swap-silver-bar-select w-2/5 p-2 rounded-md"
+                            className="swap-silver-bar-select w-2/5 shrink-0 p-2 rounded-md"
                             >
                             {swapFromAsset === "USD" ? (
                                 // For USD swaps, show all available artist tokens
@@ -1294,7 +1294,7 @@ const PurchaseFlow: React.FC<PurchaseFlowProps> = ({
                                     : Math.floor(parseFloat(swapToAmount || artistocksInput || '0')).toLocaleString()
                             }
                             onChange={handleArtistocksInputChange}
-                            className="swap-silver-bar-input flex-grow p-2 rounded-md custom-token-input"
+                            className="swap-silver-bar-input flex-1 min-w-0 p-2 rounded-md custom-token-input"
                             readOnly={true}
                         />
                     </div>
