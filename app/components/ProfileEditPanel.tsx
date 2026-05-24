@@ -442,7 +442,7 @@ const ProfileEditPanel: React.FC<ProfileEditPanelProps> = ({
   }, [originalTheme, onClose, artistConfig, onStardustPreviewChange]);
 
   return (
-    <div className="profile-edit-panel bg-gray-800 bg-opacity-70 shadow-xl rounded-lg border border-gray-700 backdrop-blur-md mb-8 max-w-2xl mx-auto p-6 overflow-x-hidden">
+    <div className="portal-panel-chassis profile-edit-panel bg-gray-800 bg-opacity-70 shadow-xl rounded-lg border border-gray-700 backdrop-blur-md mb-8 p-6">
       <div className="flex justify-between items-center mb-6 gap-2">
         <h2 className="text-xl sm:text-2xl font-bold text-white" style={{ fontFamily: 'Bungee, cursive', color: formData.accent_color }}>
           EDIT PROFILE

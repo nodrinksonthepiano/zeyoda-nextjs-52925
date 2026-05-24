@@ -284,6 +284,49 @@ body {
   min-height: 100vh;
   padding-top: 0; /* Removed top padding to eliminate wasted space */
   padding-bottom: 40px; /* Space at the bottom */
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+/* Single source of truth for onboarding/profile/swap-adjacent panel width */
+.portal-panel-chassis {
+  width: 100%;
+  max-width: 42rem;
+  margin-left: auto;
+  margin-right: auto;
+  padding-left: 1rem;
+  padding-right: 1rem;
+  box-sizing: border-box;
+  min-width: 0;
+}
+
+.portal-panel-chassis--hero {
+  width: 100%;
+  max-width: 100%;
+  margin-left: auto;
+  margin-right: auto;
+  box-sizing: border-box;
+  min-width: 0;
+}
+
+@media (min-width: 641px) {
+  .portal-panel-chassis--hero {
+    max-width: min(92vw, 1000px);
+  }
+}
+
+.app-header-wallet-chip {
+  max-width: min(12rem, calc(100vw - 9rem));
+  min-width: 0;
+  overflow: hidden;
+}
+
+.app-header-wallet-chip p {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .main-title-container {
@@ -1833,14 +1876,22 @@ body {
 
 @media (max-width: 640px) {
   .app-main {
+    align-items: stretch;
     padding-top: calc(4.5rem + env(safe-area-inset-top, 0px));
     padding-left: env(safe-area-inset-left, 0px);
     padding-right: env(safe-area-inset-right, 0px);
     padding-bottom: calc(40px + env(safe-area-inset-bottom, 0px));
   }
 
+  .app-main-z10 {
+    align-items: stretch;
+  }
+
+  /* JS pins width/height via heroFitBox; CSS provides fallback bounds only */
   .onboarding-hero-container {
-    height: clamp(160px, 28vh, 320px);
+    max-width: 100%;
+    margin-left: auto;
+    margin-right: auto;
   }
 
   .onboarding-panel input,
@@ -1853,10 +1904,6 @@ body {
   .unified-input-container select,
   .unified-input-container textarea {
     font-size: 16px;
-  }
-
-  .swap-panel-halo-wrap {
-    overflow-x: hidden;
   }
 
   .swap-panel-halo-wrap::before {

@@ -32,6 +32,7 @@ import {
   UserTokenBalances
 } from '../types/artist-types';
 import { applyArtistBackground, setAccentColorCssVars } from './utils/themeBackground';
+import { computeHeroFitBox } from './utils/heroFitBox';
 import { useCommandSystem } from './hooks/useCommandSystem';
 import { useCosmicStardust } from './hooks/useCosmicStardust';
 import { ArtistFactoryABI } from './utils/abis/ArtistFactoryABI';
@@ -663,6 +664,39 @@ const ArtistPageContent: React.FC<{
       }
     };
   }, [filePreviewUrl]);
+
+  // Pin onboarding hero to viewport width (same ruler as OrbitPeekCarousel computeFitBox)
+  useEffect(() => {
+    const gated = appMode === 'onboarding' || appMode === 'upload-asset';
+    const el = onboardingContainerRef.current;
+    if (!gated || !el) {
+      if (el) {
+        el.style.width = '';
+        el.style.height = '';
+      }
+      return;
+    }
+
+    const applyPin = () => {
+      const { w, h } = computeHeroFitBox(onboardingAspectRatio || 16 / 9);
+      el.style.width = `${w}px`;
+      el.style.height = `${h}px`;
+    };
+
+    applyPin();
+    const vv = window.visualViewport;
+    vv?.addEventListener('resize', applyPin);
+    vv?.addEventListener('scroll', applyPin);
+    window.addEventListener('resize', applyPin);
+
+    return () => {
+      vv?.removeEventListener('resize', applyPin);
+      vv?.removeEventListener('scroll', applyPin);
+      window.removeEventListener('resize', applyPin);
+      el.style.width = '';
+      el.style.height = '';
+    };
+  }, [appMode, onboardingAspectRatio]);
 
   // ==================== SEARCH FUNCTIONALITY ====================
   
@@ -2421,7 +2455,7 @@ const ArtistPageContent: React.FC<{
 
   return (
     <UsdBalanceProvider userAddress={user || null}>
-      <div className="flex min-h-screen flex-col items-center justify-between pt-10 px-6 pb-6 relative bg-primary text-white font-sans">
+      <div className="flex min-h-screen w-full max-w-full min-w-0 box-border flex-col items-center justify-between pt-10 px-4 sm:px-6 pb-6 relative bg-primary text-white font-sans">
         <div
           id="particles"
           className={`cosmic-particles transition-opacity duration-300 ${vaultLaunchFocusActive ? 'opacity-40' : ''}`}
@@ -2443,9 +2477,9 @@ const ArtistPageContent: React.FC<{
 
         <header className={`app-header transition-opacity duration-300 ${vaultLaunchFocusActive ? 'opacity-40 pointer-events-none' : ''}`}>
           {user && (
-            <div className="flex items-center gap-4">
-              <div 
-                className="text-sm cursor-pointer bg-gray-800 px-3 py-2 rounded-md hover:bg-gray-700"
+            <div className="flex items-center flex-wrap gap-2 max-w-full min-w-0 justify-end">
+              <div
+                className="app-header-wallet-chip text-sm cursor-pointer bg-gray-800 px-3 py-2 rounded-md hover:bg-gray-700"
                 onClick={() => setShowFullAddress(!showFullAddress)}
               >
                 <p title={user}>
@@ -2459,9 +2493,9 @@ const ArtistPageContent: React.FC<{
           )}
         </header>
 
-        <main className="app-main">
+        <main className="app-main w-full max-w-full min-w-0">
           {/* z-0: halo shadow bleeds past hero; keep below purchase/login chassis (matches TreasureInviteShell) */}
-          <div className={`text-center relative z-0 transition-opacity duration-300 ${vaultLaunchFocusActive ? 'opacity-40 pointer-events-none' : ''}`}>
+          <div className={`text-center relative z-0 w-full max-w-full min-w-0 transition-opacity duration-300 ${vaultLaunchFocusActive ? 'opacity-40 pointer-events-none' : ''}`}>
               <>
                 <ArtistPortalTitle
                   fontFamily={appMode === 'onboarding' ? 'Bungee, cursive' : artistConfig.theme.fontFamily}
@@ -2481,7 +2515,7 @@ const ArtistPageContent: React.FC<{
                    artistConfig.displayName}
                 </ArtistPortalTitle>
   
-                <div className="relative w-full max-w-5xl mx-auto mt-6 md:mt-14 mb-12 md:mb-16">
+                <div className="relative portal-panel-chassis--hero w-full mt-6 md:mt-14 mb-12 md:mb-16">
                   {(appMode === 'onboarding' || appMode === 'upload-asset') ? (
                     // Onboarding: Drag & drop upload zone
                     <>
@@ -2811,9 +2845,9 @@ const ArtistPageContent: React.FC<{
               </>
           </div>
 
-          <div className="relative z-10 w-full flex flex-col items-center">
+          <div className="relative z-10 app-main-z10 w-full max-w-full min-w-0 flex flex-col items-center">
           <div
-            className="w-full flex flex-col items-center"
+            className="w-full max-w-full min-w-0 flex flex-col items-center"
             inert={vaultLaunchFocusActive ? true : undefined}
           >
           {isOwner && (
@@ -3072,17 +3106,13 @@ const ArtistPageContent: React.FC<{
             />
           )}
 
-          <div 
-            className={`unified-input-container mock-ui-section p-4 border-t-2 border-gray-700 mt-8 ${!user && shakeActive ? 'shake' : ''} ${vaultLaunchFocusActive ? 'relative z-[110] vault-launch-chat-well' : ''}`}
+          <div
+            className={`portal-panel-chassis unified-input-container mock-ui-section p-4 border-t-2 border-gray-700 mt-8 w-full max-w-full min-w-0 box-border ${!user && shakeActive ? 'shake' : ''} ${vaultLaunchFocusActive ? 'relative z-[110] vault-launch-chat-well' : ''}`}
           >
             {user && (
               <h3 className="text-xl font-semibold mb-3 text-center">Chat / Command</h3>
             )}
-            <div
-              className={`flex flex-col items-center mx-auto gap-3 w-full ${
-                vaultLaunchFocusActive ? 'max-w-2xl' : 'max-w-xl'
-              }`}
-            >
+            <div className="flex flex-col items-center mx-auto gap-3 w-full max-w-full min-w-0">
               {appMode === 'onboarding' && launchCeremony.visible && (
                 <div ref={vaultLaunchCeremonyRef} className="w-full">
                   <VaultLaunchCeremonyCard

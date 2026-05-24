@@ -1123,12 +1123,12 @@ const OnboardingPanel: React.FC<OnboardingPanelProps> = ({
   );
 
   return (
-    <div className="swap-panel-halo-wrap swap-panel-halo-wrap--linen max-w-2xl mx-auto mt-8">
-    <div className="onboarding-panel swap-panel-glimmer p-4 md:p-6 shadow-xl rounded-lg border border-gray-700 backdrop-blur-md overflow-x-hidden">
+    <div className="portal-panel-chassis swap-panel-halo-wrap swap-panel-halo-wrap--linen mt-8">
+    <div className="onboarding-panel swap-panel-glimmer p-4 md:p-6 shadow-xl rounded-lg border border-gray-700 backdrop-blur-md">
       
       {/* Header */}
-      <div className="flex justify-between items-center mb-6 gap-2">
-        <h2 className="text-xl sm:text-2xl font-bold text-white" style={{ fontFamily: 'Bungee, cursive', color: mode === 'upload-asset' ? (existingArtist?.theme?.accentColor || '#B8860B') : '#B8860B' }}>
+      <div className="flex justify-between items-center mb-6 gap-2 min-w-0">
+        <h2 className="min-w-0 flex-1 text-xl sm:text-2xl font-bold text-white" style={{ fontFamily: 'Bungee, cursive', color: mode === 'upload-asset' ? (existingArtist?.theme?.accentColor || '#B8860B') : '#B8860B' }}>
           {mode === 'upload-asset' ? 'UPLOAD NEW ASSET' : 'CREATE ARTIST'}
         </h2>
         <button
