@@ -48,6 +48,8 @@ const WHEEL_SENS = 0.0016;      // rad per wheel deltaY unit
 const DRAG_SENS = 0.008;        // rad per px (approx)
 const FRICTION = 1.8;           // 1/s velocity decay
 const V_EPS = 0.003;            // rad/s threshold to stop inertia
+/** px — movement below this counts as tap (draft chips); matches token drag threshold (6²). */
+const TAP_MOVE_THRESHOLD_SQ = 36;
 
 const ThemeOrbitRenderer: React.FC<ThemeOrbitRendererProps> = ({
   artistConfig,
@@ -302,10 +304,14 @@ const ThemeOrbitRenderer: React.FC<ThemeOrbitRendererProps> = ({
         lastEventTsRef.current = now;
       };
       const timestampNow = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
+      const isDraftCoinTarget = (target: Element | null) =>
+        Boolean(target?.closest?.('[data-draft-coin]'));
       const onPointerDown = (e: PointerEvent) => {
         // Only start interaction if a token is grabbed
         const target = e.target as Element;
         if (!target.closest('.orbit-token')) return;
+        // Draft chips handle tap vs drag on the button; skip container suppress path
+        if (isDraftCoinTarget(target)) return;
         try { orbitContainerRef.current?.setPointerCapture?.(e.pointerId); } catch {}
         isInteractingRef.current = true;
         dragStartXYRef.current = { x: e.clientX, y: e.clientY };
@@ -345,6 +351,7 @@ const ThemeOrbitRenderer: React.FC<ThemeOrbitRendererProps> = ({
       const onTouchStart = (e: TouchEvent) => {
         const target = e.target as Element;
         if (!target.closest('.orbit-token')) return;
+        if (isDraftCoinTarget(target)) return;
         isInteractingRef.current = true;
         const t = e.touches[0];
         dragStartXYRef.current = { x: t.clientX, y: t.clientY };
@@ -390,7 +397,10 @@ const ThemeOrbitRenderer: React.FC<ThemeOrbitRendererProps> = ({
       container.addEventListener('touchmove', onTouchMove as any, { passive: false } as any);
       container.addEventListener('touchend', onTouchEnd as any);
       // prevent accidental navigation clicks immediately after drag
-      const onClickCapture = (e: MouseEvent) => { if (suppressClickRef.current) { e.preventDefault(); e.stopPropagation(); } };
+      const onClickCapture = (e: MouseEvent) => {
+        if (isDraftCoinTarget(e.target as Element)) return;
+        if (suppressClickRef.current) { e.preventDefault(); e.stopPropagation(); }
+      };
       container.addEventListener('click', onClickCapture, true);
 
       // track lastTs for velocity estimation
@@ -505,12 +515,13 @@ const ThemeOrbitRenderer: React.FC<ThemeOrbitRendererProps> = ({
             };
 
             if (isDraftChip) {
+              const draftCoinId = token.draftCoinPublicId!;
               return (
                 <button
                   type="button"
-                  key={`orbit-draft-${token.draftCoinPublicId}-${index}`}
+                  key={`orbit-draft-${draftCoinId}-${index}`}
                   className="orbit-token"
-                  data-draft-coin={token.draftCoinPublicId}
+                  data-draft-coin={draftCoinId}
                   ref={(el: HTMLElement | null) => {
                     tokenElementRefs.current[index] = el;
                   }}
@@ -519,18 +530,28 @@ const ThemeOrbitRenderer: React.FC<ThemeOrbitRendererProps> = ({
                     appearance: 'none',
                     WebkitAppearance: 'none',
                     margin: 0,
+                    touchAction: 'manipulation',
                   }}
                   draggable={false}
-                  {...commonHandlers}
+                  onMouseEnter={commonHandlers.onMouseEnter}
+                  onMouseLeave={commonHandlers.onMouseLeave}
+                  onDragStart={commonHandlers.onDragStart}
                   onPointerDown={(e) => {
                     e.stopPropagation();
                     commonHandlers.onPointerDown(e);
                   }}
-                  onClick={(e) => {
-                    e.preventDefault();
+                  onPointerMove={commonHandlers.onPointerMove}
+                  onPointerUp={(e) => {
                     e.stopPropagation();
-                    if (suppressClickRef.current) return;
-                    onSupplementalDraftClick!(token.draftCoinPublicId!);
+                    const wasDrag = draggingTokenRef.current;
+                    const down = downXYRef.current;
+                    commonHandlers.onPointerUp(e);
+                    if (wasDrag || !down) return;
+                    const dx = e.clientX - down.x;
+                    const dy = e.clientY - down.y;
+                    if (dx * dx + dy * dy <= TAP_MOVE_THRESHOLD_SQ) {
+                      onSupplementalDraftClick!(draftCoinId);
+                    }
                   }}
                   title={`Load draft ${chipText}`}
                 >
