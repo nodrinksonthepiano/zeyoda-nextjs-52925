@@ -249,6 +249,9 @@ body {
   display: flex;
   justify-content: flex-end; /* Positions logout button to the right */
   padding: 20px;
+  padding-top: max(20px, env(safe-area-inset-top, 0px));
+  padding-left: max(20px, env(safe-area-inset-left, 0px));
+  padding-right: max(20px, env(safe-area-inset-right, 0px));
   z-index: 100; /* Ensures header is above other content */
 }
 
@@ -445,6 +448,9 @@ body {
   }
   .app-header {
     padding: 15px;
+    padding-top: max(15px, env(safe-area-inset-top, 0px));
+    padding-left: max(15px, env(safe-area-inset-left, 0px));
+    padding-right: max(15px, env(safe-area-inset-right, 0px));
   }
   .logout-button {
     font-size: 0.7rem;
@@ -1808,5 +1814,56 @@ body {
   .vault-launch-pulse,
   .swap-panel-glimmer::after {
     animation: none !important;
+  }
+}
+
+/* Mobile onboarding layout (Pass 1: C3 + C4) */
+.fixed-wallet-toolbar {
+  position: fixed;
+  top: max(1rem, env(safe-area-inset-top, 0px));
+}
+
+.onboarding-hero-container {
+  height: clamp(280px, 50vh, 720px);
+  width: auto;
+  max-width: min(92vw, 1000px);
+  margin: 0 auto 16px auto;
+  overflow: visible;
+}
+
+@media (max-width: 640px) {
+  .app-main {
+    padding-top: calc(4.5rem + env(safe-area-inset-top, 0px));
+    padding-left: env(safe-area-inset-left, 0px);
+    padding-right: env(safe-area-inset-right, 0px);
+    padding-bottom: calc(40px + env(safe-area-inset-bottom, 0px));
+  }
+
+  .onboarding-hero-container {
+    height: clamp(160px, 28vh, 320px);
+  }
+
+  .onboarding-panel input,
+  .onboarding-panel select,
+  .onboarding-panel textarea,
+  .profile-edit-panel input,
+  .profile-edit-panel select,
+  .profile-edit-panel textarea,
+  .unified-input-container input,
+  .unified-input-container select,
+  .unified-input-container textarea {
+    font-size: 16px;
+  }
+
+  .swap-panel-halo-wrap {
+    overflow-x: hidden;
+  }
+
+  .swap-panel-halo-wrap::before {
+    inset: -8px -10px;
+  }
+
+  .swap-panel-halo-wrap.swap-panel-halo-wrap--linen::before {
+    inset: -10px -12px;
   }
 }

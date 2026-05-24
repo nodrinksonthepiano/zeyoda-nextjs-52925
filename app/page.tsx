@@ -2453,7 +2453,7 @@ const ArtistPageContent: React.FC<{
                 </p>
               </div>
               <button onClick={handleLogout} className="logout-button">
-                Data Reset
+                Sign out
               </button>
             </div>
           )}
@@ -2494,14 +2494,9 @@ const ArtistPageContent: React.FC<{
                       />
                       <div 
                         ref={onboardingContainerRef}
-                        className="relative"
+                        className="relative onboarding-hero-container"
                         style={{
-                          height: 'clamp(280px, 50vh, 720px)',
-                          width: 'auto',
-                          maxWidth: 'min(92vw, 1000px)',
                           aspectRatio: onboardingAspectRatio || 16/9,
-                          margin: '0 auto 16px auto',
-                          overflow: 'visible',
                           cursor: uploadedFile ? 'default' : 'pointer'
                         }}
                         onDragOver={handleDragOver}
@@ -3129,7 +3124,7 @@ const ArtistPageContent: React.FC<{
                         value={feedbackMessage}
                         onChange={(e) => setFeedbackMessage(e.target.value)}
                         placeholder="Leave feedback..."
-                        className="w-full p-2 rounded bg-gray-800 border border-gray-600 text-white text-sm mb-2 focus:ring-accentColor focus:border-accentColor"
+                        className="w-full p-2 rounded bg-gray-800 border border-gray-600 text-white mb-2 focus:ring-accentColor focus:border-accentColor"
                         onKeyDown={(e) => {
                           if (e.key === 'Enter') {
                             e.preventDefault();
@@ -3169,7 +3164,6 @@ const ArtistPageContent: React.FC<{
                             setFeedbackMessage('');
                           }
                         }}
-                        autoFocus
                       />
                       <div className="flex justify-end gap-2">
                         <button
@@ -3522,7 +3516,7 @@ const ArtistPageContent: React.FC<{
         {/* Top-left wallet button - MOVED TO END TO ENSURE TOP Z-INDEX */}
         {user && (
           <div
-            className={`fixed top-4 left-4 z-[9999] flex gap-2 transition-opacity duration-300 ${
+            className={`fixed-wallet-toolbar left-4 z-[9999] flex gap-2 transition-opacity duration-300 ${
               vaultLaunchFocusActive ? 'opacity-40 pointer-events-none' : ''
             }`}
           >
@@ -3539,6 +3533,7 @@ const ArtistPageContent: React.FC<{
             </button>
 
             {/* Action Buttons */}
+            {!(appMode === 'onboarding' && inviteLaunchBridge?.coinPublicId) && (
             <button
               onClick={() => {
                 // Find user's owned artist
@@ -3558,6 +3553,7 @@ const ArtistPageContent: React.FC<{
             >
               + Create New
             </button>
+            )}
             
             {artistConfig && artistConfig.treasury_wallet && 
              user.toLowerCase() === artistConfig.treasury_wallet.toLowerCase() && (

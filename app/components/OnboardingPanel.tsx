@@ -1124,11 +1124,11 @@ const OnboardingPanel: React.FC<OnboardingPanelProps> = ({
 
   return (
     <div className="swap-panel-halo-wrap swap-panel-halo-wrap--linen max-w-2xl mx-auto mt-8">
-    <div className="onboarding-panel swap-panel-glimmer p-4 md:p-6 shadow-xl rounded-lg border border-gray-700 backdrop-blur-md">
+    <div className="onboarding-panel swap-panel-glimmer p-4 md:p-6 shadow-xl rounded-lg border border-gray-700 backdrop-blur-md overflow-x-hidden">
       
       {/* Header */}
-      <div className="flex justify-between items-center mb-6">
-        <h2 className="text-2xl font-bold text-white" style={{ fontFamily: 'Bungee, cursive', color: mode === 'upload-asset' ? (existingArtist?.theme?.accentColor || '#B8860B') : '#B8860B' }}>
+      <div className="flex justify-between items-center mb-6 gap-2">
+        <h2 className="text-xl sm:text-2xl font-bold text-white" style={{ fontFamily: 'Bungee, cursive', color: mode === 'upload-asset' ? (existingArtist?.theme?.accentColor || '#B8860B') : '#B8860B' }}>
           {mode === 'upload-asset' ? 'UPLOAD NEW ASSET' : 'CREATE ARTIST'}
         </h2>
         <button
@@ -1295,7 +1295,7 @@ const OnboardingPanel: React.FC<OnboardingPanelProps> = ({
         style={{ zIndex: fontDropdownOpen ? 100 : undefined }}
       >
         <h3 className="text-lg font-semibold text-white mb-3">Typography</h3>
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
           {FONT_OPTIONS.map((font) => (
             <button
               key={font.value}
@@ -1330,7 +1330,7 @@ const OnboardingPanel: React.FC<OnboardingPanelProps> = ({
       {mode === 'onboarding' && (
       <div className="mb-6">
         <h3 className="text-lg font-semibold text-white mb-3">Primary Color (Background)</h3>
-        <div className="grid grid-cols-4 gap-3 mb-4">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
           {Object.entries(COLOR_PRESETS).map(([key, preset]) => (
             <button
               key={`primary-${key}`}
@@ -1374,7 +1374,7 @@ const OnboardingPanel: React.FC<OnboardingPanelProps> = ({
       {mode === 'onboarding' && (
       <div className="mb-6">
         <h3 className="text-lg font-semibold text-white mb-3">Accent Color (Text/Highlights)</h3>
-        <div className="grid grid-cols-4 gap-3 mb-4">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
           {Object.entries(COLOR_PRESETS).map(([key, preset]) => (
             <button
               key={`accent-${key}`}
@@ -1933,7 +1933,7 @@ const OnboardingPanel: React.FC<OnboardingPanelProps> = ({
       </div>
 
       {/* Action Buttons */}
-      <div className="flex gap-3">
+      <div className="flex flex-col sm:flex-row gap-3">
         <button
           onClick={handleSave}
           disabled={
@@ -1948,7 +1948,7 @@ const OnboardingPanel: React.FC<OnboardingPanelProps> = ({
         </button>
         <button
           onClick={onExit}
-          className="px-6 py-3 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors"
+          className="px-6 py-3 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors sm:flex-shrink-0"
         >
           Cancel
         </button>

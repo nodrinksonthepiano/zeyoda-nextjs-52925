@@ -442,9 +442,9 @@ const ProfileEditPanel: React.FC<ProfileEditPanelProps> = ({
   }, [originalTheme, onClose, artistConfig, onStardustPreviewChange]);
 
   return (
-    <div className="profile-edit-panel bg-gray-800 bg-opacity-70 shadow-xl rounded-lg border border-gray-700 backdrop-blur-md mb-8 max-w-2xl mx-auto p-6">
-      <div className="flex justify-between items-center mb-6">
-        <h2 className="text-2xl font-bold text-white" style={{ fontFamily: 'Bungee, cursive', color: formData.accent_color }}>
+    <div className="profile-edit-panel bg-gray-800 bg-opacity-70 shadow-xl rounded-lg border border-gray-700 backdrop-blur-md mb-8 max-w-2xl mx-auto p-6 overflow-x-hidden">
+      <div className="flex justify-between items-center mb-6 gap-2">
+        <h2 className="text-xl sm:text-2xl font-bold text-white" style={{ fontFamily: 'Bungee, cursive', color: formData.accent_color }}>
           EDIT PROFILE
         </h2>
         <button
@@ -458,7 +458,7 @@ const ProfileEditPanel: React.FC<ProfileEditPanelProps> = ({
       {/* Primary Color Section */}
       <div className="mb-6">
         <h3 className="text-lg font-semibold text-white mb-3">Primary Color (Background)</h3>
-          <div className="grid grid-cols-4 gap-3 mb-4">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
           {Object.entries(COLOR_PRESETS).map(([key, preset]) => (
             <button
               key={`primary-${key}`}
@@ -500,7 +500,7 @@ const ProfileEditPanel: React.FC<ProfileEditPanelProps> = ({
       {/* Accent Color Section */}
       <div className="mb-6">
         <h3 className="text-lg font-semibold text-white mb-3">Accent Color (Text/Highlights)</h3>
-        <div className="grid grid-cols-4 gap-3 mb-4">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
           {Object.entries(COLOR_PRESETS).map(([key, preset]) => (
             <button
               key={`accent-${key}`}
@@ -961,7 +961,7 @@ const ProfileEditPanel: React.FC<ProfileEditPanelProps> = ({
         <h3 className="text-lg font-semibold text-white mb-3">Typography</h3>
         
         {/* Standard Font Buttons */}
-        <div className="grid grid-cols-3 gap-3 mb-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 mb-4">
           {FONT_OPTIONS.map((font) => (
             <button
               key={font.value}
@@ -1026,7 +1026,7 @@ const ProfileEditPanel: React.FC<ProfileEditPanelProps> = ({
       </div>
 
       {/* Action Buttons */}
-      <div className="flex gap-3">
+      <div className="flex flex-col sm:flex-row gap-3">
         <button
           onClick={handleSave}
           disabled={isSaving}
@@ -1036,7 +1036,7 @@ const ProfileEditPanel: React.FC<ProfileEditPanelProps> = ({
         </button>
         <button
           onClick={handleCancel}
-          className="px-6 py-3 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors"
+          className="px-6 py-3 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors sm:flex-shrink-0"
         >
           Cancel
         </button>
