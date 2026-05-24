@@ -1352,14 +1352,14 @@ body {
 }
 
 .purchase-slider-section .purchase-swap-select {
-  flex: 1 1 58%;
-  min-width: 7.5rem;
-  max-width: 68%;
+  flex: 3 1 0;
+  min-width: 0;
+  max-width: 62%;
 }
 
 .purchase-slider-section .purchase-swap-amount {
-  flex: 1 1 36%;
-  min-width: 4.25rem;
+  flex: 2 1 0;
+  min-width: 0;
   max-width: 40%;
   text-align: right;
   font-size: 0.875rem;
@@ -1369,7 +1369,18 @@ body {
 .purchase-slider-section .swap-silver-bar-input {
   padding: 6px 10px;
   min-height: 44px;
-  min-width: 0;
+}
+
+@media (max-width: 640px) {
+  .purchase-slider-section .purchase-swap-select {
+    flex: 5 1 0;
+    max-width: 64%;
+  }
+
+  .purchase-slider-section .purchase-swap-amount {
+    flex: 3 1 0;
+    max-width: 36%;
+  }
 }
 
 .purchase-slider-section .swap-silver-bar .custom-token-input {
@@ -1411,17 +1422,6 @@ body {
   .purchase-slider-section.mock-ui-section h3.purchase-panel-title {
     font-size: 0.75rem;
     margin-bottom: 4px;
-  }
-
-  .purchase-slider-section .purchase-swap-select {
-    flex: 1 1 62%;
-    min-width: 8rem;
-    max-width: 70%;
-  }
-
-  .purchase-slider-section .purchase-swap-amount {
-    flex: 1 1 34%;
-    max-width: 38%;
   }
 }
 
