@@ -430,6 +430,16 @@ const Wallet: React.FC<WalletProps> = ({
     }
   };
 
+  const handleCopyAddress = useCallback(async () => {
+    if (!userAddress) return;
+    try {
+      await navigator.clipboard.writeText(userAddress);
+      showToast('Wallet address copied', 'success');
+    } catch {
+      showToast('Copy blocked — select and copy manually', 'error');
+    }
+  }, [userAddress, showToast]);
+
   const handleCashWithdraw = async () => {
     const artistId = cashWithdrawArtistId || 'unknown';
     if (!userAddress || parseFloat(cashAmount) <= 0) {
@@ -598,6 +608,23 @@ const Wallet: React.FC<WalletProps> = ({
           </button>
         </div>
       </div>
+
+      {userAddress && (
+        <div className="flex items-center gap-2 px-4 py-1.5 bg-gray-900/90 border-b border-gray-700 text-xs text-gray-200 flex-shrink-0">
+          <span className="truncate font-mono flex-1 min-w-0" title={userAddress}>
+            {`${userAddress.slice(0, 6)}…${userAddress.slice(-4)}`}
+          </span>
+          <button
+            type="button"
+            onClick={handleCopyAddress}
+            title="Copy wallet address"
+            aria-label="Copy wallet address"
+            className="flex-shrink-0 p-1 rounded hover:bg-gray-700 transition-colors text-sm"
+          >
+            📋
+          </button>
+        </div>
+      )}
       
       {/* Feedback section - admin only */}
       {isAdmin && (

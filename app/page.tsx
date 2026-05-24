@@ -561,7 +561,6 @@ const ArtistPageContent: React.FC<{
   const [isActionLoading, setIsActionLoading] = useState(false);
   const [showAssetsPanel, setShowAssetsPanel] = useState<boolean>(false);
   const [downloadIpfsHash, setDownloadIpfsHash] = useState<string | null>(null);
-  const [showFullAddress, setShowFullAddress] = useState(false);
   const [isOwner, setIsOwner] = useState(false);
   const [isMinting, setIsMinting] = useState(false);
   const [mintAmount, setMintAmount] = useState("");
@@ -2477,19 +2476,9 @@ const ArtistPageContent: React.FC<{
 
         <header className={`app-header transition-opacity duration-300 ${vaultLaunchFocusActive ? 'opacity-40 pointer-events-none' : ''}`}>
           {user && (
-            <div className="flex items-center flex-wrap gap-2 max-w-full min-w-0 justify-end">
-              <div
-                className="app-header-wallet-chip text-sm cursor-pointer bg-gray-800 px-3 py-2 rounded-md hover:bg-gray-700"
-                onClick={() => setShowFullAddress(!showFullAddress)}
-              >
-                <p title={user}>
-                  ✅ Connected: {showFullAddress ? user : `${user.slice(0, 6)}...${user.slice(-4)}`}
-                </p>
-              </div>
-              <button onClick={handleLogout} className="logout-button">
-                Sign out
-              </button>
-            </div>
+            <button onClick={handleLogout} className="logout-button">
+              Sign out
+            </button>
           )}
         </header>
 

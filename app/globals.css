@@ -317,18 +317,6 @@ body {
   }
 }
 
-.app-header-wallet-chip {
-  max-width: min(12rem, calc(100vw - 9rem));
-  min-width: 0;
-  overflow: hidden;
-}
-
-.app-header-wallet-chip p {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 .main-title-container {
   margin-bottom: 20px; /* Space below the main title */
   text-align: center;
