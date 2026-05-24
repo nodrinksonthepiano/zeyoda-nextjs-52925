@@ -7,6 +7,7 @@ import { isTrustedLaunchSourceUrl } from '@/app/utils/launchIntegrity';
 import { getMagicAuthFromBearer } from '@/app/utils/server/magicBearerEmail';
 import { normalizeReservedEmail } from '@/app/utils/server/normalizeReservedEmail';
 import { assertMagicArtistUploader } from '@/app/utils/server/assertMagicArtistUploader';
+import { ArtistDownloadsUUPSABI } from '@/app/utils/abis/ArtistDownloadsUUPSABI';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
@@ -250,7 +251,6 @@ export async function POST(request: NextRequest) {
       console.log('🪙 Minting ERC-1155 token...');
 
       const { ethers } = require('ethers');
-      const ArtistDownloadsArtifact = require('../../../artifacts/contracts/ArtistDownloads.sol/ArtistDownloads.json');
 
       const minterPrivateKey = process.env.MINTER_PRIVATE_KEY;
       const rpcUrl = process.env.SERVER_BASE_SEPOLIA_RPC_URL;
@@ -306,7 +306,7 @@ export async function POST(request: NextRequest) {
       const wallet = await createGuardedSigner(minterPrivateKey, rpcUrl);
       const contract = new ethers.Contract(
         artistData.download_address,
-        ArtistDownloadsArtifact.abi,
+        ArtistDownloadsUUPSABI,
         wallet,
       );
 
