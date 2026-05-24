@@ -2454,7 +2454,11 @@ const ArtistPageContent: React.FC<{
 
   return (
     <UsdBalanceProvider userAddress={user || null}>
-      <div className="flex min-h-screen w-full max-w-full min-w-0 box-border flex-col items-center justify-between pt-10 px-4 sm:px-6 pb-6 relative bg-primary text-white font-sans">
+      <div className={`flex min-h-screen w-full max-w-full min-w-0 box-border flex-col items-center justify-between px-4 sm:px-6 pb-6 relative bg-primary text-white font-sans ${
+        appMode === 'onboarding' || appMode === 'upload-asset'
+          ? 'page-shell--onboarding pt-3 sm:pt-10'
+          : 'pt-10'
+      }`}>
         <div
           id="particles"
           className={`cosmic-particles transition-opacity duration-300 ${vaultLaunchFocusActive ? 'opacity-40' : ''}`}
@@ -2482,9 +2486,17 @@ const ArtistPageContent: React.FC<{
           )}
         </header>
 
-        <main className="app-main w-full max-w-full min-w-0">
+        <main
+          className={`app-main w-full max-w-full min-w-0 ${
+            appMode === 'onboarding' || appMode === 'upload-asset' ? 'app-main--onboarding' : ''
+          }`}
+        >
           {/* z-0: halo shadow bleeds past hero; keep below purchase/login chassis (matches TreasureInviteShell) */}
-          <div className={`text-center relative z-0 w-full max-w-full min-w-0 transition-opacity duration-300 ${vaultLaunchFocusActive ? 'opacity-40 pointer-events-none' : ''}`}>
+          <div
+            className={`text-center relative z-0 w-full max-w-full min-w-0 transition-opacity duration-300 ${
+              appMode === 'onboarding' || appMode === 'upload-asset' ? 'onboarding-hero-stack' : ''
+            } ${vaultLaunchFocusActive ? 'opacity-40 pointer-events-none' : ''}`}
+          >
               <>
                 <ArtistPortalTitle
                   fontFamily={appMode === 'onboarding' ? 'Bungee, cursive' : artistConfig.theme.fontFamily}
@@ -2504,7 +2516,7 @@ const ArtistPageContent: React.FC<{
                    artistConfig.displayName}
                 </ArtistPortalTitle>
   
-                <div className="relative portal-panel-chassis--hero w-full mt-6 md:mt-14 mb-12 md:mb-16">
+                <div className="relative portal-panel-chassis--hero onboarding-hero-band w-full mt-6 md:mt-14 mb-12 md:mb-16">
                   {(appMode === 'onboarding' || appMode === 'upload-asset') ? (
                     // Onboarding: Drag & drop upload zone
                     <>

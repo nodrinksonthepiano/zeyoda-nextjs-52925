@@ -1295,19 +1295,19 @@ const OnboardingPanel: React.FC<OnboardingPanelProps> = ({
         style={{ zIndex: fontDropdownOpen ? 100 : undefined }}
       >
         <h3 className="text-lg font-semibold text-white mb-3">Typography</h3>
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+        <div className="theme-font-option-grid grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
           {FONT_OPTIONS.map((font) => (
             <button
               key={font.value}
               onClick={() => handleFieldChange('theme.fontFamily', font.value)}
-              className={`p-3 rounded-lg border-2 transition-all ${
+              className={`theme-font-option p-3 rounded-lg border-2 transition-all ${
                 formData.theme.fontFamily === font.value
                   ? 'border-yellow-500 bg-yellow-500 bg-opacity-20'
                   : 'border-gray-600 bg-gray-700 hover:border-gray-500'
               }`}
               style={{ fontFamily: font.value }}
             >
-              <div className="text-white font-bold text-sm">{font.name}</div>
+              <div className="theme-font-option-label text-white font-bold text-sm">{font.name}</div>
             </button>
           ))}
         </div>

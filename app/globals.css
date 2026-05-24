@@ -1920,4 +1920,36 @@ body {
   .profile-edit-panel .theme-color-swatch-check {
     font-size: 0.875rem;
   }
+
+  .app-main.app-main--onboarding {
+    padding-top: calc(3rem + env(safe-area-inset-top, 0px));
+  }
+
+  .app-main--onboarding .onboarding-hero-stack h1 {
+    margin-top: 0;
+    margin-bottom: 0.375rem;
+  }
+
+  .app-main--onboarding .onboarding-hero-band {
+    margin-top: 0.5rem;
+    margin-bottom: 1rem;
+  }
+
+  .onboarding-panel .theme-font-option-grid,
+  .profile-edit-panel .theme-font-option-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.375rem;
+    margin-bottom: 0.75rem;
+  }
+
+  .onboarding-panel .theme-font-option,
+  .profile-edit-panel .theme-font-option {
+    padding: 0.375rem 0.5rem;
+  }
+
+  .onboarding-panel .theme-font-option-label,
+  .profile-edit-panel .theme-font-option-label {
+    font-size: 0.75rem;
+    line-height: 1.1;
+  }
 }
