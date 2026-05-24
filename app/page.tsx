@@ -3546,7 +3546,7 @@ const ArtistPageContent: React.FC<{
         {/* Top-left wallet button - MOVED TO END TO ENSURE TOP Z-INDEX */}
         {user && (
           <div
-            className={`fixed-wallet-toolbar left-4 z-[9999] flex gap-2 transition-opacity duration-300 ${
+            className={`fixed-wallet-toolbar left-4 z-[9999] flex max-sm:flex-col max-sm:items-stretch max-sm:max-w-[calc(100vw-2rem)] sm:flex-row gap-2 transition-opacity duration-300 ${
               vaultLaunchFocusActive ? 'opacity-40 pointer-events-none' : ''
             }`}
           >
@@ -3585,8 +3585,9 @@ const ArtistPageContent: React.FC<{
             </button>
             )}
             
-            {artistConfig && artistConfig.treasury_wallet && 
-             user.toLowerCase() === artistConfig.treasury_wallet.toLowerCase() && (
+            {artistConfig && artistConfig.treasury_wallet &&
+             user.toLowerCase() === artistConfig.treasury_wallet.toLowerCase() &&
+             appMode !== 'profile-edit' && (
               <button
                 onClick={() => setAppMode('profile-edit')}
                 className="bg-yellow-600 hover:bg-yellow-500 px-4 py-2 rounded-md text-white font-medium transition-colors shadow-lg"

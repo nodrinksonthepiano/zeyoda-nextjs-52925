@@ -1913,4 +1913,120 @@ body {
   .swap-panel-halo-wrap.swap-panel-halo-wrap--linen::before {
     inset: -10px -12px;
   }
+
+  /* Shared mobile form panel — onboarding + profile edit (uniform compact layout) */
+  .portal-form-panel {
+    display: flex;
+    flex-direction: column;
+    padding: 1rem;
+    max-height: calc(
+      100dvh - 6.5rem - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)
+    );
+    overflow: hidden;
+  }
+
+  .portal-form-panel__header {
+    flex-shrink: 0;
+    margin-bottom: 0.75rem;
+    padding-top: 6.75rem;
+  }
+
+  .portal-form-panel__header.mb-6 {
+    margin-bottom: 0.75rem;
+  }
+
+  .portal-form-panel__title {
+    font-size: 1.125rem;
+    line-height: 1.35;
+  }
+
+  .portal-form-panel__body {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    padding-bottom: 0.25rem;
+  }
+
+  .portal-form-panel__body > .mb-6 {
+    margin-bottom: 1rem;
+  }
+
+  .portal-form-panel__body h3.text-lg {
+    font-size: 1rem;
+    margin-bottom: 0.5rem;
+  }
+
+  /* 4×2 color swatch grid on mobile (36px — tappable, compact) */
+  .portal-form-panel__body .grid.grid-cols-2.gap-3 {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 0.5rem;
+    margin-bottom: 0.75rem;
+  }
+
+  .portal-form-panel__body .grid.grid-cols-2.gap-3 > button.w-12 {
+    width: 2.25rem;
+    height: 2.25rem;
+  }
+
+  .portal-form-panel__body .grid.grid-cols-2.gap-3 > button.w-12 .text-lg {
+    font-size: 0.875rem;
+  }
+
+  /* Two-column font picker on mobile */
+  .portal-form-panel__body .grid.grid-cols-1.gap-3 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.5rem;
+  }
+
+  .portal-form-panel__body .grid.grid-cols-1.gap-3 > button.p-3 {
+    padding: 0.5rem;
+  }
+
+  /* Shorter image previews */
+  .portal-form-panel__body img.h-64 {
+    height: 10rem;
+  }
+
+  /* Admin treasure draft block — keep readable, slightly tighter */
+  .portal-form-panel__body .rounded-lg.border.border-amber-500\/50 {
+    padding: 0.75rem;
+    margin-bottom: 1rem;
+  }
+
+  .portal-form-panel__body .rounded-lg.border.border-amber-500\/50 h3.text-lg {
+    font-size: 1rem;
+    margin-bottom: 0.5rem;
+  }
+
+  .portal-form-panel__footer {
+    flex-shrink: 0;
+    position: sticky;
+    bottom: 0;
+    z-index: 10;
+    margin-top: 0.5rem;
+    padding-top: 0.75rem;
+    padding-bottom: max(0.75rem, env(safe-area-inset-bottom, 0px));
+    background: rgba(31, 41, 55, 0.97);
+    border-top: 1px solid rgba(75, 85, 99, 0.8);
+    backdrop-filter: blur(8px);
+  }
+
+  .profile-edit-panel.portal-form-panel .portal-form-panel__footer {
+    background: rgba(31, 41, 55, 0.97);
+  }
+
+  .onboarding-panel.portal-form-panel .portal-form-panel__footer {
+    background: rgba(17, 24, 39, 0.97);
+  }
+
+  .portal-form-panel__footer-note {
+    width: 100%;
+    margin-top: 0.5rem;
+  }
+
+  .fixed-wallet-toolbar button {
+    text-align: center;
+    white-space: nowrap;
+  }
 }

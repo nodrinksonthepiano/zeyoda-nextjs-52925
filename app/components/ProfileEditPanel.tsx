@@ -442,9 +442,9 @@ const ProfileEditPanel: React.FC<ProfileEditPanelProps> = ({
   }, [originalTheme, onClose, artistConfig, onStardustPreviewChange]);
 
   return (
-    <div className="portal-panel-chassis profile-edit-panel bg-gray-800 bg-opacity-70 shadow-xl rounded-lg border border-gray-700 backdrop-blur-md mb-8 p-6">
-      <div className="flex justify-between items-center mb-6 gap-2">
-        <h2 className="text-xl sm:text-2xl font-bold text-white" style={{ fontFamily: 'Bungee, cursive', color: formData.accent_color }}>
+    <div className="portal-panel-chassis profile-edit-panel portal-form-panel bg-gray-800 bg-opacity-70 shadow-xl rounded-lg border border-gray-700 backdrop-blur-md mb-8 p-6">
+      <div className="portal-form-panel__header flex justify-between items-center mb-6 gap-2">
+        <h2 className="portal-form-panel__title text-xl sm:text-2xl font-bold text-white" style={{ fontFamily: 'Bungee, cursive', color: formData.accent_color }}>
           EDIT PROFILE
         </h2>
         <button
@@ -455,6 +455,7 @@ const ProfileEditPanel: React.FC<ProfileEditPanelProps> = ({
         </button>
       </div>
 
+      <div className="portal-form-panel__body">
       {/* Primary Color Section */}
       <div className="mb-6">
         <h3 className="text-lg font-semibold text-white mb-3">Primary Color (Background)</h3>
@@ -1024,9 +1025,10 @@ const ProfileEditPanel: React.FC<ProfileEditPanelProps> = ({
           )}
         </div>
       </div>
+      </div>
 
       {/* Action Buttons */}
-      <div className="flex flex-col sm:flex-row gap-3">
+      <div className="portal-form-panel__footer flex flex-col sm:flex-row gap-3">
         <button
           onClick={handleSave}
           disabled={isSaving}
