@@ -16,6 +16,29 @@ interface ClaimBody {
   claimed_by_wallet?: string | null;
 }
 
+async function upsertTreasureClaimWhitelist(
+  normalizedEmail: string,
+  coin: string,
+  artistSlug: string,
+): Promise<{ ok: true } | { ok: false; message: string }> {
+  const { error } = await supabaseAdmin.from('whitelist_emails').upsert(
+    {
+      email: normalizedEmail,
+      role: 'user',
+      used: false,
+      notes: `Treasure claim: ${coin} (${artistSlug})`,
+    },
+    { onConflict: 'email', ignoreDuplicates: true },
+  );
+
+  if (error) {
+    console.error('invite claim whitelist upsert:', error);
+    return { ok: false, message: error.message };
+  }
+
+  return { ok: true };
+}
+
 export async function POST(request: NextRequest) {
   try {
     const auth = await getMagicAuthFromBearer(request);
@@ -104,6 +127,23 @@ export async function POST(request: NextRequest) {
         );
       }
 
+      const normalizedEmail = normalizeReservedEmail(email);
+      const whitelistSync = await upsertTreasureClaimWhitelist(
+        normalizedEmail,
+        coin,
+        row.artist_slug,
+      );
+      if (!whitelistSync.ok) {
+        return NextResponse.json(
+          {
+            code: 'whitelist_sync_failed',
+            message:
+              'Claim saved but whitelist sync failed. Retry claim or contact support.',
+          },
+          { status: 500 },
+        );
+      }
+
       return NextResponse.json({
         coin_public_id: row.coin_public_id,
         artist_slug: row.artist_slug,
@@ -122,6 +162,15 @@ export async function POST(request: NextRequest) {
           { code: 'already_claimed', message: 'This treasure was claimed by someone else.' },
           { status: 409 },
         );
+      }
+
+      const repairSync = await upsertTreasureClaimWhitelist(
+        normalizeReservedEmail(email),
+        row.coin_public_id,
+        row.artist_slug,
+      );
+      if (!repairSync.ok) {
+        console.warn('invite claim whitelist repair failed:', repairSync.message);
       }
 
       return NextResponse.json({
