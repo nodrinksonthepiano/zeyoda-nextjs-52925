@@ -1904,6 +1904,8 @@ body {
 
   .onboarding-panel .theme-color-swatch-grid,
   .profile-edit-panel .theme-color-swatch-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    justify-items: center;
     gap: 0.375rem;
     margin-bottom: 0.75rem;
   }
