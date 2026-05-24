@@ -79,6 +79,7 @@ const Wallet: React.FC<WalletProps> = ({
   const [feedbackList, setFeedbackList] = useState<FeedbackItem[]>([]);
   const [feedbackLoading, setFeedbackLoading] = useState(false);
   const [feedbackExpanded, setFeedbackExpanded] = useState(false);
+  const [walletIdentityExpanded, setWalletIdentityExpanded] = useState(false);
   /** Per-artist panel open state; `undefined`/`true` = expanded (default), `false` = collapsed */
   const [assetArtistExpanded, setAssetArtistExpanded] = useState<Record<string, boolean>>({});
   const [earningsArtistExpanded, setEarningsArtistExpanded] = useState<Record<string, boolean>>({});
@@ -610,19 +611,59 @@ const Wallet: React.FC<WalletProps> = ({
       </div>
 
       {userAddress && (
-        <div className="flex items-center gap-2 px-4 py-1.5 bg-gray-900/90 border-b border-gray-700 text-xs text-gray-200 flex-shrink-0">
-          <span className="truncate font-mono flex-1 min-w-0" title={userAddress}>
-            {`${userAddress.slice(0, 6)}…${userAddress.slice(-4)}`}
-          </span>
+        <div className="bg-gray-900/90 border-b border-gray-700 text-xs text-gray-200 flex-shrink-0">
           <button
             type="button"
-            onClick={handleCopyAddress}
-            title="Copy wallet address"
-            aria-label="Copy wallet address"
-            className="flex-shrink-0 p-1 rounded hover:bg-gray-700 transition-colors text-sm"
+            id="wallet-identity-toggle"
+            aria-expanded={walletIdentityExpanded}
+            aria-controls="wallet-identity-details"
+            onClick={() => setWalletIdentityExpanded((v) => !v)}
+            className="w-full flex items-center justify-between gap-2 px-4 py-1.5 text-left hover:bg-gray-800/60 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-yellow-500/80 focus-visible:ring-inset"
           >
-            📋
+            <span className="flex items-center gap-1.5 min-w-0">
+              <span className="text-green-400 flex-shrink-0" aria-hidden>
+                ✅
+              </span>
+              <span className="font-medium text-gray-100">Wallet address</span>
+            </span>
+            <span className="text-gray-400 flex-shrink-0" aria-hidden>
+              {walletIdentityExpanded ? '▴' : '▾'}
+            </span>
           </button>
+
+          <div id="wallet-identity-details" className="px-4 pb-2">
+            {walletIdentityExpanded ? (
+              <>
+                <p className="font-mono text-xs text-gray-300 break-all leading-relaxed mb-2">
+                  {userAddress}
+                </p>
+                <button
+                  type="button"
+                  onClick={handleCopyAddress}
+                  title="Copy wallet address"
+                  aria-label="Copy wallet address"
+                  className="inline-flex items-center gap-1 px-2 py-1 rounded bg-gray-700 hover:bg-gray-600 text-gray-100 text-xs font-medium transition-colors"
+                >
+                  📋 Copy
+                </button>
+              </>
+            ) : (
+              <div className="flex items-center gap-2 pb-0.5">
+                <span className="truncate font-mono flex-1 min-w-0 text-gray-300">
+                  {`${userAddress.slice(0, 6)}…${userAddress.slice(-4)}`}
+                </span>
+                <button
+                  type="button"
+                  onClick={handleCopyAddress}
+                  title="Copy wallet address"
+                  aria-label="Copy wallet address"
+                  className="flex-shrink-0 inline-flex items-center gap-1 px-2 py-1 rounded bg-gray-700 hover:bg-gray-600 text-gray-100 text-xs font-medium transition-colors"
+                >
+                  📋 Copy
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       )}
       
