@@ -1351,36 +1351,10 @@ body {
   min-width: 0;
 }
 
-.purchase-slider-section .purchase-swap-select {
-  flex: 3 1 0;
-  min-width: 0;
-  max-width: 62%;
-}
-
-.purchase-slider-section .purchase-swap-amount {
-  flex: 2 1 0;
-  min-width: 0;
-  max-width: 40%;
-  text-align: right;
-  font-size: 0.875rem;
-}
-
 .purchase-slider-section .swap-silver-bar-select,
 .purchase-slider-section .swap-silver-bar-input {
   padding: 6px 10px;
   min-height: 44px;
-}
-
-@media (max-width: 640px) {
-  .purchase-slider-section .purchase-swap-select {
-    flex: 5 1 0;
-    max-width: 64%;
-  }
-
-  .purchase-slider-section .purchase-swap-amount {
-    flex: 3 1 0;
-    max-width: 36%;
-  }
 }
 
 .purchase-slider-section .swap-silver-bar .custom-token-input {
