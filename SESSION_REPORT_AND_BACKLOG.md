@@ -346,3 +346,317 @@ Document the **presentation-only** vault launch experience above the chat strip 
 ### Build note
 
 - Stale `.next` can cause `Cannot find module './8548.js'` (or similar) on `next build`; clean rebuild: `rm -rf .next && npm run build`.
+
+---
+
+## Part 11: Mobile onboarding fix (`feature/mobile-onboarding-fix`) — May 2026
+
+> **Checkpoint date:** 2026-05-24 (updated: Purchase Options panel polish documented). **Do not merge to `main` yet.**
+
+### Branch, gate, and process
+
+| Item | Status |
+|------|--------|
+| Branch | `feature/mobile-onboarding-fix` (user-managed) |
+| Merge | **Not yet** — wait for mobile edit comfort + final iPhone QA |
+| Workflow | One surgical step: **plan → approve → implement → build → audit → preview** |
+| Git / env | User commits/pushes only; agent does not run git; never touch `.env` |
+| `PRD.json` | Off limits for this arc unless user explicitly runs PRD sync workflow |
+| Feedback sync | `npm run sync-feedback` failed in agent sandbox (network); **run locally** before PRD-driven work |
+
+**Do not touch during polish:** faucet, factory contracts, Supabase schema, env, launch order, `TreasureInviteShell`, `OrbitPeekCarousel`, **`PurchaseFlow` swap/purchase handlers and confirm logic**. Layout/copy/CSS under **`.purchase-slider-section`** is OK when Jai explicitly approves (presentation only).
+
+---
+
+### Changelog / launch notes (2026-05-24)
+
+**What changed (shipped on branch):**
+
+- Pass 3 mobile onboarding chassis (hero pin, width chain, `portal-panel-chassis`)
+- Full test launch path after factory ETH funding + `ArtistDownloadsUUPSABI` fix
+- iPhone draft orbit tap fix (`ThemeOrbitRenderer`)
+- Toolbar compact row: Wallet (full label) + tiny `+` + tiny ✏️
+- Wallet address moved from header into Wallet panel identity card (reveal + Copy)
+- Bad Phase 2 scroll-shell / `portal-form-panel` bundle **reverted and cleaned up**
+- **Purchase Options panel polish (presentation only):** copy trim; Option A compact spacing; inline FROM/TO; smaller `purchase-panel-title`; `renderPurchaseLivePrice()` between slider and silver bar (display move, not new math); min purchase in footer with wallet hint — `PurchaseFlow.tsx` + scoped `globals.css` (~1319–1400)
+
+**What passed (user-reported QA unless noted):**
+
+- Mobile onboarding chassis on iPhone portrait
+- Treasure → claim → wallet → factory → mint → publish end-to-end
+- **`green333`** deployed from preview
+- Desktop GOSHEESH + safeword `zeyoda` draft orbit loads nested drafts
+- iPhone draft orbit taps load drafts (code fix + user QA)
+- Toolbar horizontal row on iPhone
+- Wallet identity card (collapsed truncate + Copy; expanded full address + Copy)
+
+**Still open:**
+
+1. Mobile profile edit comfort — **no scroll-shell approach**
+2. iPhone regression — **buy/confirm**, cash-out, launch path, **public Incognito** `/?artist=slug` (purchase panel layout shipped; handler QA not yet logged)
+3. Optional login email in Wallet expanded row
+4. Optional purchase polish: slimmer Market active chip or merge status lines (not more 4px margin shaving)
+5. Merge `feature/mobile-onboarding-fix` → `main` after QA
+
+---
+
+### Where we started (problem)
+
+**Original pain:** iPhone portrait onboarding was cropped/clipped. Swap panel fit; onboarding did not.
+
+**Diagnosis (code-backed):** Width/chassis bug, not input zoom alone — broken flex width chain, no hero viewport pinning, header wallet stretch, mobile overflow bandaids.
+
+**Earlier passes (1/2):** Safe-area, shorter mobile hero, 16px inputs, Sign out label, hide "+ Create New" on invite, reduced halo inset. Preview still failed on iPhone portrait until Pass 3.
+
+---
+
+### Pass 3 — mobile onboarding chassis (done)
+
+| Deliverable | Proof |
+|-------------|-------|
+| `app/utils/heroFitBox.ts` | `computeHeroFitBox` + `visualViewport` |
+| Hero JS pin | `app/page.tsx` ~667–698, gated `onboarding \|\| upload-asset` |
+| Width chain | `page.tsx` `w-full max-w-full min-w-0` on root → main → z-10 |
+| `portal-panel-chassis` | `globals.css` ~294+; used in onboarding/edit/chat |
+| `overflow-x-hidden` bandaid | Removed (grep: zero matches in repo) |
+
+**User-reported:** Treasure claim, wallet, launch ceremony, form fit on iPhone — chassis pass.
+
+---
+
+### Backend / launch blockers (resolved)
+
+#### 1. Factory ETH (code-proven requirement)
+
+```105:105:contracts/uups/ArtistFactory.sol
+        require(address(this).balance >= 0.005 ether, "Insufficient factory ETH balance");
+```
+
+Factory needs ≥ **0.005 ETH** per launch (LP seed). Fund `NEXT_PUBLIC_ARTIST_FACTORY` on Base Sepolia (~0.05 ETH recommended).
+
+**User-reported:** Fixed; steps 1–3 passed after funding.
+
+#### 2. Mint ABI (`ArtistDownloadsUUPSABI`)
+
+`app/api/uploadAsset/route.ts` imports `ArtistDownloadsUUPSABI` from `app/utils/abis/` (Hardhat artifact import removed).
+
+**User-reported:** Full launch succeeded; **`green333`** deployed from preview.
+
+---
+
+### P0 — workshop draft orbit tap (done)
+
+**Symptom:** Desktop GOSHEESH + safeword `zeyoda` → draft orbit coins load nested drafts. iPhone: rotation paused, draft did not load.
+
+**Root cause (code):** `ThemeOrbitRenderer` container `touchstart`/`pointerdown` set `suppressClickRef = true` on any `.orbit-token`; draft `onClick` bailed if suppress still true.
+
+**Fix shipped** — `app/components/ThemeOrbitRenderer.tsx`:
+
+- `isDraftCoinTarget` — skip container suppress for `[data-draft-coin]`
+- Draft chips load on `pointerup` when movement ≤ 6px (`TAP_MOVE_THRESHOLD_SQ = 36`)
+- `touchAction: 'manipulation'` on draft buttons
+- Container click capture carve-out for draft targets
+
+**User-reported:** Desktop and iPhone draft taps work.
+
+**Architecture (unchanged):** Gate `showWorkshopDraftOrbit` — admin + onboarding + drafts (`page.tsx` ~1658–1659). Load via `OnboardingPanel.loadTreasureDraftByCoinId` → `/api/invite/admin-draft?coin=...`.
+
+---
+
+### P0 — mobile profile edit (NOT done)
+
+Edit works functionally; mobile UX not polished.
+
+| Issue | Code fact |
+|-------|-----------|
+| Save at bottom of long panel | `ProfileEditPanel.tsx` ~1028+ — no sticky footer |
+| Flat panel restored | No scroll shell (failed Phase 2 reverted) |
+| Edit entry | Toolbar ✏️ + chat ✏️; owner gate `treasury_wallet === user` on current URL |
+| Color/font grids | Still `w-12 h-12`, full-size — not compacted yet |
+
+**Explicitly rejected approach:** Panel-inside-panel scroll shell, sticky Save, shared `portal-form-panel` compact CSS bundle — tried once, reverted (below). **No scroll-shell approach going forward.**
+
+---
+
+### Failed Phase 2 attempt (reverted — lesson learned)
+
+**What was tried (too much at once):**
+
+- `portal-form-panel` wrappers in `ProfileEditPanel` + `OnboardingPanel`
+- `max-height: 100dvh` scroll shell, inner `overflow-y: auto`
+- Sticky Save/Cancel footer
+- Compact color grids, fonts, shorter previews
+- `max-sm:flex-col` on toolbar → made toolbar taller/worse
+
+**User reaction:** Form felt “trapped”; stacked toolbar was wrong.
+
+**Cleanup (completed):** Removed all `portal-form-panel` from TSX + `globals.css`. Restored flat panel structure; Save in normal document flow. Grep confirms: **zero** `portal-form-panel`, `100dvh`, `showFullAddress`, `app-header-wallet-chip` in repo.
+
+**Rule going forward:** One tiny change at a time. **No scroll-shell approach.**
+
+---
+
+### Mobile polish — completed steps (surgical)
+
+#### Step 1 — toolbar compact (done)
+
+**File:** `app/page.tsx` ~3537–3591
+
+| Control | Behavior |
+|---------|----------|
+| Wallet | `💰 Wallet` / `Close`, blue, full label |
+| Create | Tiny `+`, `w-10 h-8`, `title="Create new asset"` |
+| Edit | Tiny `✏️`, `w-10 h-8`, `title="Edit artist page"`, hidden when `appMode === 'profile-edit'` |
+| Layout | `flex flex-row` on mobile — **no** `max-sm:flex-col` |
+
+**User-reported:** Horizontal row on iPhone — Wallet big, tiny +, tiny ✏️.
+
+#### Step 2 — move address off header (done)
+
+**Removed from `page.tsx`:** `showFullAddress` state, `✅ Connected: 0x...` chip in `app-header`, dead `.app-header-wallet-chip` CSS.
+
+**Header now:** Sign out only when logged in (`app/page.tsx` ~2477–2482).
+
+**Added to `Wallet.tsx`:** Address row under “💰 Your Assets” yellow header.
+
+#### Step 2 refinement — identity card (done)
+
+**File:** `app/components/Wallet.tsx` ~613–668
+
+- **Collapsed:** `✅ Wallet address` + caret `▾`, short address, `📋 Copy` pill
+- **Expanded:** Full address (`font-mono break-all`), `📋 Copy` still visible
+- **Copy:** `handleCopyAddress` → full address + toast `"Wallet address copied"`
+- **Email:** Not added — deferred micro-step (would need `localStorage`, `magic.user.getInfo()`, or new prop)
+
+**User-reported / git:** Step 2 refinement approved; included as done (working tree clean at checkpoint).
+
+---
+
+### Purchase Options panel polish — done (presentation only)
+
+**Scope:** Logged-in purchase panel only (`user && globalSafewordVerified && !purchaseConfirmationData`). **Files:** `app/components/PurchaseFlow.tsx`, `app/globals.css` (rules scoped under **`.purchase-slider-section`** only).
+
+| Pass | What |
+|------|------|
+| Copy trim | Removed market helper lines, testnet gas line, featured-download USD subtext under checkbox |
+| Option A | Compact padding/margins, slider spacing, silver bar padding, CTA spacing — safe but **subtle** |
+| Inline FROM/TO | `swap-silver-bar-row--inline` — first **clearly visible** height win (~25–35px on silver bar) |
+| Title | `purchase-panel-title` overrides global `.mock-ui-section h3` size in purchase panel only |
+| Live price | `renderPurchaseLivePrice()` — **same branches/math**; moved between slider and silver box |
+| Min purchase | `$1.00 Minimum Purchase (USD -> Artistocks)` in `purchase-panel-footer` with wallet hint |
+
+**Panel order now:** Purchase Options → slider → live price → FROM/TO → Market active → Include Featured Download → gold CTA → wallet hint · min purchase.
+
+**Do not:** Change global `.swap-silver-bar` (onboarding/profile use stacked labels). Touch swap handlers, purchase handlers, confirm flow, backend, auth, contracts, or price math.
+
+**Open QA:** iPhone buy + confirm after layout churn; cash-out; launch; public Incognito artist page.
+
+---
+
+### Proven working end-to-end
+
+| Stage | Status | Source |
+|-------|--------|--------|
+| Mobile onboarding chassis | ✅ | User-reported + code |
+| Treasure → claim → wallet → factory → mint → publish | ✅ | User-reported (after factory fund + ABI fix) |
+| `green333` deployed from preview | ✅ | User-reported |
+| Desktop GOSHEESH + `zeyoda` draft orbit | ✅ | User-reported |
+| iPhone draft orbit tap | ✅ | Code fix + user-reported |
+| Top toolbar compact row | ✅ | Code + user-reported |
+| Address inside Wallet panel + identity card | ✅ | Code + user-reported |
+| Purchase Options layout/copy polish | ✅ code shipped | iPhone buy/confirm QA **open** |
+| Mobile profile edit usability | ❌ open | Code (Save at bottom, full swatches) |
+| Merge to `main` | ❌ not yet | Process gate |
+
+---
+
+### Current UI layout (logged in)
+
+```
+TOP-LEFT (fixed):  [💰 Wallet] [+] [✏️]     TOP-RIGHT: [Sign out]
+
+Wallet panel (when open):
+  ┌─ 💰 Your Assets          [🔄] [✕] ─┐
+  ├─ ✅ Wallet address            ▾  ─┤  ← identity card
+  │    0xeE69…a0e8      [📋 Copy]    │
+  ├─ 📢 Feedback (admin)             ─┤
+  └─ assets / balances ...           ─┘
+
+MAIN: hero + onboarding / edit / swap panels (flat, page scroll)
+BOTTOM: Chat / Command well (still renders during edit)
+```
+
+---
+
+### Files touched across this arc (reference)
+
+| File | Role |
+|------|------|
+| `app/utils/heroFitBox.ts` | Pass 3 hero dimensions |
+| `app/globals.css` | Chassis, mobile inputs, halo; `portal-form-panel` **removed** |
+| `app/page.tsx` | Width chain, hero pin, toolbar, header (Sign out only) |
+| `app/components/OnboardingPanel.tsx` | Chassis; flat panel restored |
+| `app/components/ProfileEditPanel.tsx` | Chassis; flat panel restored |
+| `app/components/ThemeOrbitRenderer.tsx` | Draft orbit iPhone tap fix |
+| `app/api/uploadAsset/route.ts` | `ArtistDownloadsUUPSABI` |
+| `app/components/Wallet.tsx` | Address row + identity card + copy |
+| `app/components/PurchaseFlow.tsx` | Purchase panel layout/copy; `renderPurchaseLivePrice()` |
+| `app/globals.css` | `.purchase-slider-section` compact + inline FROM/TO (~1319–1400) |
+
+---
+
+### Next work (one step at a time — do not bundle)
+
+| Priority | Task | Scope hint |
+|----------|------|------------|
+| P0 | Mobile profile edit — Save reachable / comfort | **No scroll shell**; discuss smaller sections or natural page scroll only |
+| P0 | Purchase panel — iPhone buy + confirm after layout churn | Same handlers; layout-only changes expected safe |
+| Gate | iPhone regression — cash-out, launch, public Incognito `/?artist=slug` | Before merge |
+| Optional | Login email in Wallet expanded row | Separate micro-step |
+| Optional | Slimmer Market active / merge status line | Scoped `.purchase-slider-section` CSS only if panel still tall |
+| P1 | Normal-mode orbit `Link` taps on phone | Same renderer family as draft fix |
+| Final | Merge `feature/mobile-onboarding-fix` → `main` | User decision after QA |
+
+---
+
+### Strict rules for next session
+
+- Frontend-only for polish unless user expands scope
+- No scroll-shell / sticky Save / `portal-form-panel` unless user explicitly reopens that
+- No git commits/pushes by agent
+- No `.env`, contracts, factory, faucet, Supabase schema, `PRD.json` (unless user asks)
+- Prove facts; ask if unknown
+- Surgical: one approved step → build → audit → preview
+
+---
+
+### Next-session handoff (paste block)
+
+```text
+Continue feature/mobile-onboarding-fix. Do not merge to main yet.
+
+Done:
+- Pass 3 mobile onboarding chassis
+- Full launch path (factory fund + ArtistDownloadsUUPSABI)
+- green333 deployed from preview
+- ThemeOrbitRenderer iPhone draft orbit tap fix
+- Reverted bad portal-form-panel scroll-shell Phase 2
+- Toolbar: Wallet full + tiny + and ✏️ horizontal row
+- Address moved from header to Wallet panel identity card (✅ Wallet address ▾, 📋 Copy, reveal full address)
+- Purchase Options panel polish (presentation only): PurchaseFlow.tsx + scoped globals.css (.purchase-slider-section)
+  - Copy trim; Option A spacing; inline FROM/TO; smaller purchase-panel-title
+  - renderPurchaseLivePrice() between slider and silver box (display move, not new math)
+  - Min purchase in footer with wallet hint
+  - Do NOT change global .swap-silver-bar; do NOT touch handlers/confirm logic
+
+Open:
+- Mobile profile edit comfort (no scroll-shell)
+- iPhone regression: buy/confirm, cash-out, launch, public Incognito /?artist=slug
+- Optional: Wallet email; slimmer Market active chip (not more 4px shaving)
+- Merge after QA
+
+Purchase panel rule: handlers/confirm logic forbidden; approved layout/copy/CSS under .purchase-slider-section OK.
+
+Process: plan → approve → implement → build → audit → preview. No git by agent.
+Full detail: SESSION_REPORT_AND_BACKLOG.md Part 11.
+```

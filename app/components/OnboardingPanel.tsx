@@ -1123,12 +1123,12 @@ const OnboardingPanel: React.FC<OnboardingPanelProps> = ({
   );
 
   return (
-    <div className="swap-panel-halo-wrap swap-panel-halo-wrap--linen max-w-2xl mx-auto mt-8">
+    <div className="portal-panel-chassis swap-panel-halo-wrap swap-panel-halo-wrap--linen mt-8">
     <div className="onboarding-panel swap-panel-glimmer p-4 md:p-6 shadow-xl rounded-lg border border-gray-700 backdrop-blur-md">
       
       {/* Header */}
-      <div className="flex justify-between items-center mb-6">
-        <h2 className="text-2xl font-bold text-white" style={{ fontFamily: 'Bungee, cursive', color: mode === 'upload-asset' ? (existingArtist?.theme?.accentColor || '#B8860B') : '#B8860B' }}>
+      <div className="flex justify-between items-center mb-6 gap-2 min-w-0">
+        <h2 className="min-w-0 flex-1 text-xl sm:text-2xl font-bold text-white" style={{ fontFamily: 'Bungee, cursive', color: mode === 'upload-asset' ? (existingArtist?.theme?.accentColor || '#B8860B') : '#B8860B' }}>
           {mode === 'upload-asset' ? 'UPLOAD NEW ASSET' : 'CREATE ARTIST'}
         </h2>
         <button
@@ -1295,19 +1295,19 @@ const OnboardingPanel: React.FC<OnboardingPanelProps> = ({
         style={{ zIndex: fontDropdownOpen ? 100 : undefined }}
       >
         <h3 className="text-lg font-semibold text-white mb-3">Typography</h3>
-        <div className="grid grid-cols-3 gap-3">
+        <div className="theme-font-option-grid grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
           {FONT_OPTIONS.map((font) => (
             <button
               key={font.value}
               onClick={() => handleFieldChange('theme.fontFamily', font.value)}
-              className={`p-3 rounded-lg border-2 transition-all ${
+              className={`theme-font-option p-3 rounded-lg border-2 transition-all ${
                 formData.theme.fontFamily === font.value
                   ? 'border-yellow-500 bg-yellow-500 bg-opacity-20'
                   : 'border-gray-600 bg-gray-700 hover:border-gray-500'
               }`}
               style={{ fontFamily: font.value }}
             >
-              <div className="text-white font-bold text-sm">{font.name}</div>
+              <div className="theme-font-option-label text-white font-bold text-sm">{font.name}</div>
             </button>
           ))}
         </div>
@@ -1330,12 +1330,12 @@ const OnboardingPanel: React.FC<OnboardingPanelProps> = ({
       {mode === 'onboarding' && (
       <div className="mb-6">
         <h3 className="text-lg font-semibold text-white mb-3">Primary Color (Background)</h3>
-        <div className="grid grid-cols-4 gap-3 mb-4">
+        <div className="theme-color-swatch-grid grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
           {Object.entries(COLOR_PRESETS).map(([key, preset]) => (
             <button
               key={`primary-${key}`}
               onClick={() => applyPrimaryPreset(key)}
-              className={`relative w-12 h-12 rounded-lg border-2 transition-all hover:scale-110 ${
+              className={`theme-color-swatch relative w-12 h-12 rounded-lg border-2 transition-all hover:scale-110 ${
                 formData.theme.primaryColor === preset.primary
                   ? 'border-white'
                   : 'border-gray-600 hover:border-gray-400'
@@ -1345,7 +1345,7 @@ const OnboardingPanel: React.FC<OnboardingPanelProps> = ({
             >
               {formData.theme.primaryColor === preset.primary && (
                 <div className="absolute inset-0 flex items-center justify-center">
-                  <span className="text-white text-lg font-bold">✓</span>
+                  <span className="theme-color-swatch-check text-white text-lg font-bold">✓</span>
                 </div>
               )}
             </button>
@@ -1374,12 +1374,12 @@ const OnboardingPanel: React.FC<OnboardingPanelProps> = ({
       {mode === 'onboarding' && (
       <div className="mb-6">
         <h3 className="text-lg font-semibold text-white mb-3">Accent Color (Text/Highlights)</h3>
-        <div className="grid grid-cols-4 gap-3 mb-4">
+        <div className="theme-color-swatch-grid grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
           {Object.entries(COLOR_PRESETS).map(([key, preset]) => (
             <button
               key={`accent-${key}`}
               onClick={() => applyAccentPreset(key)}
-              className={`relative w-12 h-12 rounded-lg border-2 transition-all hover:scale-110 ${
+              className={`theme-color-swatch relative w-12 h-12 rounded-lg border-2 transition-all hover:scale-110 ${
                 formData.theme.accentColor === preset.accent
                   ? 'border-white'
                   : 'border-gray-600 hover:border-gray-400'
@@ -1389,7 +1389,7 @@ const OnboardingPanel: React.FC<OnboardingPanelProps> = ({
             >
               {formData.theme.accentColor === preset.accent && (
                 <div className="absolute inset-0 flex items-center justify-center">
-                  <span className="text-white text-lg font-bold">✓</span>
+                  <span className="theme-color-swatch-check text-white text-lg font-bold">✓</span>
                 </div>
               )}
             </button>
@@ -1933,7 +1933,7 @@ const OnboardingPanel: React.FC<OnboardingPanelProps> = ({
       </div>
 
       {/* Action Buttons */}
-      <div className="flex gap-3">
+      <div className="flex flex-col sm:flex-row gap-3">
         <button
           onClick={handleSave}
           disabled={
@@ -1948,7 +1948,7 @@ const OnboardingPanel: React.FC<OnboardingPanelProps> = ({
         </button>
         <button
           onClick={onExit}
-          className="px-6 py-3 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors"
+          className="px-6 py-3 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors sm:flex-shrink-0"
         >
           Cancel
         </button>

@@ -32,6 +32,7 @@ import {
   UserTokenBalances
 } from '../types/artist-types';
 import { applyArtistBackground, setAccentColorCssVars } from './utils/themeBackground';
+import { computeHeroFitBox } from './utils/heroFitBox';
 import { useCommandSystem } from './hooks/useCommandSystem';
 import { useCosmicStardust } from './hooks/useCosmicStardust';
 import { ArtistFactoryABI } from './utils/abis/ArtistFactoryABI';
@@ -560,7 +561,6 @@ const ArtistPageContent: React.FC<{
   const [isActionLoading, setIsActionLoading] = useState(false);
   const [showAssetsPanel, setShowAssetsPanel] = useState<boolean>(false);
   const [downloadIpfsHash, setDownloadIpfsHash] = useState<string | null>(null);
-  const [showFullAddress, setShowFullAddress] = useState(false);
   const [isOwner, setIsOwner] = useState(false);
   const [isMinting, setIsMinting] = useState(false);
   const [mintAmount, setMintAmount] = useState("");
@@ -663,6 +663,39 @@ const ArtistPageContent: React.FC<{
       }
     };
   }, [filePreviewUrl]);
+
+  // Pin onboarding hero to viewport width (same ruler as OrbitPeekCarousel computeFitBox)
+  useEffect(() => {
+    const gated = appMode === 'onboarding' || appMode === 'upload-asset';
+    const el = onboardingContainerRef.current;
+    if (!gated || !el) {
+      if (el) {
+        el.style.width = '';
+        el.style.height = '';
+      }
+      return;
+    }
+
+    const applyPin = () => {
+      const { w, h } = computeHeroFitBox(onboardingAspectRatio || 16 / 9);
+      el.style.width = `${w}px`;
+      el.style.height = `${h}px`;
+    };
+
+    applyPin();
+    const vv = window.visualViewport;
+    vv?.addEventListener('resize', applyPin);
+    vv?.addEventListener('scroll', applyPin);
+    window.addEventListener('resize', applyPin);
+
+    return () => {
+      vv?.removeEventListener('resize', applyPin);
+      vv?.removeEventListener('scroll', applyPin);
+      window.removeEventListener('resize', applyPin);
+      el.style.width = '';
+      el.style.height = '';
+    };
+  }, [appMode, onboardingAspectRatio]);
 
   // ==================== SEARCH FUNCTIONALITY ====================
   
@@ -2421,7 +2454,7 @@ const ArtistPageContent: React.FC<{
 
   return (
     <UsdBalanceProvider userAddress={user || null}>
-      <div className="flex min-h-screen flex-col items-center justify-between pt-10 px-6 pb-6 relative bg-primary text-white font-sans">
+      <div className="flex min-h-screen w-full max-w-full min-w-0 box-border flex-col items-center justify-between pt-3 sm:pt-10 px-4 sm:px-6 pb-6 relative bg-primary text-white font-sans">
         <div
           id="particles"
           className={`cosmic-particles transition-opacity duration-300 ${vaultLaunchFocusActive ? 'opacity-40' : ''}`}
@@ -2443,25 +2476,17 @@ const ArtistPageContent: React.FC<{
 
         <header className={`app-header transition-opacity duration-300 ${vaultLaunchFocusActive ? 'opacity-40 pointer-events-none' : ''}`}>
           {user && (
-            <div className="flex items-center gap-4">
-              <div 
-                className="text-sm cursor-pointer bg-gray-800 px-3 py-2 rounded-md hover:bg-gray-700"
-                onClick={() => setShowFullAddress(!showFullAddress)}
-              >
-                <p title={user}>
-                  ✅ Connected: {showFullAddress ? user : `${user.slice(0, 6)}...${user.slice(-4)}`}
-                </p>
-              </div>
-              <button onClick={handleLogout} className="logout-button">
-                Data Reset
-              </button>
-            </div>
+            <button onClick={handleLogout} className="logout-button">
+              Sign out
+            </button>
           )}
         </header>
 
-        <main className="app-main">
+        <main className="app-main w-full max-w-full min-w-0">
           {/* z-0: halo shadow bleeds past hero; keep below purchase/login chassis (matches TreasureInviteShell) */}
-          <div className={`text-center relative z-0 transition-opacity duration-300 ${vaultLaunchFocusActive ? 'opacity-40 pointer-events-none' : ''}`}>
+          <div
+            className={`portal-hero-stack text-center relative z-0 w-full max-w-full min-w-0 transition-opacity duration-300 ${vaultLaunchFocusActive ? 'opacity-40 pointer-events-none' : ''}`}
+          >
               <>
                 <ArtistPortalTitle
                   fontFamily={appMode === 'onboarding' ? 'Bungee, cursive' : artistConfig.theme.fontFamily}
@@ -2481,7 +2506,7 @@ const ArtistPageContent: React.FC<{
                    artistConfig.displayName}
                 </ArtistPortalTitle>
   
-                <div className="relative w-full max-w-5xl mx-auto mt-6 md:mt-14 mb-12 md:mb-16">
+                <div className="relative portal-panel-chassis--hero portal-hero-band w-full mt-6 md:mt-14 mb-12 md:mb-16">
                   {(appMode === 'onboarding' || appMode === 'upload-asset') ? (
                     // Onboarding: Drag & drop upload zone
                     <>
@@ -2494,14 +2519,9 @@ const ArtistPageContent: React.FC<{
                       />
                       <div 
                         ref={onboardingContainerRef}
-                        className="relative"
+                        className="relative onboarding-hero-container"
                         style={{
-                          height: 'clamp(280px, 50vh, 720px)',
-                          width: 'auto',
-                          maxWidth: 'min(92vw, 1000px)',
                           aspectRatio: onboardingAspectRatio || 16/9,
-                          margin: '0 auto 16px auto',
-                          overflow: 'visible',
                           cursor: uploadedFile ? 'default' : 'pointer'
                         }}
                         onDragOver={handleDragOver}
@@ -2816,9 +2836,9 @@ const ArtistPageContent: React.FC<{
               </>
           </div>
 
-          <div className="relative z-10 w-full flex flex-col items-center">
+          <div className="relative z-10 app-main-z10 w-full max-w-full min-w-0 flex flex-col items-center">
           <div
-            className="w-full flex flex-col items-center"
+            className="w-full max-w-full min-w-0 flex flex-col items-center"
             inert={vaultLaunchFocusActive ? true : undefined}
           >
           {isOwner && (
@@ -3077,17 +3097,13 @@ const ArtistPageContent: React.FC<{
             />
           )}
 
-          <div 
-            className={`unified-input-container mock-ui-section p-4 border-t-2 border-gray-700 mt-8 ${!user && shakeActive ? 'shake' : ''} ${vaultLaunchFocusActive ? 'relative z-[110] vault-launch-chat-well' : ''}`}
+          <div
+            className={`portal-panel-chassis unified-input-container mock-ui-section p-4 border-t-2 border-gray-700 mt-8 w-full max-w-full min-w-0 box-border ${!user && shakeActive ? 'shake' : ''} ${vaultLaunchFocusActive ? 'relative z-[110] vault-launch-chat-well' : ''}`}
           >
             {user && (
               <h3 className="text-xl font-semibold mb-3 text-center">Chat / Command</h3>
             )}
-            <div
-              className={`flex flex-col items-center mx-auto gap-3 w-full ${
-                vaultLaunchFocusActive ? 'max-w-2xl' : 'max-w-xl'
-              }`}
-            >
+            <div className="flex flex-col items-center mx-auto gap-3 w-full max-w-full min-w-0">
               {appMode === 'onboarding' && launchCeremony.visible && (
                 <div ref={vaultLaunchCeremonyRef} className="w-full">
                   <VaultLaunchCeremonyCard
@@ -3129,7 +3145,7 @@ const ArtistPageContent: React.FC<{
                         value={feedbackMessage}
                         onChange={(e) => setFeedbackMessage(e.target.value)}
                         placeholder="Leave feedback..."
-                        className="w-full p-2 rounded bg-gray-800 border border-gray-600 text-white text-sm mb-2 focus:ring-accentColor focus:border-accentColor"
+                        className="w-full p-2 rounded bg-gray-800 border border-gray-600 text-white mb-2 focus:ring-accentColor focus:border-accentColor"
                         onKeyDown={(e) => {
                           if (e.key === 'Enter') {
                             e.preventDefault();
@@ -3169,7 +3185,6 @@ const ArtistPageContent: React.FC<{
                             setFeedbackMessage('');
                           }
                         }}
-                        autoFocus
                       />
                       <div className="flex justify-end gap-2">
                         <button
@@ -3522,7 +3537,7 @@ const ArtistPageContent: React.FC<{
         {/* Top-left wallet button - MOVED TO END TO ENSURE TOP Z-INDEX */}
         {user && (
           <div
-            className={`fixed top-4 left-4 z-[9999] flex gap-2 transition-opacity duration-300 ${
+            className={`fixed-wallet-toolbar left-4 z-[9999] flex flex-row gap-2 transition-opacity duration-300 ${
               vaultLaunchFocusActive ? 'opacity-40 pointer-events-none' : ''
             }`}
           >
@@ -3539,7 +3554,9 @@ const ArtistPageContent: React.FC<{
             </button>
 
             {/* Action Buttons */}
+            {!(appMode === 'onboarding' && inviteLaunchBridge?.coinPublicId) && (
             <button
+              type="button"
               onClick={() => {
                 // Find user's owned artist
                 const ownedArtist = allArtistsConfig ? Object.values(allArtistsConfig).find(artist => 
@@ -3554,18 +3571,23 @@ const ArtistPageContent: React.FC<{
                   setOnboardingArtistName('ADD NEW ASSET');
                 }
               }}
-              className="bg-gray-600 hover:bg-gray-500 px-4 py-2 rounded-md text-white font-medium transition-colors shadow-lg"
+              className="bg-gray-600 hover:bg-gray-500 rounded-md text-white text-sm font-medium transition-colors shadow-lg w-10 h-8 flex items-center justify-center"
+              title="Create new asset"
             >
-              + Create New
+              +
             </button>
+            )}
             
-            {artistConfig && artistConfig.treasury_wallet && 
-             user.toLowerCase() === artistConfig.treasury_wallet.toLowerCase() && (
+            {artistConfig && artistConfig.treasury_wallet &&
+             user.toLowerCase() === artistConfig.treasury_wallet.toLowerCase() &&
+             appMode !== 'profile-edit' && (
               <button
+                type="button"
                 onClick={() => setAppMode('profile-edit')}
-                className="bg-yellow-600 hover:bg-yellow-500 px-4 py-2 rounded-md text-white font-medium transition-colors shadow-lg"
+                className="bg-yellow-600 hover:bg-yellow-500 rounded-md text-white text-sm font-medium transition-colors shadow-lg w-10 h-8 flex items-center justify-center"
+                title="Edit artist page"
               >
-                ✏️ Edit Artist Page
+                ✏️
               </button>
             )}
           </div>
