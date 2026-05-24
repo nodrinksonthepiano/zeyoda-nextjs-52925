@@ -1865,10 +1865,20 @@ body {
 @media (max-width: 640px) {
   .app-main {
     align-items: stretch;
-    padding-top: calc(4.5rem + env(safe-area-inset-top, 0px));
+    padding-top: calc(3rem + env(safe-area-inset-top, 0px));
     padding-left: env(safe-area-inset-left, 0px);
     padding-right: env(safe-area-inset-right, 0px);
     padding-bottom: calc(40px + env(safe-area-inset-bottom, 0px));
+  }
+
+  .app-main .portal-hero-stack h1 {
+    margin-top: 0;
+    margin-bottom: 0.375rem;
+  }
+
+  .app-main .portal-hero-band {
+    margin-top: 0.5rem;
+    margin-bottom: 1rem;
   }
 
   .app-main-z10 {
@@ -1919,20 +1929,6 @@ body {
   .onboarding-panel .theme-color-swatch-check,
   .profile-edit-panel .theme-color-swatch-check {
     font-size: 0.875rem;
-  }
-
-  .app-main.app-main--onboarding {
-    padding-top: calc(3rem + env(safe-area-inset-top, 0px));
-  }
-
-  .app-main--onboarding .onboarding-hero-stack h1 {
-    margin-top: 0;
-    margin-bottom: 0.375rem;
-  }
-
-  .app-main--onboarding .onboarding-hero-band {
-    margin-top: 0.5rem;
-    margin-bottom: 1rem;
   }
 
   .onboarding-panel .theme-font-option-grid,
