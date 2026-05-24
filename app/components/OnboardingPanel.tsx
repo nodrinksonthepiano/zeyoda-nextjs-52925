@@ -1124,11 +1124,11 @@ const OnboardingPanel: React.FC<OnboardingPanelProps> = ({
 
   return (
     <div className="portal-panel-chassis swap-panel-halo-wrap swap-panel-halo-wrap--linen mt-8">
-    <div className="onboarding-panel portal-form-panel swap-panel-glimmer p-4 md:p-6 shadow-xl rounded-lg border border-gray-700 backdrop-blur-md">
+    <div className="onboarding-panel swap-panel-glimmer p-4 md:p-6 shadow-xl rounded-lg border border-gray-700 backdrop-blur-md">
       
       {/* Header */}
-      <div className="portal-form-panel__header flex justify-between items-center mb-6 gap-2 min-w-0">
-        <h2 className="portal-form-panel__title min-w-0 flex-1 text-xl sm:text-2xl font-bold text-white" style={{ fontFamily: 'Bungee, cursive', color: mode === 'upload-asset' ? (existingArtist?.theme?.accentColor || '#B8860B') : '#B8860B' }}>
+      <div className="flex justify-between items-center mb-6 gap-2 min-w-0">
+        <h2 className="min-w-0 flex-1 text-xl sm:text-2xl font-bold text-white" style={{ fontFamily: 'Bungee, cursive', color: mode === 'upload-asset' ? (existingArtist?.theme?.accentColor || '#B8860B') : '#B8860B' }}>
           {mode === 'upload-asset' ? 'UPLOAD NEW ASSET' : 'CREATE ARTIST'}
         </h2>
         <button
@@ -1138,8 +1138,6 @@ const OnboardingPanel: React.FC<OnboardingPanelProps> = ({
           ✕
         </button>
       </div>
-
-      <div className="portal-form-panel__body">
 
       {isAdmin && mode === 'onboarding' && getDidToken && (
         <div className="mb-6 rounded-lg border border-amber-500/50 bg-amber-950/40 p-4 space-y-3">
@@ -1934,10 +1932,8 @@ const OnboardingPanel: React.FC<OnboardingPanelProps> = ({
         </div>
       </div>
 
-      </div>
-
       {/* Action Buttons */}
-      <div className="portal-form-panel__footer flex flex-col sm:flex-row sm:flex-wrap gap-3">
+      <div className="flex flex-col sm:flex-row gap-3">
         <button
           onClick={handleSave}
           disabled={
@@ -1956,24 +1952,24 @@ const OnboardingPanel: React.FC<OnboardingPanelProps> = ({
         >
           Cancel
         </button>
+      </div>
 
-        {/* Progress Indicator */}
-        <div className="portal-form-panel__footer-note mt-4 text-center sm:basis-full">
-          <div className="text-xs text-gray-400">
-            {mode === 'upload-asset' ? (
-              formData.artworktitle && uploadedFile ? (
-                <span className="text-green-400">✓ Ready to upload! Download price: ${formData.downloadPrice}</span>
-              ) : (
-                'Add content title and upload file'
-              )
+      {/* Progress Indicator */}
+      <div className="mt-4 text-center">
+        <div className="text-xs text-gray-400">
+          {mode === 'upload-asset' ? (
+            formData.artworktitle && uploadedFile ? (
+              <span className="text-green-400">✓ Ready to upload! Download price: ${formData.downloadPrice}</span>
             ) : (
-              formData.displayname && formData.tokenName ? (
-                <span className="text-green-400">✓ Ready to launch! Download price: ${formData.downloadPrice}</span>
-              ) : (
-                'Fill in artist name and token symbol'
-              )
-            )}
-          </div>
+              'Add content title and upload file'
+            )
+          ) : (
+            formData.displayname && formData.tokenName ? (
+              <span className="text-green-400">✓ Ready to launch! Download price: ${formData.downloadPrice}</span>
+            ) : (
+              'Fill in artist name and token symbol'
+            )
+          )}
         </div>
       </div>
     </div>
