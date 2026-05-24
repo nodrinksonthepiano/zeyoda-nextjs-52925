@@ -46,6 +46,11 @@ This repo is currently the **private testnet rehearsal space**, not the final pu
 
 ## Current Truths
 
+- **Active branch (May 2026):** `feature/mobile-onboarding-fix` — **do not merge to `main` yet.** Full arc in **`SESSION_REPORT_AND_BACKLOG.md` Part 11**.
+- **Mobile onboarding (done on branch):** Pass 3 chassis; full launch after factory fund + `ArtistDownloadsUUPSABI`; iPhone draft orbit taps; toolbar Wallet + tiny `+` + ✏️; address in Wallet identity card (reveal + Copy). **`green333`** from preview (user-reported).
+- **Rejected (do not retry without explicit ask):** `portal-form-panel` / scroll-shell / sticky Save Phase 2 — reverted; grep-clean. **No scroll-shell for profile edit.**
+- **Open on branch:** mobile profile edit comfort; optional Wallet email row; optional smaller mobile swatches (one step); iPhone regression; then merge.
+- **Process:** one surgical step — plan → approve → implement → build → audit → preview. Run **`npm run sync-feedback` locally** before PRD-driven work (sandbox fetch may fail).
 - **MVP testnet spine (May 2026):** Normal launch + nested/treasure launch + **public Incognito** page + buy + cash-out + optional download after cash-out are the rehearsal bar. Phase = **pre–artist-testing hardening**, not “prove the stack runs.” **Do not** expand into tokenomics, token-to-token, LP drains, or legacy cleanup in the same breath as first external artist invites.
 - **Public launch ≠ owner session:** `LiveArtistPortal` black screen when `artists.paused === true` and user is not treasury. **Always** verify `/?artist=slug` **logged out / Incognito** before calling a page “live.”
 - **Publish gate:** `createArtist` sets `paused: true`; `POST /api/artist/finalizeLaunch` flips `false` after integrity checks. Manual `paused` edits are a valid testnet escape hatch but bypass automated proof.
