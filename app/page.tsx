@@ -3546,7 +3546,7 @@ const ArtistPageContent: React.FC<{
         {/* Top-left wallet button - MOVED TO END TO ENSURE TOP Z-INDEX */}
         {user && (
           <div
-            className={`fixed-wallet-toolbar left-4 z-[9999] flex max-sm:flex-col max-sm:items-stretch max-sm:max-w-[calc(100vw-2rem)] sm:flex-row gap-2 transition-opacity duration-300 ${
+            className={`fixed-wallet-toolbar left-4 z-[9999] flex flex-row gap-2 transition-opacity duration-300 ${
               vaultLaunchFocusActive ? 'opacity-40 pointer-events-none' : ''
             }`}
           >
@@ -3565,6 +3565,7 @@ const ArtistPageContent: React.FC<{
             {/* Action Buttons */}
             {!(appMode === 'onboarding' && inviteLaunchBridge?.coinPublicId) && (
             <button
+              type="button"
               onClick={() => {
                 // Find user's owned artist
                 const ownedArtist = allArtistsConfig ? Object.values(allArtistsConfig).find(artist => 
@@ -3579,9 +3580,10 @@ const ArtistPageContent: React.FC<{
                   setOnboardingArtistName('ADD NEW ASSET');
                 }
               }}
-              className="bg-gray-600 hover:bg-gray-500 px-4 py-2 rounded-md text-white font-medium transition-colors shadow-lg"
+              className="bg-gray-600 hover:bg-gray-500 rounded-md text-white text-sm font-medium transition-colors shadow-lg w-10 h-8 flex items-center justify-center"
+              title="Create new asset"
             >
-              + Create New
+              +
             </button>
             )}
             
@@ -3589,10 +3591,12 @@ const ArtistPageContent: React.FC<{
              user.toLowerCase() === artistConfig.treasury_wallet.toLowerCase() &&
              appMode !== 'profile-edit' && (
               <button
+                type="button"
                 onClick={() => setAppMode('profile-edit')}
-                className="bg-yellow-600 hover:bg-yellow-500 px-4 py-2 rounded-md text-white font-medium transition-colors shadow-lg"
+                className="bg-yellow-600 hover:bg-yellow-500 rounded-md text-white text-sm font-medium transition-colors shadow-lg w-10 h-8 flex items-center justify-center"
+                title="Edit artist page"
               >
-                ✏️ Edit Artist Page
+                ✏️
               </button>
             )}
           </div>
