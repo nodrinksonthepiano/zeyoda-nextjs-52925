@@ -351,7 +351,7 @@ Document the **presentation-only** vault launch experience above the chat strip 
 
 ## Part 11: Mobile onboarding fix (`feature/mobile-onboarding-fix`) — May 2026
 
-> **Checkpoint date:** 2026-05-24. Docs-only backup before more frontend polish. **Do not merge to `main` yet.**
+> **Checkpoint date:** 2026-05-24 (updated: Purchase Options panel polish documented). **Do not merge to `main` yet.**
 
 ### Branch, gate, and process
 
@@ -364,7 +364,7 @@ Document the **presentation-only** vault launch experience above the chat strip 
 | `PRD.json` | Off limits for this arc unless user explicitly runs PRD sync workflow |
 | Feedback sync | `npm run sync-feedback` failed in agent sandbox (network); **run locally** before PRD-driven work |
 
-**Do not touch during polish:** faucet, factory contracts, Supabase schema, env, launch order, `TreasureInviteShell`, `OrbitPeekCarousel`, `PurchaseFlow` swap panel.
+**Do not touch during polish:** faucet, factory contracts, Supabase schema, env, launch order, `TreasureInviteShell`, `OrbitPeekCarousel`, **`PurchaseFlow` swap/purchase handlers and confirm logic**. Layout/copy/CSS under **`.purchase-slider-section`** is OK when Jai explicitly approves (presentation only).
 
 ---
 
@@ -378,6 +378,7 @@ Document the **presentation-only** vault launch experience above the chat strip 
 - Toolbar compact row: Wallet (full label) + tiny `+` + tiny ✏️
 - Wallet address moved from header into Wallet panel identity card (reveal + Copy)
 - Bad Phase 2 scroll-shell / `portal-form-panel` bundle **reverted and cleaned up**
+- **Purchase Options panel polish (presentation only):** copy trim; Option A compact spacing; inline FROM/TO; smaller `purchase-panel-title`; `renderPurchaseLivePrice()` between slider and silver bar (display move, not new math); min purchase in footer with wallet hint — `PurchaseFlow.tsx` + scoped `globals.css` (~1319–1400)
 
 **What passed (user-reported QA unless noted):**
 
@@ -392,9 +393,9 @@ Document the **presentation-only** vault launch experience above the chat strip 
 **Still open:**
 
 1. Mobile profile edit comfort — **no scroll-shell approach**
-2. Optional login email in Wallet expanded row
-3. Smaller mobile color swatches (one tiny step only)
-4. Final iPhone regression matrix before merge
+2. iPhone regression — **buy/confirm**, cash-out, launch path, **public Incognito** `/?artist=slug` (purchase panel layout shipped; handler QA not yet logged)
+3. Optional login email in Wallet expanded row
+4. Optional purchase polish: slimmer Market active chip or merge status lines (not more 4px margin shaving)
 5. Merge `feature/mobile-onboarding-fix` → `main` after QA
 
 ---
@@ -531,6 +532,27 @@ Edit works functionally; mobile UX not polished.
 
 ---
 
+### Purchase Options panel polish — done (presentation only)
+
+**Scope:** Logged-in purchase panel only (`user && globalSafewordVerified && !purchaseConfirmationData`). **Files:** `app/components/PurchaseFlow.tsx`, `app/globals.css` (rules scoped under **`.purchase-slider-section`** only).
+
+| Pass | What |
+|------|------|
+| Copy trim | Removed market helper lines, testnet gas line, featured-download USD subtext under checkbox |
+| Option A | Compact padding/margins, slider spacing, silver bar padding, CTA spacing — safe but **subtle** |
+| Inline FROM/TO | `swap-silver-bar-row--inline` — first **clearly visible** height win (~25–35px on silver bar) |
+| Title | `purchase-panel-title` overrides global `.mock-ui-section h3` size in purchase panel only |
+| Live price | `renderPurchaseLivePrice()` — **same branches/math**; moved between slider and silver box |
+| Min purchase | `$1.00 Minimum Purchase (USD -> Artistocks)` in `purchase-panel-footer` with wallet hint |
+
+**Panel order now:** Purchase Options → slider → live price → FROM/TO → Market active → Include Featured Download → gold CTA → wallet hint · min purchase.
+
+**Do not:** Change global `.swap-silver-bar` (onboarding/profile use stacked labels). Touch swap handlers, purchase handlers, confirm flow, backend, auth, contracts, or price math.
+
+**Open QA:** iPhone buy + confirm after layout churn; cash-out; launch; public Incognito artist page.
+
+---
+
 ### Proven working end-to-end
 
 | Stage | Status | Source |
@@ -542,6 +564,7 @@ Edit works functionally; mobile UX not polished.
 | iPhone draft orbit tap | ✅ | Code fix + user-reported |
 | Top toolbar compact row | ✅ | Code + user-reported |
 | Address inside Wallet panel + identity card | ✅ | Code + user-reported |
+| Purchase Options layout/copy polish | ✅ code shipped | iPhone buy/confirm QA **open** |
 | Mobile profile edit usability | ❌ open | Code (Save at bottom, full swatches) |
 | Merge to `main` | ❌ not yet | Process gate |
 
@@ -577,6 +600,8 @@ BOTTOM: Chat / Command well (still renders during edit)
 | `app/components/ThemeOrbitRenderer.tsx` | Draft orbit iPhone tap fix |
 | `app/api/uploadAsset/route.ts` | `ArtistDownloadsUUPSABI` |
 | `app/components/Wallet.tsx` | Address row + identity card + copy |
+| `app/components/PurchaseFlow.tsx` | Purchase panel layout/copy; `renderPurchaseLivePrice()` |
+| `app/globals.css` | `.purchase-slider-section` compact + inline FROM/TO (~1319–1400) |
 
 ---
 
@@ -585,10 +610,11 @@ BOTTOM: Chat / Command well (still renders during edit)
 | Priority | Task | Scope hint |
 |----------|------|------------|
 | P0 | Mobile profile edit — Save reachable / comfort | **No scroll shell**; discuss smaller sections or natural page scroll only |
+| P0 | Purchase panel — iPhone buy + confirm after layout churn | Same handlers; layout-only changes expected safe |
+| Gate | iPhone regression — cash-out, launch, public Incognito `/?artist=slug` | Before merge |
 | Optional | Login email in Wallet expanded row | Separate micro-step |
-| Optional | Smaller color swatches on mobile | CSS or class tweak — **one** concern only |
+| Optional | Slimmer Market active / merge status line | Scoped `.purchase-slider-section` CSS only if panel still tall |
 | P1 | Normal-mode orbit `Link` taps on phone | Same renderer family as draft fix |
-| Gate | iPhone full regression matrix before merge | |
 | Final | Merge `feature/mobile-onboarding-fix` → `main` | User decision after QA |
 
 ---
@@ -617,13 +643,19 @@ Done:
 - Reverted bad portal-form-panel scroll-shell Phase 2
 - Toolbar: Wallet full + tiny + and ✏️ horizontal row
 - Address moved from header to Wallet panel identity card (✅ Wallet address ▾, 📋 Copy, reveal full address)
-- No login email in Wallet yet
+- Purchase Options panel polish (presentation only): PurchaseFlow.tsx + scoped globals.css (.purchase-slider-section)
+  - Copy trim; Option A spacing; inline FROM/TO; smaller purchase-panel-title
+  - renderPurchaseLivePrice() between slider and silver box (display move, not new math)
+  - Min purchase in footer with wallet hint
+  - Do NOT change global .swap-silver-bar; do NOT touch handlers/confirm logic
 
 Open:
-- Mobile profile edit usability (no scroll-shell approach)
-- Optional: email in Wallet expanded row
-- Optional: smaller color swatches on mobile (one step)
-- iPhone regression before merge
+- Mobile profile edit comfort (no scroll-shell)
+- iPhone regression: buy/confirm, cash-out, launch, public Incognito /?artist=slug
+- Optional: Wallet email; slimmer Market active chip (not more 4px shaving)
+- Merge after QA
+
+Purchase panel rule: handlers/confirm logic forbidden; approved layout/copy/CSS under .purchase-slider-section OK.
 
 Process: plan → approve → implement → build → audit → preview. No git by agent.
 Full detail: SESSION_REPORT_AND_BACKLOG.md Part 11.
