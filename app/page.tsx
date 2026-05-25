@@ -1364,7 +1364,10 @@ const ArtistPageContent: React.FC<{
         '/api/artist/finalizeLaunch',
         {
           method: 'POST',
-          body: JSON.stringify({ artistId }),
+          body: JSON.stringify({
+            artistId,
+            coin_public_id: inviteLaunchCoinRef.current ?? undefined,
+          }),
         },
         getDidToken,
       );
