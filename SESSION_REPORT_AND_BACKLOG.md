@@ -660,3 +660,48 @@ Purchase panel rule: handlers/confirm logic forbidden; approved layout/copy/CSS 
 Process: plan → approve → implement → build → audit → preview. No git by agent.
 Full detail: SESSION_REPORT_AND_BACKLOG.md Part 11.
 ```
+
+---
+
+## Part 12: PEMF onboarding hardening pass (May 2026)
+
+### What got proven on testnet
+
+- Treasure claim → **auto-whitelist** is live in production. Every successful `/api/invite/claim` now upserts a `whitelist_emails` row with note `Treasure claim: <coin> (<slug>)`. Verified for `lisa@pemfnashville.com` (pemfcln1) and `rh@greenroadgroup.org` (cruisin9).
+- **Auto-fund via `/api/faucet/v2` works after Vercel redeploy** with `FAUCET_ENABLED=true`. Proven by cruisin9: real `wallet_funding` row at `2026-05-25T02:51:09` (status `pending`, `tx hash 0x3dac79fea7…`), wallet ended at `~0.001995 ETH` (≈0.002 from faucet minus forge gas). Lisa's earlier launch required manual funding because the redeploy had not yet been triggered.
+- Full launch chain (forge → upload → ERC-1155 master mint → finalize → live page) is repeatable on a clean coin. cruisin9 launched at `2026-05-25T02:51:32`, paused=false, asset #1 minted, public page returns HTTP 200.
+- Old PEMF DB rows removed in FK order (artist_earnings → artist_assets → artist_registry → artists). Coins `dcwq275y4zg8`, `nz4z6d3r1364`, `wqcgcab1gwy7` revoked. On-chain contracts left orphaned — expected, can't delete.
+
+### Phase 1 fix (shipped)
+
+- **Bug:** invite `artist_slug` (display-derived) and live `artists.id` (token-derived) can drift. Example: `displayname="Cruisin"` → slug `cruisin`; `tokenName="CRUISIN9"` → id `cruisin9`. After launch, `?coin=` URLs were redirecting via the slug → no matching artist → wizard fallback.
+- **Fix files:**
+  - `app/api/invite/resolve/route.ts` — when `status === 'launched'`, looks up `artists.id` by mirroring the launch normalization (`tokenName.toUpperCase().replace(/\s+/g,'').toLowerCase()`), with a `treasury_wallet` fallback for legacy rows. Returns optional `launched_artist_id` field.
+  - `app/components/TreasureAwareHome.tsx` — launched-status redirect prefers `launched_artist_id ?? artist_slug`.
+  - `types/treasure-invite.ts` — `InviteResolveLaunchedRedirectBody.launched_artist_id?: string`.
+- Backward compatible: when the lookup fails, the field is omitted and the frontend falls back to `artist_slug` exactly as before.
+- Build passes. Pre-existing TS-strict error in `app/components/PurchaseFlow.tsx:1521` (bare `->` in JSX text from prior purchase-panel work) is unrelated and out of scope.
+
+### Phase 2 / 3 (NOT done — explicit decisions for next session)
+
+- **Phase 2:** prevent slug-vs-id drift at draft save. Either enforce `slugFromDisplayName(displayname) === tokenName.toUpperCase().replace(/\s+/g,'').toLowerCase()` at `/api/invite/save-draft`, or move to a single canonical id field. Phase 1 makes drift recoverable; Phase 2 keeps it from happening.
+- **Phase 3 — faucet UX hardening, three smallest fixes:**
+  - Surface faucet result in claim UI (`app/components/TreasureInviteShell.tsx:426–437`): replace `console.warn` with explicit toasts for `funded:true`, `success`, `403 disabled`, `500 misconfigured`, network errors. Persistent banner if not funded.
+  - Pre-flight wallet-balance gate before forge (`app/page.tsx:handleSaveArtist`, before line 1103): read `signer.getBalance()`; if `< 0.0008 ETH`, abort with retry-faucet button instead of letting Magic throw "insufficient funds."
+  - Optional admin-only `/api/faucet/health` GET endpoint: returns `{ enabled, hasFaucetKey, hasRpcUrl, signerAddress, balanceEth, chainId }`. Never returns the private key. Permanent ops tool.
+- **Move `artist_invites.status = 'launched'` write** from `/api/createArtist:102` to `/api/artist/finalizeLaunch` so partial failures don't lock the invite as launched while the page is paused.
+- **Faucet `Not eligible` race** (rare): one `failed_validation` row appeared 50 s before the cruisin9 claim committed. System self-recovered via the second call. Optional one-shot retry-after-500ms in `TreasureInviteShell.tsx` would eliminate the zombie row class.
+
+### Operator rule still binding
+
+For inner-circle drafts: `displayname` and `tokenName` should resolve to the same lowercase string after `.toUpperCase().replace(/\s+/g,'').toLowerCase()`. ≤8 alphanumeric, no spaces, no hyphens. Phase 1 makes drift recoverable; this rule keeps it from happening in the first place.
+
+### Files changed in this pass
+
+- `app/api/invite/resolve/route.ts` (Phase 1)
+- `app/components/TreasureAwareHome.tsx` (Phase 1)
+- `types/treasure-invite.ts` (Phase 1)
+- `AGENT_NOTES.md` (memory update — Current Truths refresh, Gotcha clarification)
+- `SESSION_REPORT_AND_BACKLOG.md` (this Part 12)
+
+PRD.json deliberately untouched. Faucet UX hardening tracked in this Part and in `AGENT_NOTES.md` "Open onboarding risks"; if/when this becomes a formal backlog item, it would be `T-024 — Faucet UX visibility & pre-flight wallet gate`.
