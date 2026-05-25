@@ -52,6 +52,12 @@ export type InviteResolveLaunchedRedirectBody = {
   status: 'launched';
   artist_slug: string;
   coin_public_id: string;
+  /**
+   * Real launched artist id (artists.id, token-derived). Optional for backward
+   * compatibility; absent when the resolve route cannot find a matching live
+   * artist row. Frontend should prefer this over `artist_slug` for routing.
+   */
+  launched_artist_id?: string;
 };
 
 export type InviteResolveTreasureBody = {

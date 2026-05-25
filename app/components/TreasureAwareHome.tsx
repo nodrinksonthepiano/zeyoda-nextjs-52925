@@ -96,7 +96,15 @@ export default function TreasureAwareHome({ RenderLivePortal }: Props) {
         if (url) {
           url.pathname = '/';
           url.hash = '';
-          url.searchParams.set('artist', body.artist_slug);
+          // Prefer the real launched artist id (artists.id, token-derived) over
+          // the invite slug (artist_slug, displayname-derived) so drifted invites
+          // like "cruisin" → "cruisin9" land on the live page, not the wizard.
+          const target =
+            ('launched_artist_id' in body &&
+              typeof body.launched_artist_id === 'string' &&
+              body.launched_artist_id) ||
+            body.artist_slug;
+          url.searchParams.set('artist', target);
           url.searchParams.delete('coin');
           router.replace(`${url.pathname}${url.search}`, { scroll: false });
         }

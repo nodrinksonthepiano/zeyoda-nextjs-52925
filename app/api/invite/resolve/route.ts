@@ -19,7 +19,7 @@ export async function GET(request: NextRequest) {
 
     const { data: row, error } = await supabaseAdmin
       .from('artist_invites')
-      .select('coin_public_id, artist_slug, status, draft_payload')
+      .select('coin_public_id, artist_slug, status, draft_payload, claimed_by_wallet')
       .eq('coin_public_id', coin)
       .maybeSingle();
 
@@ -47,10 +47,54 @@ export async function GET(request: NextRequest) {
     }
 
     if (row.status === 'launched') {
+      // Resolve the real launched artist id. artist_slug is derived from
+      // displayname at draft time; artists.id is derived from tokenName at
+      // launch time (see app/page.tsx handleSaveArtist). The two can drift
+      // (e.g. "cruisin" vs "cruisin9"). For routing the launched id is the
+      // source of truth; artist_slug is a fallback for legacy rows we cannot
+      // resolve.
+      let launchedArtistId: string | null = null;
+      try {
+        const dp = (row.draft_payload ?? {}) as Record<string, unknown>;
+        const tokenNameRaw =
+          typeof dp.tokenName === 'string'
+            ? dp.tokenName.trim()
+            : typeof dp.token_name === 'string'
+              ? (dp.token_name as string).trim()
+              : '';
+        // Mirror exact normalization from app/page.tsx handleSaveArtist:
+        //   tokenSymbol = tokenName.toUpperCase().replace(/\s+/g, '')
+        //   artistId    = tokenSymbol.toLowerCase()
+        const expectedId = tokenNameRaw
+          .toUpperCase()
+          .replace(/\s+/g, '')
+          .toLowerCase();
+        if (expectedId) {
+          const { data: byId } = await supabaseAdmin
+            .from('artists')
+            .select('id')
+            .eq('id', expectedId)
+            .maybeSingle();
+          if (byId?.id) launchedArtistId = byId.id as string;
+        }
+        if (!launchedArtistId && row.claimed_by_wallet) {
+          const { data: byWallet } = await supabaseAdmin
+            .from('artists')
+            .select('id, treasury_wallet')
+            .ilike('treasury_wallet', row.claimed_by_wallet);
+          if (byWallet && byWallet.length === 1) {
+            launchedArtistId = byWallet[0].id as string;
+          }
+        }
+      } catch (resolveErr) {
+        console.error('invite resolve launched_artist_id lookup:', resolveErr);
+      }
+
       return NextResponse.json({
         status: 'launched',
         artist_slug: row.artist_slug,
         coin_public_id: row.coin_public_id,
+        ...(launchedArtistId ? { launched_artist_id: launchedArtistId } : {}),
       });
     }
 
