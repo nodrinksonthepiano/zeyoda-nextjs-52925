@@ -267,7 +267,11 @@ export default function TreasureInviteShell({
         '/api/checkWhitelist',
         {
           method: 'POST',
-          body: JSON.stringify({ email: emailToCheck, ...(clue ? { clue } : {}) }),
+          body: JSON.stringify({
+            email: emailToCheck,
+            coin_public_id: envelope.coin_public_id,
+            ...(clue ? { clue } : {}),
+          }),
         },
         getDidToken,
         true,
@@ -275,7 +279,7 @@ export default function TreasureInviteShell({
       const data = (await response.json().catch(() => ({}))) as { isWhitelisted?: boolean };
       return { ok: response.ok, data };
     },
-    [getDidToken],
+    [getDidToken, envelope.coin_public_id],
   );
 
   const loginFlow = async () => {
