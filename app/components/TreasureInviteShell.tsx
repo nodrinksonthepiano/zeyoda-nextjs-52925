@@ -44,6 +44,7 @@ import {
   TOAST_WHITELIST_HINT,
 } from '@/app/constants/treasureCopy';
 import { authenticatedFetch } from '@/app/utils/authenticatedFetch';
+import { requestFaucetAndNotify } from '@/app/utils/faucetClientNotify';
 import { isSentinelOrEmptyVideosrc } from '@/app/utils/buildInviteDraftPayloadV1';
 import {
   buildStubArtistConfigFromDraft,
@@ -422,19 +423,7 @@ export default function TreasureInviteShell({
 
         if (res.ok) {
           showToast(TOAST_CLAIM_SUCCESS, 'success');
-          try {
-            const fundingResponse = await authenticatedFetch(
-              '/api/faucet/v2',
-              { method: 'POST' },
-              getDidToken,
-            );
-            const fundingResult = await fundingResponse.json();
-            if (fundingResult.success) {
-              showToast(fundingResult.message || 'Wallet ready.', 'success');
-            }
-          } catch (fundingError) {
-            console.warn('⚠️ Treasure auto-funding failed:', fundingError);
-          }
+          await requestFaucetAndNotify(getDidToken, showToast);
           try {
             await onInviteClaimedRefetch?.();
           } catch {

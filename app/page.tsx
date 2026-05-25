@@ -9,6 +9,7 @@ import dynamic from 'next/dynamic';
 import { useWallet } from './components/MagicProvider';
 import { useToast } from './contexts/ToastContext';
 import { authenticatedFetch } from './utils/authenticatedFetch';
+import { requestFaucetAndNotify } from './utils/faucetClientNotify';
 import { UsdBalanceProvider } from './contexts/UsdBalanceContext';
 import { ethers } from "ethers";
 import { ArtistockABI } from './utils/abis/ArtistockABI';
@@ -2253,22 +2254,7 @@ const ArtistPageContent: React.FC<{
         localStorage.setItem('zeyodaUserEmail', meta.email);
         
         // Auto-fund new wallets (non-blocking — login continues if faucet fails)
-        try {
-          const fundingResponse = await authenticatedFetch(
-            '/api/faucet/v2',
-            { method: 'POST' },
-            getDidToken,
-          );
-
-          const fundingResult = await fundingResponse.json();
-
-          if (fundingResult.success) {
-            showToast(fundingResult.message || 'Wallet ready.', 'success');
-          }
-        } catch (fundingError) {
-          console.warn('⚠️ Auto-funding failed:', fundingError);
-          // Don't block login if funding fails
-        }
+        await requestFaucetAndNotify(getDidToken, showToast);
         
         showToast('Logged in as ' + meta.publicAddress, 'success');
         
