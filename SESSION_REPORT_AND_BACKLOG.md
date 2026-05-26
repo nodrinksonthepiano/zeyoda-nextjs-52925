@@ -705,3 +705,26 @@ For inner-circle drafts: `displayname` and `tokenName` should resolve to the sam
 - `SESSION_REPORT_AND_BACKLOG.md` (this Part 12)
 
 PRD.json deliberately untouched. Faucet UX hardening tracked in this Part and in `AGENT_NOTES.md` "Open onboarding risks"; if/when this becomes a formal backlog item, it would be `T-024 — Faucet UX visibility & pre-flight wallet gate`.
+
+---
+
+## Part 13: Client stability pass — diagnosed, deferred (May 2026)
+
+**Finding:** Stability refactor was half-done. Auto-refresh disabled in `useArtistConfig` and `useWalletBalances` (comments cite "prevent page remounts"); hard reloads and full-screen loading gates in `LiveArtistPortal` were left as workarounds.
+
+**Symptom:** Operator wallet/ops work feels unstable — repeated "Connecting wallet…" (hard reload → Magic re-init) and "Loading artist profile…" (`coreLoading` unmounts page + wallet on config refetch).
+
+**Proven infra gaps (do not one-line fix):**
+- `refreshWalletBalances` event dispatched from `PurchaseFlow` but **no listener** in repo.
+- `useAllArtistsDownloadAccess` (Wallet downloads panel) has **no refresh API**.
+- Login reload is **load-bearing**: `MagicProvider` init runs once; login handler does not update context `user` without reload.
+
+**Bundles (post–Mister Guy; one at a time):**
+- **Bundle A:** Remove `PurchaseFlow.tsx` reloads (~513, ~875); wire wallet-wide downloads refresh. Do not touch swap/sign handlers.
+- **Bundle B:** `isInitialLoading` vs `isRefreshing` in `useArtistConfig`; stale-while-revalidate in `LiveArtistPortal`; cached wallet artist switch. Must bundle gate change with cached artist swap.
+
+**Deferred:** Login/logout reload removal (MagicProvider redesign); optimistic Magic / whitelist fail-open (policy).
+
+**Gate:** After Mister Guy launch + Phase B unless purchase reloads block rehearsal. Full detail: `AGENT_NOTES.md` → "Client stability pass — HALF DONE, deferred post–Mister Guy."
+
+**Evidence session:** Cursor audit May 2026 (post–readiness-gate rehearsal).

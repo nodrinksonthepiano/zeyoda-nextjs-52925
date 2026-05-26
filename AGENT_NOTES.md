@@ -75,6 +75,72 @@ This repo is currently the **private testnet rehearsal space**, not the final pu
 
 ---
 
+## Client stability pass — HALF DONE, deferred post–Mister Guy (May 2026)
+
+**Status:** Diagnosed and scoped; **not shipped.** Prior stability work was started then abandoned: auto-refresh intervals were **disabled** in `useArtistConfig` and `useWalletBalances` (comments: "prevent page remounts") but full-screen loading gates and `window.location.reload()` workarounds remain.
+
+**Symptom:** App feels unstable during wallet/ops work — "Connecting wallet…" and "Loading artist profile…" repeat. Wallet connects once; the **page around it unmounts** on refetch or hard reload.
+
+**Two mechanisms (do not conflate):**
+1. **Hard reloads** → Magic re-init → "Connecting wallet…" (`MagicProvider` blocks until `isReady`).
+2. **Full-screen gates** → no document reload, but `LiveArtistPortal` unmounts entire tree including Wallet when `coreLoading` (`app/page.tsx` ~3707–3743).
+
+**Proven reload call sites (do not delete blindly):**
+
+| Location | Trigger |
+|----------|---------|
+| `PurchaseFlow.tsx` ~513, ~875 | Download / swap success (8s delay) |
+| `page.tsx` ~2334 | Login success (2s) |
+| `page.tsx` ~2097 | Logout (1s) |
+| `page.tsx` ~1518 | Asset edit save (500ms) |
+| `TreasureInviteShell.tsx` ~302, ~370 | Treasure login / sign-out |
+| `page.tsx` ~1017 | Post-launch enter live page (`location.href` — intentional, has readiness poll) |
+
+**Critical infra facts for implementers:**
+- `refreshWalletBalances` is **dispatched** from `PurchaseFlow` but has **no listener** anywhere. Reload compensates for missing wiring.
+- `transactionSuccess` → `useWalletBalances` refresh (2s delay) **does** work.
+- `refreshDownloadAccess()` in PurchaseFlow **does** work for per-artist access.
+- `useAllArtistsDownloadAccess` (Wallet downloads panel) has **no refresh API** — only refetches on `userAddress` / `allArtistsConfig` change.
+- Login reload is **required today**: `MagicProvider` init runs once in `useEffect([])`; login handler does not update context `user` without reload.
+- `useArtistConfig` sets `isLoading=true` on **every** `fetchConfig` (not just first load) → wallet artist `router.push` blanks full page.
+
+**Launch path vs operator pain:**
+- **Mister Guy / first-boop:** claim, login reload, post-launch `location.href` — purchase reloads usually **not** on path unless artist buys during session.
+- **Operator rehearsal:** purchase 8s reload + wallet artist navigation blanking are the main annoyances.
+
+**Approved bundles (one at a time; audit each):**
+
+**Bundle A — PurchaseFlow reload stability (post-Mister-Guy priority 1)**
+- Files: `PurchaseFlow.tsx`; `useDownloadAccess.ts` and/or minimal Wallet wiring.
+- Remove `window.location.reload()` at ~513 and ~875 only.
+- Replace with: existing `transactionSuccess`, `refreshDownloadAccess()`, + **add** wallet-wide downloads refresh trigger for `useAllArtistsDownloadAccess`.
+- Do **not** touch swap/sign/confirm/mint handlers.
+- Manual test: swap, download-only, cash-out+download — balances and download rows update without reload.
+
+**Bundle B — Mount once / navigation (post-Mister-Guy priority 2)**
+- Files: `useArtistConfig.ts`, `useFeaturedAsset.ts`, `page.tsx` (`LiveArtistPortal`), possibly `TreasureAwareHome.tsx`.
+- Split `isInitialLoading` vs `isRefreshing`; gate only on initial.
+- On `?artist=` change: use cached `allArtistsConfig[artistId]` immediately, refresh in background.
+- **Do not** do LiveArtistPortal gate-only change without cached artist swap (wrong-artist flash risk).
+
+**Deferred (not launch-night):**
+- Login/logout reload removal → requires `MagicProvider` post-login session propagation.
+- Optimistic Magic + whitelist fail-open → security/policy decision.
+- Asset-edit reload → `useArtistAssets.refresh()` + event (lower priority).
+
+**Decision tree:**
+- Instability **blocking** rehearsal → Bundle A only, then rehearse.
+- Annoying but rehearsable → defer; run rehearsal → Phase B → Mister Guy → then Bundle A → Bundle B.
+- **Never:** one-line reload delete; Pass 3 without 4/5; login reload removal without MagicProvider.
+
+**Product rule when done:** Mount once. Refresh in place. Hard reload almost never. Full-screen gates only on true first load or intentional account change.
+
+**Related shipped launch fixes (same week, separate layer):** Phase A faucet visibility, hollow-launch rule, post-launch readiness poll (`waitForLivePageReady` in `app/page.tsx`). See vault ceremony section below for redirect behavior.
+
+**Tests:** No automated coverage for auth/purchase refresh paths — manual preview QA only (`tests/` has orbit/swap engine only).
+
+---
+
 ## Feedback ↔ PRD Flow
 
 1. App feedback goes to Supabase
@@ -136,7 +202,7 @@ This repo is currently the **private testnet rehearsal space**, not the final pu
 
 **UX-only layer:** `VaultLaunchCeremonyCard.tsx`, dimming + frozen chat + scrim/`inert` in `app/page.tsx`, `globals.css` (`.vault-launch-*`, `vault-launch-chat-well`), optional `Wallet` dim via `vaultLaunchDimmed`.
 
-**Card behavior:** No GOSHEESH branding on the card; no dial. **Running:** “Launch in progress…”, **Milestone X of 6**, a **single caption** for the current `activeStepIndex` (one milestone at a time), plus the six-step checklist (done / active / pending). **Success:** “Contracts deployed successfully.”, “Entering your page…”, token live; **`window.location.href`** after ~**4.2s** sleep. **Failure:** Retry/Dismiss unchanged.
+**Card behavior:** No GOSHEESH branding on the card; no dial. **Running:** “Launch in progress…”, **Milestone X of 6**, a **single caption** for the current `activeStepIndex` (one milestone at a time), plus the six-step checklist (done / active / pending). **Success:** “Contracts deployed successfully.”, “Entering your page…”, token live; **readiness poll** via `waitForLivePageReady` (Supabase `paused === false` + registry entry), then **`window.location.href`**; on timeout stay on celebrate UI with “Try entering again” retry (no redirect to wizard). **Failure:** Retry/Dismiss unchanged.
 
 **Caption index map (aligned with `setLaunchProgressStep`):** 0 treasure → 1 opening vault → 2 forging (uses `progressTokenName`) → 3 placing treasure → 4 minting key → 5 publishing portal.
 
