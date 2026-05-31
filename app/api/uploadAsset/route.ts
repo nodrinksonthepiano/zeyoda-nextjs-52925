@@ -42,6 +42,20 @@ function validateCoverUpload(file: File): { ok: true; mime: string; extension: s
   return { ok: true, mime, extension: coverExtensionForMime(mime) };
 }
 
+function validateCoverBuffer(
+  buf: Buffer,
+  mime: string,
+): { ok: true; mime: string; extension: string } | { ok: false; error: string } {
+  const normalized = mime.toLowerCase().split(';')[0].trim();
+  if (!ALLOWED_COVER_MIMES.has(normalized)) {
+    return { ok: false, error: 'Cover must be JPEG, PNG, or WebP' };
+  }
+  if (buf.byteLength > MAX_COVER_BYTES) {
+    return { ok: false, error: 'Cover image must be 5 MB or smaller' };
+  }
+  return { ok: true, mime: normalized, extension: coverExtensionForMime(normalized) };
+}
+
 export async function POST(request: NextRequest) {
   const secretCheck = requireSecret(request);
   if (secretCheck) return secretCheck;
@@ -76,6 +90,7 @@ export async function POST(request: NextRequest) {
     let requestedAssetNumber: number | null = null;
     let requireMint = false;
     let coverFile: File | null = null;
+    let coverSourceUrl = '';
 
     if (contentType.includes('application/json')) {
       const body = await request.json();
@@ -86,6 +101,7 @@ export async function POST(request: NextRequest) {
       description = rawDescription.trim().replace(/\r\n/g, '\n');
       price = typeof body.price === 'number' ? body.price : parseFloat(String(body.price ?? ''));
       const sourceUrl = typeof body.sourceUrl === 'string' ? body.sourceUrl.trim() : '';
+      coverSourceUrl = typeof body.coverSourceUrl === 'string' ? body.coverSourceUrl.trim() : '';
       const parsedAssetNumber = Number(body.assetNumber);
       requestedAssetNumber =
         Number.isInteger(parsedAssetNumber) && parsedAssetNumber > 0 ? parsedAssetNumber : null;
@@ -168,16 +184,22 @@ export async function POST(request: NextRequest) {
 
     const isAudioPrimary = mime.startsWith('audio/');
     if (isAudioPrimary) {
-      if (!coverFile) {
+      if (!coverFile && !coverSourceUrl) {
         return NextResponse.json(
           { error: 'Cover image is required when uploading audio' },
+          { status: 400 },
+        );
+      }
+      if (coverSourceUrl && !isTrustedLaunchSourceUrl(coverSourceUrl)) {
+        return NextResponse.json(
+          { error: 'coverSourceUrl must be a trusted Supabase https URL' },
           { status: 400 },
         );
       }
       if (fileSize > MAX_AUDIO_BYTES) {
         return NextResponse.json({ error: 'Audio file must be 80 MB or smaller' }, { status: 413 });
       }
-    } else if (coverFile) {
+    } else if (coverFile || coverSourceUrl) {
       return NextResponse.json(
         { error: 'Cover image can only be uploaded with audio files' },
         { status: 400 },
@@ -185,12 +207,39 @@ export async function POST(request: NextRequest) {
     }
 
     let coverUploadMeta: { mime: string; extension: string } | null = null;
+    let coverBuffer: Buffer | null = null;
+
     if (coverFile) {
       const coverValidation = validateCoverUpload(coverFile);
       if (!coverValidation.ok) {
         return NextResponse.json({ error: coverValidation.error }, { status: 400 });
       }
       coverUploadMeta = { mime: coverValidation.mime, extension: coverValidation.extension };
+      coverBuffer = Buffer.from(await coverFile.arrayBuffer());
+    } else if (coverSourceUrl) {
+      const coverUpstream = await fetch(coverSourceUrl, { redirect: 'follow' });
+      if (!coverUpstream.ok) {
+        return NextResponse.json(
+          { error: `Could not fetch cover: HTTP ${coverUpstream.status}` },
+          { status: 502 },
+        );
+      }
+      const coverLenHeader = coverUpstream.headers.get('content-length');
+      if (coverLenHeader && Number(coverLenHeader) > MAX_COVER_BYTES) {
+        return NextResponse.json({ error: 'Cover image too large' }, { status: 413 });
+      }
+      const coverBuf = await coverUpstream.arrayBuffer();
+      if (coverBuf.byteLength > MAX_COVER_BYTES) {
+        return NextResponse.json({ error: 'Cover image too large' }, { status: 413 });
+      }
+      const coverMime =
+        coverUpstream.headers.get('content-type')?.split(';')[0]?.trim() || 'image/jpeg';
+      const coverValidation = validateCoverBuffer(Buffer.from(coverBuf), coverMime);
+      if (!coverValidation.ok) {
+        return NextResponse.json({ error: coverValidation.error }, { status: 400 });
+      }
+      coverUploadMeta = { mime: coverValidation.mime, extension: coverValidation.extension };
+      coverBuffer = Buffer.from(coverBuf);
     }
 
     const auth = await getMagicAuthFromBearer(request);
@@ -246,8 +295,7 @@ export async function POST(request: NextRequest) {
     console.log('📄 Public URL:', urlData.publicUrl);
 
     let coverImageUrl: string | undefined;
-    if (coverFile && coverUploadMeta) {
-      const coverBuffer = Buffer.from(await coverFile.arrayBuffer());
+    if (coverBuffer && coverUploadMeta) {
       const coverFileName = `${artistId}/${uuidv4()}.${coverUploadMeta.extension}`;
       const { data: coverUploadData, error: coverUploadError } = await supabase.storage
         .from('artist-assets')

@@ -86,7 +86,7 @@ const UPLOAD_AUDIO_MAX_BYTES = UPLOAD_PRIMARY_MAX_BYTES;
 const UPLOAD_COVER_MAX_BYTES = 5 * 1024 * 1024;
 const UPLOAD_COVER_MIMES = new Set(['image/jpeg', 'image/png', 'image/webp']);
 const LAUNCH_HTTPS_AUDIO_NEEDS_B2_MESSAGE =
-  'Staged audio from a treasure draft cannot launch yet — upload your song and Thumbnail / Cover Art locally, or use image/video for this draft.';
+  'Staged audio from a treasure draft requires Thumbnail / Cover Art in the draft before launch.';
 
 /** Safe row from GET /api/invite/admin-drafts */
 interface AdminInviteDraftListRow {
@@ -225,6 +225,7 @@ const ArtistPageContent: React.FC<{
   const workshopFeaturedHandlersRef = useRef<{
     uploadFeatured: (file: File) => Promise<boolean>;
     clearFeatured: () => void;
+    uploadCover: (file: File) => Promise<boolean>;
   } | null>(null);
 
   useEffect(() => {
@@ -610,6 +611,7 @@ const ArtistPageContent: React.FC<{
       handlers: {
         uploadFeatured: (file: File) => Promise<boolean>;
         clearFeatured: () => void;
+        uploadCover: (file: File) => Promise<boolean>;
       } | null,
     ) => {
       workshopFeaturedHandlersRef.current = handlers;
@@ -689,6 +691,24 @@ const ArtistPageContent: React.FC<{
       showToast('Cover must be JPEG, PNG, or WebP', 'error');
       return;
     }
+
+    if (user && appMode === 'onboarding' && workshopTreasureCoinId?.trim()) {
+      setCoverPreviewUrl((prev) => {
+        if (prev) URL.revokeObjectURL(prev);
+        return URL.createObjectURL(file);
+      });
+      setUploadedCoverFile(file);
+      void (async () => {
+        const uploadFn = workshopFeaturedHandlersRef.current?.uploadCover;
+        if (!uploadFn) return;
+        const ok = await uploadFn(file);
+        if (ok) {
+          clearCoverSelection();
+        }
+      })();
+      return;
+    }
+
     if (file.size > UPLOAD_COVER_MAX_BYTES) {
       showToast('Cover image must be 5 MB or smaller', 'error');
       return;
@@ -698,7 +718,7 @@ const ArtistPageContent: React.FC<{
       return URL.createObjectURL(file);
     });
     setUploadedCoverFile(file);
-  }, [showToast]);
+  }, [appMode, clearCoverSelection, showToast, user, workshopTreasureCoinId]);
 
   const handleCoverUploadClick = useCallback(() => {
     coverFileInputRef.current?.click();
@@ -1079,9 +1099,17 @@ const ArtistPageContent: React.FC<{
         }
       }
 
+      const featuredCoverHttpsDraft =
+        typeof artistData.featured_cover_image_url === 'string' &&
+        artistData.featured_cover_image_url.startsWith('https://')
+          ? artistData.featured_cover_image_url
+          : null;
+
       if (featuredHttpsDraft && workshopFeaturedUrlMediaKind(featuredHttpsDraft) === 'audio') {
-        showToast(LAUNCH_HTTPS_AUDIO_NEEDS_B2_MESSAGE, 'error');
-        return;
+        if (!featuredCoverHttpsDraft) {
+          showToast(LAUNCH_HTTPS_AUDIO_NEEDS_B2_MESSAGE, 'error');
+          return;
+        }
       }
 
       const provider = new ethers.BrowserProvider(magic.rpcProvider as any);
@@ -1275,6 +1303,7 @@ const ArtistPageContent: React.FC<{
         featuredHttpsDraft,
         artistWallet,
         uploadedCoverFile,
+        featuredCoverHttpsDraft,
       );
 
       if (httpsDraftFeaturedOnly) {
@@ -1424,6 +1453,9 @@ const ArtistPageContent: React.FC<{
           );
         }
       } else {
+        const isHttpsAudioLaunch =
+          Boolean(featuredHttpsDraft) &&
+          workshopFeaturedUrlMediaKind(featuredHttpsDraft!) === 'audio';
         const uploadResponse = await authenticatedFetch(
           '/api/public/uploadAsset',
           {
@@ -1431,6 +1463,9 @@ const ArtistPageContent: React.FC<{
             body: JSON.stringify({
               artistId,
               sourceUrl: featuredHttpsDraft!,
+              ...(isHttpsAudioLaunch && featuredCoverHttpsDraft
+                ? { coverSourceUrl: featuredCoverHttpsDraft }
+                : {}),
               title: artistData.artworktitle || 'Featured Content',
               price: downloadPrice,
               description: artistData.description || 'First featured asset',
@@ -1553,6 +1588,7 @@ const ArtistPageContent: React.FC<{
     httpsDraftUrl: string | null,
     treasuryWallet: string,
     coverFile?: File | null,
+    httpsCoverDraftUrl?: string | null,
   ) => {
     if (file) {
       if (file.type.startsWith('audio/')) {
@@ -1616,6 +1652,30 @@ const ArtistPageContent: React.FC<{
     }
 
     if (httpsDraftUrl?.startsWith('https://')) {
+      const isHttpsAudio = workshopFeaturedUrlMediaKind(httpsDraftUrl) === 'audio';
+      if (isHttpsAudio && httpsCoverDraftUrl?.startsWith('https://')) {
+        console.log('📤 Promoting HTTPS draft cover for audio launch hero (videosrc)...');
+        const res = await authenticatedFetch(
+          '/api/public/uploadFeatured',
+          {
+            method: 'POST',
+            body: JSON.stringify({ artistId, sourceUrl: httpsCoverDraftUrl }),
+          },
+          getDidToken,
+        );
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          throw new Error(
+            typeof data.error === 'string' ? data.error : 'Could not copy HTTPS draft cover art',
+          );
+        }
+        if (typeof data.publicUrl !== 'string' || !data.publicUrl.startsWith('https://')) {
+          throw new Error('Cover copy returned no valid URL');
+        }
+        console.log('✅ Draft cover promoted for launch hero:', data.publicUrl);
+        return data.publicUrl;
+      }
+
       const res = await authenticatedFetch(
         '/api/public/uploadFeatured',
         {

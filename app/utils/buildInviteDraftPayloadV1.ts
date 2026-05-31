@@ -24,6 +24,7 @@ export interface InviteDraftFormInput {
   logo_url: string | null;
   background_image_url: string | null;
   featured_asset_url: string | null;
+  featured_cover_image_url: string | null;
   logo_use_background: boolean;
   background_use_image: boolean;
   theme: InviteDraftThemeInput;
@@ -76,6 +77,7 @@ export function buildInviteDraftPayloadV1(input: InviteDraftFormInput): Record<s
   const logo_url = sanitizeHttpsMediaField(input.logo_url);
   const background_image_url = sanitizeHttpsMediaField(input.background_image_url);
   const featured_asset_url = sanitizeHttpsMediaField(input.featured_asset_url);
+  const featured_cover_image_url = sanitizeHttpsMediaField(input.featured_cover_image_url);
   const videosrcNorm = normalizeVideosrcForDraft(input.videosrc);
 
   const artworkyearParsed = /^-?\d+$/.test(String(input.artworkyear).trim())
@@ -96,6 +98,7 @@ export function buildInviteDraftPayloadV1(input: InviteDraftFormInput): Record<s
     logo_url,
     background_image_url,
     featured_asset_url,
+    featured_cover_image_url,
     theme: {
       fontFamily: input.theme.fontFamily,
       primaryColor: input.theme.primaryColor,
@@ -134,6 +137,13 @@ export function applyInviteDraftPayloadToForm(prev: InviteDraftFormInput, d: Rec
         ? null
         : prev.featured_asset_url;
 
+  const featuredCover =
+    typeof d.featured_cover_image_url === 'string'
+      ? d.featured_cover_image_url
+      : d.featured_cover_image_url === null
+        ? null
+        : prev.featured_cover_image_url;
+
   const vy = d.artworkyear;
   const artworkyear =
     typeof vy === 'string' || typeof vy === 'number' ? String(vy) : prev.artworkyear;
@@ -166,6 +176,7 @@ export function applyInviteDraftPayloadToForm(prev: InviteDraftFormInput, d: Rec
     logo_url: logo,
     background_image_url: background,
     featured_asset_url: featured,
+    featured_cover_image_url: featuredCover,
     logo_use_background:
       typeof d.logo_use_background === 'boolean'
         ? d.logo_use_background

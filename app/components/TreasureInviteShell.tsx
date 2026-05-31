@@ -118,14 +118,33 @@ export default function TreasureInviteShell({
 
   const heroResolved = useMemo(() => resolveTreasureHeroMedia(treasure), [treasure]);
 
+  const stagedCoverUrl = useMemo(() => {
+    const u = treasure.featured_cover_image_url;
+    return typeof u === 'string' && u.startsWith('https://') ? u : null;
+  }, [treasure.featured_cover_image_url]);
+
   const carouselAssets: ArtistAsset[] = useMemo(() => {
-    if (!heroResolved || heroResolved.kind === 'audio') return [];
-    if (heroResolved.kind !== 'image' && heroResolved.kind !== 'video') return [];
     const labelBase = treasure.artworktitle ?? treasure.displayname;
     const yr = treasure.artworkyear;
     const hasYear = yr !== undefined && yr !== null && yr !== '';
     const labelYear = hasYear ? `${labelBase} · ${yr}` : labelBase;
     const rawDesc = typeof treasure.description === 'string' ? treasure.description.trim() : '';
+
+    if (heroResolved?.kind === 'audio' && stagedCoverUrl) {
+      const asset: ArtistAsset = {
+        id: `treasure-cover-${envelope.coin_public_id}`,
+        artistId: stubConfig.name,
+        assetNumber: 0,
+        url: stagedCoverUrl,
+        type: 'image',
+        title: labelYear,
+      };
+      if (rawDesc) asset.metadata = { description: rawDesc };
+      return [asset];
+    }
+
+    if (!heroResolved || heroResolved.kind === 'audio') return [];
+    if (heroResolved.kind !== 'image' && heroResolved.kind !== 'video') return [];
     const asset: ArtistAsset = {
       id: `treasure-${envelope.coin_public_id}`,
       artistId: stubConfig.name,
@@ -140,6 +159,7 @@ export default function TreasureInviteShell({
     return [asset];
   }, [
     heroResolved,
+    stagedCoverUrl,
     envelope.coin_public_id,
     stubConfig.name,
     treasure.artworktitle,
@@ -499,7 +519,8 @@ export default function TreasureInviteShell({
     overflow: 'visible',
   };
 
-  const heroCarousel = carouselAssets.length > 0 && heroResolved?.kind !== 'audio';
+  const heroCarousel = carouselAssets.length > 0;
+  const audioHeroUrl = heroResolved?.kind === 'audio' ? heroResolved.url : null;
 
   return (
     <div className="flex min-h-screen flex-col items-center justify-between pt-10 px-6 pb-6 relative bg-primary text-white font-sans">
@@ -557,6 +578,16 @@ export default function TreasureInviteShell({
                   orbitRadiusScale={0.72}
                   orbitPointerEventsOnTokensOnly
                 />
+                {audioHeroUrl && (
+                  <div className="relative z-20 mt-4 flex justify-center px-4">
+                    <audio
+                      className="w-full max-w-md"
+                      controls
+                      src={audioHeroUrl}
+                      preload="metadata"
+                    />
+                  </div>
+                )}
               </>
             ) : (
               <div ref={videoContainerRef} className="relative mx-auto" style={staticHeroBoxStyle}>

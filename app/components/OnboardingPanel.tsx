@@ -5,7 +5,11 @@ import {
   buildInviteDraftPayloadV1,
   type InviteDraftFormInput,
 } from '@/app/utils/buildInviteDraftPayloadV1';
+import { uploadTreasureDraftFeaturedDirect } from '@/app/utils/client/uploadTreasureDraftFeaturedDirect';
 import { setAccentColorCssVars } from '@/app/utils/themeBackground';
+
+const DRAFT_COVER_MAX_BYTES = 4 * 1024 * 1024;
+const DRAFT_COVER_MIMES = new Set(['image/jpeg', 'image/png', 'image/webp']);
 
 interface OnboardingPanelProps {
   artistName: string;
@@ -40,6 +44,7 @@ interface OnboardingPanelProps {
     handlers: {
       uploadFeatured: (file: File) => Promise<boolean>;
       clearFeatured: () => void;
+      uploadCover: (file: File) => Promise<boolean>;
     } | null,
   ) => void;
   /** Parent locks primary CTA during async artist launch ceremony */
@@ -69,6 +74,7 @@ function createInviteFormBaseline(
     logo_url: null,
     background_image_url: null,
     featured_asset_url: null,
+    featured_cover_image_url: null,
     logo_use_background: false,
     background_use_image: false,
     theme: {
@@ -91,11 +97,20 @@ function isDraftMediaHttps(url: string | null | undefined): boolean {
   return typeof url === 'string' && url.startsWith('https://');
 }
 
+function draftFeaturedIsAudio(
+  form: InviteDraftFormInput,
+  localFeaturedFile?: File | null,
+): boolean {
+  if (localFeaturedFile?.type.startsWith('audio/')) return true;
+  const url = form.featured_asset_url;
+  return typeof url === 'string' && /\.(mp3|wav|ogg|m4a)(\?|$)/i.test(url);
+}
+
 /** POST /api/invite/draft-upload — no React state or busy spinner (reuse for picker + Save flush). */
 async function postInviteDraftUpload(
   getDidToken: () => Promise<string | null>,
   coinId: string,
-  kind: 'logo' | 'background' | 'featured',
+  kind: 'logo' | 'background' | 'featured' | 'featured_cover',
   file: File,
 ): Promise<{ ok: true; url: string } | { ok: false; error: string }> {
   const token = await getDidToken();
@@ -607,7 +622,7 @@ const OnboardingPanel: React.FC<OnboardingPanelProps> = ({
   const treasureDraftHttpsChangedVsSnapshot = useMemo(() => {
     if (!committedTreasureSnapshot || !treasureDraftDirty) return false;
     const s = committedTreasureSnapshot.form;
-    return ['logo_url', 'background_image_url', 'featured_asset_url'].some((key) => {
+    return ['logo_url', 'background_image_url', 'featured_asset_url', 'featured_cover_image_url'].some((key) => {
       const cur = formData[key as keyof InviteDraftFormInput];
       const was = s[key as keyof InviteDraftFormInput];
       return typeof cur === 'string' && cur.startsWith('https://') && cur !== was;
@@ -662,7 +677,13 @@ const OnboardingPanel: React.FC<OnboardingPanelProps> = ({
 
       setTreasureBusy('upload');
       try {
-        const result = await postInviteDraftUpload(getDidToken, coinId, 'featured', file);
+        const result = file.type.startsWith('audio/')
+          ? await uploadTreasureDraftFeaturedDirect({
+              getDidToken,
+              coinPublicId: coinId,
+              file,
+            })
+          : await postInviteDraftUpload(getDidToken, coinId, 'featured', file);
         if (!result.ok) {
           showToast(result.error, 'error');
           return false;
@@ -678,6 +699,38 @@ const OnboardingPanel: React.FC<OnboardingPanelProps> = ({
       }
     },
     [getDidToken, onWorkshopFeaturedHttpsChange, showToast, treasureDraftCoinPublicId],
+  );
+
+  const uploadFeaturedCoverViaDraft = useCallback(
+    async (file: File): Promise<boolean> => {
+      const coinId = treasureDraftCoinPublicId?.trim();
+      if (!coinId || !getDidToken) return false;
+
+      const mime = (file.type || '').toLowerCase();
+      if (!DRAFT_COVER_MIMES.has(mime)) {
+        showToast('Thumbnail / Cover Art must be JPEG, PNG, or WebP', 'error');
+        return false;
+      }
+      if (file.size > DRAFT_COVER_MAX_BYTES) {
+        showToast('Thumbnail / Cover Art must be 4 MB or smaller for treasure drafts', 'error');
+        return false;
+      }
+
+      setTreasureBusy('upload');
+      try {
+        const result = await postInviteDraftUpload(getDidToken, coinId, 'featured_cover', file);
+        if (!result.ok) {
+          showToast(result.error, 'error');
+          return false;
+        }
+        setFormData((prev) => ({ ...prev, featured_cover_image_url: result.url }));
+        showToast('Cover art staged — Save Treasure Draft to commit.', 'info');
+        return true;
+      } finally {
+        setTreasureBusy('idle');
+      }
+    },
+    [getDidToken, showToast, treasureDraftCoinPublicId],
   );
 
   const clearWorkshopFeatured = useCallback(() => {
@@ -725,6 +778,7 @@ const OnboardingPanel: React.FC<OnboardingPanelProps> = ({
     onRegisterWorkshopFeaturedHandlers({
       uploadFeatured: uploadFeaturedViaDraft,
       clearFeatured: clearWorkshopFeatured,
+      uploadCover: uploadFeaturedCoverViaDraft,
     });
     return () => {
       onRegisterWorkshopFeaturedHandlers?.(null);
@@ -736,6 +790,7 @@ const OnboardingPanel: React.FC<OnboardingPanelProps> = ({
     isAdmin,
     mode,
     onRegisterWorkshopFeaturedHandlers,
+    uploadFeaturedCoverViaDraft,
     uploadFeaturedViaDraft,
   ]);
 
@@ -920,6 +975,14 @@ const OnboardingPanel: React.FC<OnboardingPanelProps> = ({
       showToast('Reserved email required to create the first draft', 'error');
       return;
     }
+    if (
+      draftFeaturedIsAudio(formData, uploadedFile) &&
+      !isDraftMediaHttps(formData.featured_cover_image_url) &&
+      !uploadedCoverFile
+    ) {
+      showToast('Thumbnail / Cover Art is required when featured media is audio', 'error');
+      return;
+    }
     if (!getDidToken) {
       showToast('Wallet not configured', 'error');
       return;
@@ -936,7 +999,53 @@ const OnboardingPanel: React.FC<OnboardingPanelProps> = ({
         return;
       }
 
+      const preFlushCoin = coinTrim?.trim() ?? '';
+      if (isAdmin && mode === 'onboarding' && preFlushCoin && getDidToken) {
+        if (logoFile && !isDraftMediaHttps(workingForm.logo_url)) {
+          const r = await postInviteDraftUpload(getDidToken, preFlushCoin, 'logo', logoFile);
+          if (r.ok) workingForm = { ...workingForm, logo_url: r.url };
+        }
+        if (backgroundFile && !isDraftMediaHttps(workingForm.background_image_url)) {
+          const r = await postInviteDraftUpload(getDidToken, preFlushCoin, 'background', backgroundFile);
+          if (r.ok) workingForm = { ...workingForm, background_image_url: r.url };
+        }
+        if (uploadedFile && !isDraftMediaHttps(workingForm.featured_asset_url)) {
+          const r = uploadedFile.type.startsWith('audio/')
+            ? await uploadTreasureDraftFeaturedDirect({
+                getDidToken,
+                coinPublicId: preFlushCoin,
+                file: uploadedFile,
+              })
+            : await postInviteDraftUpload(getDidToken, preFlushCoin, 'featured', uploadedFile);
+          if (r.ok) {
+            workingForm = { ...workingForm, featured_asset_url: r.url };
+            onWorkshopFeaturedHttpsChange?.(r.url);
+            onClearWorkshopHeroStaging?.();
+          }
+        }
+        if (uploadedCoverFile && !isDraftMediaHttps(workingForm.featured_cover_image_url)) {
+          const r = await postInviteDraftUpload(
+            getDidToken,
+            preFlushCoin,
+            'featured_cover',
+            uploadedCoverFile,
+          );
+          if (r.ok) {
+            workingForm = { ...workingForm, featured_cover_image_url: r.url };
+            onCoverClear?.();
+          }
+        }
+      }
+
+      const omitFeaturedUntilCoverReady =
+        !preFlushCoin &&
+        draftFeaturedIsAudio(workingForm, uploadedFile) &&
+        !isDraftMediaHttps(workingForm.featured_cover_image_url);
+
       const draft_payload_primary = buildInviteDraftPayloadV1(workingForm);
+      if (omitFeaturedUntilCoverReady) {
+        draft_payload_primary.featured_asset_url = null;
+      }
       const bodyObj: Record<string, unknown> = { draft_payload: draft_payload_primary };
       if (coinTrim) bodyObj.coin_public_id = coinTrim;
       else bodyObj.reserved_email = treasureDraftReservedEmail.trim();
@@ -978,7 +1087,8 @@ const OnboardingPanel: React.FC<OnboardingPanelProps> = ({
         Boolean(coin) &&
         (Boolean(logoFile && !isDraftMediaHttps(formAtClick.logo_url)) ||
           Boolean(backgroundFile && !isDraftMediaHttps(formAtClick.background_image_url)) ||
-          Boolean(uploadedFile && !isDraftMediaHttps(formAtClick.featured_asset_url)));
+          Boolean(uploadedFile && !isDraftMediaHttps(formAtClick.featured_asset_url)) ||
+          Boolean(uploadedCoverFile && !isDraftMediaHttps(formAtClick.featured_cover_image_url)));
 
       const failures: string[] = [];
       let anyUploadSuccess = false;
@@ -989,6 +1099,9 @@ const OnboardingPanel: React.FC<OnboardingPanelProps> = ({
         const pendingLogo = Boolean(logoFile && !isDraftMediaHttps(workingForm.logo_url));
         const pendingBg = Boolean(backgroundFile && !isDraftMediaHttps(workingForm.background_image_url));
         const pendingFeatured = Boolean(uploadedFile && !isDraftMediaHttps(workingForm.featured_asset_url));
+        const pendingCover = Boolean(
+          uploadedCoverFile && !isDraftMediaHttps(workingForm.featured_cover_image_url),
+        );
 
         if (pendingLogo && logoFile) {
           const r = await postInviteDraftUpload(getDidToken, coin, 'logo', logoFile);
@@ -1007,13 +1120,28 @@ const OnboardingPanel: React.FC<OnboardingPanelProps> = ({
         }
 
         if (pendingFeatured && uploadedFile) {
-          const r = await postInviteDraftUpload(getDidToken, coin, 'featured', uploadedFile);
+          const r = uploadedFile.type.startsWith('audio/')
+            ? await uploadTreasureDraftFeaturedDirect({
+                getDidToken,
+                coinPublicId: coin,
+                file: uploadedFile,
+              })
+            : await postInviteDraftUpload(getDidToken, coin, 'featured', uploadedFile);
           if (r.ok) {
             workingForm = { ...workingForm, featured_asset_url: r.url };
             anyUploadSuccess = true;
             onWorkshopFeaturedHttpsChange?.(r.url);
             onClearWorkshopHeroStaging?.();
           } else failures.push(`Featured: ${r.error}`);
+        }
+
+        if (pendingCover && uploadedCoverFile) {
+          const r = await postInviteDraftUpload(getDidToken, coin, 'featured_cover', uploadedCoverFile);
+          if (r.ok) {
+            workingForm = { ...workingForm, featured_cover_image_url: r.url };
+            anyUploadSuccess = true;
+            onCoverClear?.();
+          } else failures.push(`Cover: ${r.error}`);
         }
 
         if (anyUploadSuccess) {
@@ -1107,10 +1235,12 @@ const OnboardingPanel: React.FC<OnboardingPanelProps> = ({
     logoFile,
     mode,
     onClearWorkshopHeroStaging,
+    onCoverClear,
     onWorkshopFeaturedHttpsChange,
     showToast,
     treasureDraftCoinPublicId,
     treasureDraftReservedEmail,
+    uploadedCoverFile,
     uploadedFile,
   ]);
 
@@ -1889,6 +2019,31 @@ const OnboardingPanel: React.FC<OnboardingPanelProps> = ({
                     </button>
                   </div>
                 </div>
+              ) : formData.featured_cover_image_url?.startsWith('https') ? (
+                <div className="flex items-center gap-3 p-3 bg-gray-700 rounded-lg">
+                  <div className="w-16 h-16 rounded-lg overflow-hidden border border-gray-500 flex-shrink-0">
+                    <img
+                      src={formData.featured_cover_image_url}
+                      alt=""
+                      className="w-full h-full object-cover"
+                    />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-white text-xs font-mono truncate">
+                      {formData.featured_cover_image_url}
+                    </div>
+                    <div className="text-gray-400 text-xs mt-1">
+                      Staged cover art — Save Treasure Draft to commit.
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={onCoverUploadClick}
+                    className="px-3 py-1 bg-blue-600 text-white rounded text-xs hover:bg-blue-700 shrink-0"
+                  >
+                    Change
+                  </button>
+                </div>
               ) : (
                 <button
                   type="button"
@@ -1959,7 +2114,15 @@ const OnboardingPanel: React.FC<OnboardingPanelProps> = ({
                     preload="metadata"
                   />
                 ) : /\.(mp3|wav|ogg|m4a)(\?|$)/i.test(formData.featured_asset_url) ? (
-                  <div className="w-full h-full flex items-center justify-center text-2xl">🎵</div>
+                  formData.featured_cover_image_url?.startsWith('https') ? (
+                    <img
+                      src={formData.featured_cover_image_url}
+                      alt=""
+                      className="w-full h-full object-cover"
+                    />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center text-2xl">🎵</div>
+                  )
                 ) : (
                   <img
                     src={formData.featured_asset_url}
@@ -2003,7 +2166,9 @@ const OnboardingPanel: React.FC<OnboardingPanelProps> = ({
             (mode === 'onboarding'
               ? !formData.displayname ||
                 !formData.tokenName ||
-                (uploadedFile?.type.startsWith('audio/') && !uploadedCoverFile)
+                (draftFeaturedIsAudio(formData, uploadedFile) &&
+                  !uploadedCoverFile &&
+                  !isDraftMediaHttps(formData.featured_cover_image_url))
               : !formData.artworktitle ||
                 !uploadedFile ||
                 (uploadedFile.type.startsWith('audio/') && !uploadedCoverFile)) ||

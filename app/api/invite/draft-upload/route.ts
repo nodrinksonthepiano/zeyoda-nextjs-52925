@@ -13,9 +13,11 @@ const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey, {
 const BUCKET = 'artist-assets';
 
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
+/** Draft cover via FormData — stay under Vercel ~4.5 MB body limit */
+const MAX_DRAFT_COVER_BYTES = 4 * 1024 * 1024;
 const MAX_FEATURED_BYTES = 80 * 1024 * 1024;
 
-type AssetKind = 'logo' | 'background' | 'featured';
+type AssetKind = 'logo' | 'background' | 'featured' | 'featured_cover';
 
 function extFromFile(file: File): string {
   const fromName = file.name.split('.').pop()?.toLowerCase();
@@ -45,8 +47,11 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (!['logo', 'background', 'featured'].includes(kind)) {
-      return NextResponse.json({ error: 'kind must be logo, background, or featured' }, { status: 400 });
+    if (!['logo', 'background', 'featured', 'featured_cover'].includes(kind)) {
+      return NextResponse.json(
+        { error: 'kind must be logo, background, featured, or featured_cover' },
+        { status: 400 },
+      );
     }
 
     const { data: invite, error: inviteError } = await supabaseAdmin
@@ -64,7 +69,14 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Invite not found or not editable' }, { status: 404 });
     }
 
-    if (kind === 'logo' || kind === 'background') {
+    if (kind === 'featured_cover') {
+      if (!file.type.startsWith('image/')) {
+        return NextResponse.json({ error: 'Featured cover must be an image' }, { status: 400 });
+      }
+      if (file.size > MAX_DRAFT_COVER_BYTES) {
+        return NextResponse.json({ error: 'Featured cover must be 4MB or smaller' }, { status: 400 });
+      }
+    } else if (kind === 'logo' || kind === 'background') {
       if (!file.type.startsWith('image/')) {
         return NextResponse.json({ error: 'Logo and background must be images' }, { status: 400 });
       }

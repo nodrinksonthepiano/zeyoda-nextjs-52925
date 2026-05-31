@@ -72,6 +72,10 @@ export function mapInviteToTreasureDto(
       typeof draftPayload.featured_asset_url === 'string'
         ? draftPayload.featured_asset_url
         : draftPayload.featured_asset_url === null ? null : undefined,
+    featured_cover_image_url:
+      typeof draftPayload.featured_cover_image_url === 'string'
+        ? draftPayload.featured_cover_image_url
+        : draftPayload.featured_cover_image_url === null ? null : undefined,
     orbitaltokens: orbit,
     paused: typeof draftPayload.paused === 'boolean' ? draftPayload.paused : undefined,
   };

@@ -28,6 +28,7 @@ export function draftRecordFromTreasureEnvelope(
     background_image_url: t.background_image_url ?? null,
     videosrc: t.videosrc ?? null,
     featured_asset_url: t.featured_asset_url ?? null,
+    featured_cover_image_url: t.featured_cover_image_url ?? null,
     orbitaltokens: t.orbitaltokens ?? [],
     paused: t.paused ?? false,
   };

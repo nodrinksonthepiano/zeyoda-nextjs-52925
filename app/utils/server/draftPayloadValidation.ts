@@ -31,11 +31,19 @@ export function assertNoDisallowedUrlStrings(value: unknown, path = 'draft_paylo
   }
 }
 
-/** Logo / background / featured must be https Supabase public URLs when non-empty. videosrc may be https or /assets/... */
+/** Classify HTTPS featured_asset_url by pathname extension */
+export function draftFeaturedUrlMediaKind(url: string): 'video' | 'audio' | 'image' {
+  if (/\.(mp4|webm|mov|ogg)(\?|$)/i.test(url)) return 'video';
+  if (/\.(mp3|wav|ogg|m4a)(\?|$)/i.test(url)) return 'audio';
+  return 'image';
+}
+
+/** Logo / background / featured / featured_cover must be https Supabase public URLs when non-empty. videosrc may be https or /assets/... */
 export function assertHttpsUrlsForMediaFields(payload: Record<string, unknown>): void {
   const logo = payload.logo_url;
   const bg = payload.background_image_url;
   const featured = payload.featured_asset_url;
+  const featuredCover = payload.featured_cover_image_url;
   const videosrc = payload.videosrc;
 
   const checkHttps = (label: string, v: unknown) => {
@@ -50,6 +58,20 @@ export function assertHttpsUrlsForMediaFields(payload: Record<string, unknown>):
   checkHttps('logo_url', logo);
   checkHttps('background_image_url', bg);
   checkHttps('featured_asset_url', featured);
+  checkHttps('featured_cover_image_url', featuredCover);
+
+  if (typeof featured === 'string' && featured.startsWith('https://')) {
+    if (draftFeaturedUrlMediaKind(featured) === 'audio') {
+      if (
+        typeof featuredCover !== 'string' ||
+        !featuredCover.startsWith('https://')
+      ) {
+        throw new Error(
+          'featured_cover_image_url is required when featured_asset_url is audio',
+        );
+      }
+    }
+  }
 
   if (videosrc !== undefined && videosrc !== null && videosrc !== '') {
     if (typeof videosrc !== 'string') throw new Error('videosrc must be a string');

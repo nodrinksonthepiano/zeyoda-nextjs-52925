@@ -33,6 +33,7 @@ export type TreasureResolveDTO = {
   background_image_url?: string | null;
   videosrc?: string | null;
   featured_asset_url?: string | null;
+  featured_cover_image_url?: string | null;
   orbitaltokens?: unknown[];
   paused?: boolean;
 };
