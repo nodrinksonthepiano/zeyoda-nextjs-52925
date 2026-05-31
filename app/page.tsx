@@ -9,6 +9,7 @@ import dynamic from 'next/dynamic';
 import { useWallet } from './components/MagicProvider';
 import { useToast } from './contexts/ToastContext';
 import { authenticatedFetch } from './utils/authenticatedFetch';
+import { uploadArtistAssetDirect } from './utils/client/directAssetUpload';
 import { UsdBalanceProvider } from './contexts/UsdBalanceContext';
 import { ethers } from "ethers";
 import { ArtistockABI } from './utils/abis/ArtistockABI';
@@ -80,7 +81,8 @@ function workshopFeaturedUrlMediaKind(url: string): 'video' | 'audio' | 'image' 
   return 'image';
 }
 
-const UPLOAD_AUDIO_MAX_BYTES = 80 * 1024 * 1024;
+const UPLOAD_PRIMARY_MAX_BYTES = 45 * 1024 * 1024;
+const UPLOAD_AUDIO_MAX_BYTES = UPLOAD_PRIMARY_MAX_BYTES;
 const UPLOAD_COVER_MAX_BYTES = 5 * 1024 * 1024;
 const UPLOAD_COVER_MIMES = new Set(['image/jpeg', 'image/png', 'image/webp']);
 const LAUNCH_HTTPS_AUDIO_NEEDS_B2_MESSAGE =
@@ -1063,7 +1065,7 @@ const ArtistPageContent: React.FC<{
           return;
         }
         if (uploadedFile.size > UPLOAD_AUDIO_MAX_BYTES) {
-          showToast('Audio file must be 80 MB or smaller', 'error');
+          showToast('Audio file must be 45 MB or smaller', 'error');
           return;
         }
         const coverMime = (uploadedCoverFile.type || '').toLowerCase();
@@ -1697,8 +1699,12 @@ const ArtistPageContent: React.FC<{
       showToast('Cover image is required for audio uploads', 'error');
       return;
     }
+    if (uploadedFile.size > UPLOAD_PRIMARY_MAX_BYTES) {
+      showToast('File must be 45 MB or smaller', 'error');
+      return;
+    }
     if (isAudioUpload && uploadedFile.size > UPLOAD_AUDIO_MAX_BYTES) {
-      showToast('Audio file must be 80 MB or smaller', 'error');
+      showToast('Audio file must be 45 MB or smaller', 'error');
       return;
     }
     if (uploadedCoverFile) {
@@ -1714,27 +1720,20 @@ const ArtistPageContent: React.FC<{
     }
 
     console.log('🎨 Uploading new asset for', artistConfig.name, assetData);
-    
+
     try {
-      const formData = new FormData();
-      formData.append('file', uploadedFile);
-      if (isAudioUpload && uploadedCoverFile) {
-        formData.append('coverFile', uploadedCoverFile);
-      }
-      formData.append('artistId', artistIdFromUrl);
-      formData.append('title', assetData.artworktitle);
-      formData.append('price', assetData.downloadPrice.toString());
-      formData.append('description', assetData.description || '');
-      formData.append('userAddress', user);
+      const result = await uploadArtistAssetDirect({
+        getDidToken,
+        artistId: artistIdFromUrl,
+        userAddress: user,
+        primaryFile: uploadedFile,
+        coverFile: isAudioUpload ? uploadedCoverFile : null,
+        title: assetData.artworktitle,
+        price: assetData.downloadPrice,
+        description: assetData.description || '',
+      });
 
-      const response = await authenticatedFetch('/api/public/uploadAsset', {
-        method: 'POST',
-        body: formData,
-      }, getDidToken);
-
-      const result = await response.json();
-
-      if (response.ok) {
+      if (result.ok) {
         showToast(result.message, 'success');
         setAppMode('normal');
         setUploadedFile(null);
