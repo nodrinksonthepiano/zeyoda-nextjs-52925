@@ -17,6 +17,7 @@ const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey, {
 // PATCH body keys must match this allowlist exactly (reject treasury, contracts, money, paused, etc.).
 const SAFE_PROFILE_PATCH_KEYS = new Set([
   'artistId',
+  'displayname',
   'primary_color',
   'accent_color',
   'font_family',
@@ -35,6 +36,7 @@ const ALLOWED_FONTS = ["Inter", "DM Sans", "Space Grotesk", "Instrument Sans", "
 
 interface ProfileUpdateRequest {
   artistId: string;
+  displayname?: string;
   primary_color?: string;
   accent_color?: string;
   font_family?: string;
@@ -157,6 +159,22 @@ export async function PATCH(request: NextRequest) {
       }
     }
 
+    let displaynameUpdate: string | undefined;
+    if (updateData.displayname !== undefined) {
+      if (typeof updateData.displayname !== 'string') {
+        validationErrors.push('displayname must be a string');
+      } else {
+        const dn = updateData.displayname.trim();
+        if (dn.length < 1) {
+          validationErrors.push('displayname must not be empty');
+        } else if (dn.length > 64) {
+          validationErrors.push('displayname must be at most 64 characters');
+        } else {
+          displaynameUpdate = dn;
+        }
+      }
+    }
+
     // Return validation errors
     if (validationErrors.length > 0) {
       console.log('❌ Validation errors:', validationErrors);
@@ -189,6 +207,10 @@ export async function PATCH(request: NextRequest) {
     if (videosrcUpdate !== undefined) {
       updates.videosrc = videosrcUpdate;
     }
+
+    if (displaynameUpdate !== undefined) {
+      updates.displayname = displaynameUpdate;
+    }
     
     // Check if there are any changes (theme or logo fields)
     const hasLogoChanges = updateData.logo_url !== undefined || 
@@ -197,8 +219,12 @@ export async function PATCH(request: NextRequest) {
                           updateData.background_use_image !== undefined;
 
     const hasVideosrcChange = videosrcUpdate !== undefined;
+    const savedDisplayname =
+      typeof artist.displayname === 'string' ? artist.displayname.trim() : '';
+    const hasDisplaynameChange =
+      displaynameUpdate !== undefined && displaynameUpdate !== savedDisplayname;
     
-    if (!hasThemeChanges && !hasLogoChanges && !hasVideosrcChange) {
+    if (!hasThemeChanges && !hasLogoChanges && !hasVideosrcChange && !hasDisplaynameChange) {
       return NextResponse.json({ 
         error: 'No valid fields to update' 
       }, { status: 400 });
@@ -209,6 +235,7 @@ export async function PATCH(request: NextRequest) {
       themeChanges: hasThemeChanges ? Object.keys(newTheme) : [],
       logoChanges: hasLogoChanges ? ['logo_url', 'background_image_url', 'logo_use_background', 'background_use_image'].filter(f => updateData[f as keyof ProfileUpdateRequest] !== undefined) : [],
       videosrc: hasVideosrcChange,
+      displayname: hasDisplaynameChange,
     });
 
     // Update artist profile
@@ -246,6 +273,7 @@ export async function PATCH(request: NextRequest) {
         logo_use_background: updateResult.logo_use_background,
         background_use_image: updateResult.background_use_image,
         videosrc: updateResult.videosrc,
+        displayname: updateResult.displayname,
       }
     });
 

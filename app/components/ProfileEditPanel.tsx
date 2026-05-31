@@ -11,6 +11,8 @@ interface ProfileEditPanelProps {
   onSave: (updates: any) => void;
   /** Live preview while toggling stardust during profile edit */
   onStardustPreviewChange?: (enabled: boolean) => void;
+  /** Live preview for page title while editing display name */
+  onDisplayNamePreviewChange?: (value: string | null) => void;
 }
 
 const COLOR_PRESETS = {
@@ -74,9 +76,11 @@ const ProfileEditPanel: React.FC<ProfileEditPanelProps> = ({
   onClose,
   onSave,
   onStardustPreviewChange,
+  onDisplayNamePreviewChange,
 }) => {
   const { getDidToken } = useWallet();
   const [formData, setFormData] = useState({
+    displayname: artistConfig?.displayName || '',
     primary_color: artistConfig?.theme?.primaryColor || '#FFD700',
     accent_color: artistConfig?.theme?.accentColor || '#B8860B',
     font_family: artistConfig?.theme?.fontFamily || 'Bungee, cursive',
@@ -356,6 +360,7 @@ const ProfileEditPanel: React.FC<ProfileEditPanelProps> = ({
       body: JSON.stringify({
         artistId: artistConfig.id || artistConfig.name.toLowerCase(),
         ...formData,
+        displayname: formData.displayname.trim(),
         // Include logo fields
         logo_url: formData.logo_url,
         background_image_url: formData.background_image_url,
@@ -437,9 +442,10 @@ const ProfileEditPanel: React.FC<ProfileEditPanelProps> = ({
     window.dispatchEvent(new CustomEvent('artistConfigPreviewClear'));
 
     onStardustPreviewChange?.(originalTheme.stardust === true);
+    onDisplayNamePreviewChange?.(null);
     
     onClose();
-  }, [originalTheme, onClose, artistConfig, onStardustPreviewChange]);
+  }, [originalTheme, onClose, artistConfig, onStardustPreviewChange, onDisplayNamePreviewChange]);
 
   return (
     <div className="portal-panel-chassis profile-edit-panel bg-gray-800 bg-opacity-70 shadow-xl rounded-lg border border-gray-700 backdrop-blur-md mb-8 p-6">
@@ -453,6 +459,26 @@ const ProfileEditPanel: React.FC<ProfileEditPanelProps> = ({
         >
           ✕
         </button>
+      </div>
+
+      {/* Artist display name */}
+      <div className="mb-6">
+        <h3 className="text-lg font-semibold text-white mb-3">Artist display name</h3>
+        <input
+          type="text"
+          value={formData.displayname}
+          maxLength={64}
+          onChange={(e) => {
+            const value = e.target.value;
+            setFormData(prev => ({ ...prev, displayname: value }));
+            onDisplayNamePreviewChange?.(value);
+          }}
+          className="swap-silver-bar-input w-full p-3 rounded-md"
+          placeholder="e.g., MISTERGUY"
+        />
+        <div className="text-xs text-gray-400 mt-1">
+          {formData.displayname.length}/64 characters • Shown at top of your page
+        </div>
       </div>
 
       {/* Primary Color Section */}

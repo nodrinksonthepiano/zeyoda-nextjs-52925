@@ -183,6 +183,7 @@ const ArtistPageContent: React.FC<{
   const [onboardingData, setOnboardingData] = useState<any>({});
   const [onboardingStardustPreview, setOnboardingStardustPreview] = useState(false);
   const [profileStardustPreview, setProfileStardustPreview] = useState(false);
+  const [profileDisplayNamePreview, setProfileDisplayNamePreview] = useState<string | null>(null);
   const [editingAsset, setEditingAsset] = useState<any | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const inviteLaunchCoinRef = useRef<string | null>(null);
@@ -2560,6 +2561,7 @@ const ArtistPageContent: React.FC<{
                 >
                   {appMode === 'onboarding' ? onboardingArtistName : 
                    appMode === 'upload-asset' ? `ADD NEW ASSET TO ${artistConfig.displayName}` : 
+                   appMode === 'profile-edit' && profileDisplayNamePreview !== null ? profileDisplayNamePreview :
                    artistConfig.displayName}
                 </ArtistPortalTitle>
   
@@ -3078,8 +3080,12 @@ const ArtistPageContent: React.FC<{
             <ProfileEditPanel
               artistConfig={artistConfig}
               userAddress={user}
-              onClose={() => setAppMode('normal')}
+              onClose={() => {
+                setProfileDisplayNamePreview(null);
+                setAppMode('normal');
+              }}
               onStardustPreviewChange={setProfileStardustPreview}
+              onDisplayNamePreviewChange={setProfileDisplayNamePreview}
               onSave={(updates) => {
                 console.log('[page.tsx] ✅ Profile updates received:', {
                   logo_url: updates.logo_url,
@@ -3107,6 +3113,7 @@ const ArtistPageContent: React.FC<{
 
                   const updated = {
                     ...prev,
+                    displayName: updates.displayname ?? prev.displayName,
                     theme: hasThemePatch ? {
                       ...prev.theme,
                       primaryColor: updates.primary_color ?? prev.theme?.primaryColor,
@@ -3138,6 +3145,8 @@ const ArtistPageContent: React.FC<{
                   
                   return updated;
                 });
+
+                setProfileDisplayNamePreview(null);
                 
                 showToast('Profile saved successfully!', 'success');
                 // Note: appMode change happens via ProfileEditPanel's onClose() call
@@ -3367,7 +3376,10 @@ const ArtistPageContent: React.FC<{
                         {artistConfig.treasury_wallet && 
                          user.toLowerCase() === artistConfig.treasury_wallet.toLowerCase() && (
                           <button
-                            onClick={() => setAppMode('profile-edit')}
+                            onClick={() => {
+                              setProfileDisplayNamePreview(artistConfig.displayName ?? '');
+                              setAppMode('profile-edit');
+                            }}
                             className="bg-yellow-600 hover:bg-yellow-500 px-3 py-2 rounded text-white text-sm font-medium transition-colors w-10 h-8 flex items-center justify-center"
                             title="Edit artist page"
                           >
@@ -3666,7 +3678,10 @@ const ArtistPageContent: React.FC<{
              appMode !== 'profile-edit' && (
               <button
                 type="button"
-                onClick={() => setAppMode('profile-edit')}
+                onClick={() => {
+                  setProfileDisplayNamePreview(artistConfig.displayName ?? '');
+                  setAppMode('profile-edit');
+                }}
                 className="bg-yellow-600 hover:bg-yellow-500 rounded-md text-white text-sm font-medium transition-colors shadow-lg w-10 h-8 flex items-center justify-center"
                 title="Edit artist page"
               >
