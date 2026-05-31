@@ -351,7 +351,9 @@ Document the **presentation-only** vault launch experience above the chat strip 
 
 ## Part 11: Mobile onboarding fix (`feature/mobile-onboarding-fix`) — May 2026
 
-> **Checkpoint date:** 2026-05-24 (updated: Purchase Options panel polish documented). **Do not merge to `main` yet.**
+> **Checkpoint date:** 2026-05-24 (updated: Purchase Options panel polish documented). **Historical:** "Do not merge to `main` yet" applied at this checkpoint only — branch **merged to `main`** afterward. Current shipped truth for display name self-serve: **Part 14** (`c18cc7a6` on `main`).
+
+> **Merge status (May 2026 update):** `feature/mobile-onboarding-fix` is on `main`. Tables below are archival for this arc; see **Part 14** for Mister Guy display-name ship.
 
 ### Branch, gate, and process
 
@@ -728,3 +730,94 @@ PRD.json deliberately untouched. Faucet UX hardening tracked in this Part and in
 **Gate:** After Mister Guy launch + Phase B unless purchase reloads block rehearsal. Full detail: `AGENT_NOTES.md` → "Client stability pass — HALF DONE, deferred post–Mister Guy."
 
 **Evidence session:** Cursor audit May 2026 (post–readiness-gate rehearsal).
+
+---
+
+## Part 14: Mister Guy display name edit — shipped (May 2026)
+
+### Context
+
+First Mister Guy feedback fix: *"Let me change my name."* Scoped as **Pass 1** — visible display/profile name only, not token ticker rename.
+
+### Shipped
+
+| Item | Detail |
+|------|--------|
+| Preview branch | `feature/mobile-onboarding-fix` — QA passed |
+| Preview commit | `c28ed3df` — `feat(profile): live preview display name edits` |
+| Main commit | `c18cc7a6` — cherry-picked; pushed clean |
+| Build | Passed before push |
+| Files | `app/api/artist/profile/route.ts`, `app/components/ProfileEditPanel.tsx`, `app/page.tsx` |
+
+### Behavior
+
+- Profile Edit → **Artist display name** field (init from `artistConfig.displayName`).
+- Top page title updates **letter-by-letter** while typing (`profileDisplayNamePreview` in `page.tsx`; explicit `!== null` — empty string during edit does not fall back to saved).
+- **Cancel / ✕** → preview cleared → title reverts to saved `artists.displayname`.
+- **Save** → PATCH `/api/artist/profile` → `artists.displayname` persisted; `artistConfig.displayName` merged; preview cleared in same handler (no flicker).
+
+### Backend
+
+- Added `displayname` to `SAFE_PROFILE_PATCH_KEYS`.
+- Validation: trim, non-empty after trim, max **64** characters → 400 on invalid.
+- Authorization unchanged (`assertMagicArtistUploader`).
+- `tokenName`, `id`, treasury, contracts, paused, etc. still rejected.
+
+### What did NOT change
+
+- `tokenName` / on-chain symbol (`MRGUY` for Mister Guy).
+- `artists.id` (`mrguy`).
+- Contracts, registry, NFC coin (`n52by4gz21fw`), swaps, purchases, earnings, assets.
+- Invite slug (`mister-guy`).
+
+### Mister Guy live state (post-fix)
+
+- Canonical URL: `/?artist=mrguy`
+- Display name: artist-editable (e.g. `MISTERGUY`)
+- Swap ticker: still `MRGUY`
+- Coin retap: still resolves to `mrguy` via `launched_artist_id`
+
+### Product decisions captured for future passes
+
+| Topic | Decision |
+|-------|----------|
+| Display name max | 64 chars (enforced) |
+| Token ticker max (future) | 12 chars — policy; onboarding UI still 8 until updated |
+| Token ticker rename | Separate epic — UUPS/protocol-safe on-chain + alias/reservation system |
+| Old tickers | Reserve/redirect forever; owner retains aliases; aliases → canonical `artists.id` |
+| `artists.id` | Do not casually change |
+| DB `tokenName` | Update only after successful chain rename |
+| NFC | Stable via `coin_public_id`; no reprogram for display/ticker changes |
+
+### Acceptance (manual — operator verified on preview)
+
+1. Open profile edit → type `MISTERGUY` → title updates live
+2. Cancel → reverts to saved name
+3. Save → persists; refresh/incognito shows new display name
+4. Swap ticker unchanged (`MRGUY`)
+5. Coin retap → `/?artist=mrguy`
+6. PATCH with `tokenName` or `id` → 400
+
+### Next (assessed, not shipped)
+
+**Song + cover image upload** — Mister Guy also wants audio + separate cover (CD Baby / SoundCloud style):
+
+- Current upload: single file only.
+- Schema: `artist_assets.file_url`, `file_type`, `metadata` — no `cover_url` column; likely `metadata.cover_image_url`.
+- Carousel: audio incorrectly rendered as image — needs dedicated audio branch.
+- Contracts: likely no change if `file_url` stays the audio download.
+- **Own pass** — do not combine with display name or ticker rename.
+
+### Recommended order
+
+1. Memory/docs update (this Part + `AGENT_NOTES.md` naming section)
+2. Song + cover upload pass
+3. Token ticker alias / rename epic (Pass 2–4)
+
+### Files changed in code pass
+
+- `app/api/artist/profile/route.ts`
+- `app/components/ProfileEditPanel.tsx`
+- `app/page.tsx`
+
+PRD.json deliberately untouched; run `npm run sync-feedback` locally before PRD updates.

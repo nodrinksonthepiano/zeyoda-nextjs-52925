@@ -46,7 +46,8 @@ This repo is currently the **private testnet rehearsal space**, not the final pu
 
 ## Current Truths
 
-- **Mobile/UX branch shipped (May 2026):** `feature/mobile-onboarding-fix` (Pass 3 chassis, purchase panel polish, wallet identity compact row, etc.) is **merged to `main`**. Broad live testnet QA continues but is no longer an unmerged-branch gate. Full arc in **`SESSION_REPORT_AND_BACKLOG.md` Part 11**; latest hardening pass in **Part 12**.
+- **Mobile/UX branch shipped (May 2026):** `feature/mobile-onboarding-fix` (Pass 3 chassis, purchase panel polish, wallet identity compact row, etc.) is **merged to `main`**. Broad live testnet QA continues but is no longer an unmerged-branch gate. Full arc in **`SESSION_REPORT_AND_BACKLOG.md` Part 11**; latest hardening pass in **Part 12**; display name self-serve in **Part 14**.
+- **Display name self-serve (shipped May 2026):** Preview `c28ed3df`, main **`c18cc7a6`** — `feat(profile): live preview display name edits`. Artists edit visible page/profile display name from Profile Edit; top `<h1>` updates live while typing via `profileDisplayNamePreview` in `app/page.tsx` (onboarding pattern). Cancel/X reverts preview; Save PATCHes **`artists.displayname` only** via `/api/artist/profile`. Validation: trim, non-empty, max **64** chars. Does **not** touch `tokenName`, `artists.id`, contracts, registry, NFC/coin, swaps, purchases, earnings, or assets. Example: Mister Guy page title can become `MISTERGUY` while swap ticker stays `MRGUY` and URL stays `/?artist=mrguy`.
 - **Onboarding pillars proven on testnet (May 2026):** treasure draft → claim → **auto-whitelist** (`/api/invite/claim` upserts `whitelist_emails`) → **auto-fund** (`FAUCET_ENABLED=true` confirmed on Vercel; `cruisin9` / `rh@greenroadgroup.org` produced a real `wallet_funding` row + tx hash) → forge → asset upload → ERC-1155 master mint → `finalizeLaunch` → public live page. Manual funding is no longer required for fresh claims.
 - **Slug-vs-ID rule (operator + system):** invite `artist_slug` is derived from `displayname`; live `artists.id` is derived from `tokenName.toUpperCase().replace(/\s+/g,'').toLowerCase()`. They drift any time those fields differ ("Cruisin"→`cruisin` vs "CRUISIN9"→`cruisin9`). **Phase 1 fix shipped:** `/api/invite/resolve` returns optional `launched_artist_id` (token-derived; falls back to wallet→`artists.id`); `TreasureAwareHome` redirects to `launched_artist_id ?? artist_slug`. Coin URL / NFC re-tap / browser-back after launch now lands on the live page, not the wizard.
 - **Open onboarding risks (do not assume done):** faucet failures still invisible in UI (`console.warn` in `app/components/TreasureInviteShell.tsx:435`); no pre-flight wallet-balance gate before `factory.createArtist` (`app/page.tsx:1103`); `artist_invites.status` flips to `launched` after registry insert but before `finalizeLaunch` (`app/api/createArtist/route.ts:102`), so a partial failure can leave invite=launched with paused page. Phase 2 (slug/token alignment at draft save) and Phase 3 (faucet UX hardening + balance gate + admin health endpoint) are not yet shipped.
@@ -75,9 +76,32 @@ This repo is currently the **private testnet rehearsal space**, not the final pu
 
 ---
 
+## Artist naming — three layers (May 2026)
+
+Three fields; do not conflate:
+
+| Layer | Field | Role | Change policy |
+|-------|-------|------|---------------|
+| **Display / profile name** | `artists.displayname` | Top page title, human-facing brand | **Self-serve** via Profile Edit (shipped `c18cc7a6`). Max **64** chars. Live preview while typing; persist on Save only. |
+| **Token ticker** | `artists.tokenName` + on-chain symbol | Swap UI, forge ceremony, market labels | **Not self-serve today.** On-chain symbol effectively immutable without UUPS/protocol-safe upgrade (factory owns token). Future rename epic required. |
+| **Canonical identity** | `artists.id` | URLs (`/?artist=`), FKs (assets, purchases, earnings, feedback, registry), coin resolve target | **Do not casually change.** |
+
+**Slug vs ID (unchanged):** invite `artist_slug` is display-derived at draft; live `artists.id` is token-derived at launch. Phase 1 coin resolve (`launched_artist_id`) makes drift recoverable for NFC retap.
+
+**Future token ticker policy (not shipped):**
+- Max ticker length going forward: **12 characters** (onboarding UI still enforces 8 until updated).
+- Old tickers must be **reserved/redirected forever** to the original artist.
+- Original owner retains prior ticker **aliases**; aliases resolve to canonical `artists.id`.
+- DB `tokenName` updates only **after** on-chain rename succeeds.
+- NFC/coin stable via `coin_public_id`; display name and ticker changes should not require reprogramming.
+
+**Pass 1 shipped:** display name edit with live preview. **Pass 2–4 deferred:** ticker alias table, redirect/resolve, UUPS symbol change, onboarding 12-char alignment.
+
+---
+
 ## Client stability pass — HALF DONE, deferred post–Mister Guy (May 2026)
 
-**Status:** Diagnosed and scoped; **not shipped.** Prior stability work was started then abandoned: auto-refresh intervals were **disabled** in `useArtistConfig` and `useWalletBalances` (comments: "prevent page remounts") but full-screen loading gates and `window.location.reload()` workarounds remain.
+**Status:** Diagnosed and scoped; **not shipped.** Mister Guy display-name feedback **shipped** in **`c18cc7a6`** (Pass 1); stability bundles (A/B) remain deferred. Prior stability work was started then abandoned: auto-refresh intervals were **disabled** in `useArtistConfig` and `useWalletBalances` (comments: "prevent page remounts") but full-screen loading gates and `window.location.reload()` workarounds remain.
 
 **Symptom:** App feels unstable during wallet/ops work — "Connecting wallet…" and "Loading artist profile…" repeat. Wallet connects once; the **page around it unmounts** on refetch or hard reload.
 
@@ -177,7 +201,7 @@ This repo is currently the **private testnet rehearsal space**, not the final pu
 - `app/api/uploadLogo/route.ts`, `app/api/uploadBackground/route.ts`
 - `app/api/uploadAsset/route.ts` — internal; with `app/api/public/uploadAsset/route.ts` forwarding **`Authorization`** and internal binding of Bearer identity to **`x-verified-email`**
 - `app/api/deleteLogo/route.ts`, `app/api/deleteBackground/route.ts`
-- `app/api/artist/profile/route.ts` — **PATCH body keys are allowlisted only** (`artistId` + theme / logo / background / `videosrc` fields). Any other key (e.g. `treasury_wallet`, `paused`, contract or payout-shaped fields) → **400** + `disallowedKeys`
+- `app/api/artist/profile/route.ts` — **PATCH body keys are allowlisted only** (`artistId`, `displayname`, theme / logo / background / `videosrc` fields). `displayname`: trim, 1–64 chars. Any other key (e.g. `tokenName`, `id`, `treasury_wallet`, `paused`, contract or payout-shaped fields) → **400** + `disallowedKeys`
 
 **Routes using `assertMagicTreasuryArtist`:**
 
