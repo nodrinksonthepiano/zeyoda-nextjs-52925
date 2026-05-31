@@ -1274,6 +1274,7 @@ const ArtistPageContent: React.FC<{
         artistId,
         featuredHttpsDraft,
         artistWallet,
+        uploadedCoverFile,
       );
 
       if (httpsDraftFeaturedOnly) {
@@ -1401,27 +1402,29 @@ const ArtistPageContent: React.FC<{
       setLaunchProgressStep(4);
       console.log('🪙 Publishing featured asset #1...');
 
-      let uploadResponse: Response;
       if (uploadedFile) {
-        const formData = new FormData();
-        formData.append('file', uploadedFile);
-        if (uploadedFile.type.startsWith('audio/') && uploadedCoverFile) {
-          formData.append('coverFile', uploadedCoverFile);
-        }
-        formData.append('artistId', artistId);
-        formData.append('title', artistData.artworktitle || 'Featured Content');
-        formData.append('price', downloadPrice.toString());
-        formData.append('description', artistData.description || 'First featured asset');
-        formData.append('userAddress', artistWallet);
-        formData.append('assetNumber', '1');
-        formData.append('requireMint', 'true');
-        uploadResponse = await authenticatedFetch(
-          '/api/public/uploadAsset',
-          { method: 'POST', body: formData },
+        const isAudioLaunch = uploadedFile.type.startsWith('audio/');
+        const uploadResult = await uploadArtistAssetDirect({
           getDidToken,
-        );
+          artistId,
+          userAddress: artistWallet,
+          primaryFile: uploadedFile,
+          coverFile: isAudioLaunch ? uploadedCoverFile : null,
+          title: artistData.artworktitle || 'Featured Content',
+          price: downloadPrice,
+          description: artistData.description || 'First featured asset',
+          assetNumber: 1,
+          requireMint: true,
+        });
+
+        if (!uploadResult.ok) {
+          throw new Error(
+            uploadResult.error ||
+              'Featured download asset could not be published. Retry launch without redeploying contracts.',
+          );
+        }
       } else {
-        uploadResponse = await authenticatedFetch(
+        const uploadResponse = await authenticatedFetch(
           '/api/public/uploadAsset',
           {
             method: 'POST',
@@ -1438,15 +1441,15 @@ const ArtistPageContent: React.FC<{
           },
           getDidToken,
         );
-      }
 
-      const uploadJson = await uploadResponse.json().catch(() => ({}));
-      if (!uploadResponse.ok || uploadJson.success === false) {
-        throw new Error(
-          typeof uploadJson.error === 'string'
-            ? uploadJson.error
-            : 'Featured download asset could not be published. Retry launch without redeploying contracts.',
-        );
+        const uploadJson = await uploadResponse.json().catch(() => ({}));
+        if (!uploadResponse.ok || uploadJson.success === false) {
+          throw new Error(
+            typeof uploadJson.error === 'string'
+              ? uploadJson.error
+              : 'Featured download asset could not be published. Retry launch without redeploying contracts.',
+          );
+        }
       }
 
       setLaunchProgressStep(5);
@@ -1549,8 +1552,43 @@ const ArtistPageContent: React.FC<{
     artistId: string,
     httpsDraftUrl: string | null,
     treasuryWallet: string,
+    coverFile?: File | null,
   ) => {
     if (file) {
+      if (file.type.startsWith('audio/')) {
+        if (!coverFile) {
+          throw new Error('Cover image is required for audio uploads');
+        }
+        console.log('📤 Uploading cover art for audio launch hero (videosrc)...');
+        const formData = new FormData();
+        formData.append('file', coverFile);
+        formData.append('artistId', artistId);
+        const res = await authenticatedFetch(
+          '/api/uploadLogo',
+          {
+            method: 'POST',
+            headers: { 'x-wallet-address': treasuryWallet.toLowerCase() },
+            body: formData,
+          },
+          getDidToken,
+        );
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          throw new Error(
+            typeof json.error === 'string' ? json.error : 'Cover art upload failed',
+          );
+        }
+        const heroUrl =
+          typeof json.logoUrl === 'string' && json.logoUrl.startsWith('http')
+            ? json.logoUrl
+            : '';
+        if (!heroUrl) {
+          throw new Error('Cover art upload returned no valid URL');
+        }
+        console.log('✅ Cover art uploaded for launch hero:', heroUrl);
+        return heroUrl;
+      }
+
       console.log('📤 Uploading featured content via server (bypasses Storage RLS for anon client)...');
       const formData = new FormData();
       formData.append('file', file);

@@ -47,6 +47,8 @@ export async function uploadArtistAssetDirect(params: {
   title: string;
   price: number;
   description: string;
+  assetNumber?: number;
+  requireMint?: boolean;
 }): Promise<{ ok: true; message: string } | { ok: false; error: string }> {
   const {
     getDidToken,
@@ -57,6 +59,8 @@ export async function uploadArtistAssetDirect(params: {
     title,
     price,
     description,
+    assetNumber,
+    requireMint,
   } = params;
 
   const primaryMime = (primaryFile.type || 'application/octet-stream').toLowerCase().split(';')[0].trim();
@@ -133,6 +137,8 @@ export async function uploadArtistAssetDirect(params: {
         price,
         description,
         userAddress,
+        ...(assetNumber != null ? { assetNumber } : {}),
+        ...(requireMint === true ? { requireMint: true } : {}),
       }),
     },
     getDidToken,

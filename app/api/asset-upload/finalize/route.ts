@@ -88,6 +88,10 @@ export async function POST(request: NextRequest) {
     const rawDescription = typeof body.description === 'string' ? body.description : '';
     const description = rawDescription.trim().replace(/\r\n/g, '\n');
     const price = typeof body.price === 'number' ? body.price : parseFloat(String(body.price ?? ''));
+    const parsedAssetNumber = Number(body.assetNumber);
+    const requestedAssetNumber =
+      Number.isInteger(parsedAssetNumber) && parsedAssetNumber > 0 ? parsedAssetNumber : null;
+    const requireMint = body.requireMint === true;
 
     if (!artistId || !sessionId || !primaryPath || !primaryMime || !title || !userAddress) {
       return NextResponse.json({ error: 'Missing required finalize fields' }, { status: 400 });
@@ -180,7 +184,8 @@ export async function POST(request: NextRequest) {
     }
 
     const assetNumber =
-      existingAssets && existingAssets.length > 0 ? existingAssets[0].asset_number + 1 : 1;
+      requestedAssetNumber ??
+      (existingAssets && existingAssets.length > 0 ? existingAssets[0].asset_number + 1 : 1);
 
     const assetRecord = {
       artist_id: artistId,
@@ -197,14 +202,34 @@ export async function POST(request: NextRequest) {
       },
     };
 
-    const { data: assetData, error: assetError } = await supabase
-      .from('artist_assets')
-      .insert(assetRecord)
-      .select()
-      .single();
+    const { data: existingTarget, error: existingTargetError } = requestedAssetNumber
+      ? await supabase
+          .from('artist_assets')
+          .select('id, asset_number')
+          .eq('artist_id', artistId)
+          .eq('asset_number', assetNumber)
+          .maybeSingle()
+      : { data: null, error: null };
+
+    if (existingTargetError) {
+      console.error('[asset-upload/finalize] target asset lookup failed:', existingTargetError);
+      return NextResponse.json({ error: 'Database error' }, { status: 500 });
+    }
+
+    const writeQuery = existingTarget
+      ? supabase
+          .from('artist_assets')
+          .update(assetRecord)
+          .eq('artist_id', artistId)
+          .eq('asset_number', assetNumber)
+          .select()
+          .single()
+      : supabase.from('artist_assets').insert(assetRecord).select().single();
+
+    const { data: assetData, error: assetError } = await writeQuery;
 
     if (assetError) {
-      console.error('[asset-upload/finalize] DB insert failed:', assetError);
+      console.error('[asset-upload/finalize] DB write failed:', assetError);
       return NextResponse.json({ error: 'Database insert failed' }, { status: 500 });
     }
 
@@ -212,7 +237,7 @@ export async function POST(request: NextRequest) {
       artistId,
       assetNumber,
       title,
-      requireMint: false,
+      requireMint,
     });
 
     if (!mintResult.ok) {
