@@ -14,7 +14,11 @@ interface OnboardingPanelProps {
   onExit: () => void;
   uploadedFile?: File | null;
   filePreviewUrl?: string | null;
+  uploadedCoverFile?: File | null;
+  coverPreviewUrl?: string | null;
   onUploadClick?: () => void;
+  onCoverUploadClick?: () => void;
+  onCoverClear?: () => void;
   mode?: 'onboarding' | 'upload-asset';
   existingArtist?: any;
   /** Optional treasure draft payload (invite handoff); applied once when mode is onboarding. */
@@ -309,7 +313,11 @@ const OnboardingPanel: React.FC<OnboardingPanelProps> = ({
   onExit,
   uploadedFile,
   filePreviewUrl,
+  uploadedCoverFile,
+  coverPreviewUrl,
   onUploadClick,
+  onCoverUploadClick,
+  onCoverClear,
   mode = 'onboarding',
   existingArtist,
   initialInviteDraft = null,
@@ -1839,6 +1847,61 @@ const OnboardingPanel: React.FC<OnboardingPanelProps> = ({
           </div>
         </div>
         
+        {(mode === 'upload-asset' || mode === 'onboarding') &&
+          uploadedFile?.type.startsWith('audio/') && (
+          <div className="swap-silver-bar mb-4">
+            <div className="swap-silver-bar-row">
+              <label className="swap-silver-bar-label">
+                Thumbnail / Cover Art
+                <span className="normal-case font-normal tracking-normal text-red-300 text-xs ml-2">
+                  (required for audio)
+                </span>
+              </label>
+              {uploadedCoverFile && coverPreviewUrl ? (
+                <div className="flex items-center gap-3 p-3 bg-gray-700 rounded-lg">
+                  <div className="w-16 h-16 rounded-lg overflow-hidden border border-gray-500 flex-shrink-0">
+                    <img
+                      src={coverPreviewUrl}
+                      alt={uploadedCoverFile.name}
+                      className="w-full h-full object-cover"
+                    />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-white text-sm font-medium truncate">{uploadedCoverFile.name}</div>
+                    <div className="text-gray-400 text-xs">
+                      {(uploadedCoverFile.size / 1024 / 1024).toFixed(1)} MB • {uploadedCoverFile.type}
+                    </div>
+                  </div>
+                  <div className="flex gap-2 flex-shrink-0">
+                    <button
+                      type="button"
+                      onClick={onCoverUploadClick}
+                      className="px-3 py-1 bg-blue-600 text-white rounded text-xs hover:bg-blue-700"
+                    >
+                      Change
+                    </button>
+                    <button
+                      type="button"
+                      onClick={onCoverClear}
+                      className="px-3 py-1 bg-gray-600 text-white rounded text-xs hover:bg-gray-700"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={onCoverUploadClick}
+                  className="w-full p-4 border-2 border-dashed border-gray-500 rounded-lg text-gray-300 hover:border-yellow-500 hover:text-yellow-300 transition-colors"
+                >
+                  Upload Thumbnail / Cover Art (JPEG, PNG, or WebP • max 5 MB)
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+
         {/* Small upload preview in form */}
         <div className="mb-4">
           <label className="block text-sm font-medium text-gray-300 mb-2">Upload Preview</label>
@@ -1938,8 +2001,12 @@ const OnboardingPanel: React.FC<OnboardingPanelProps> = ({
           onClick={handleSave}
           disabled={
             (mode === 'onboarding'
-              ? !formData.displayname || !formData.tokenName
-              : !formData.artworktitle || !uploadedFile) ||
+              ? !formData.displayname ||
+                !formData.tokenName ||
+                (uploadedFile?.type.startsWith('audio/') && !uploadedCoverFile)
+              : !formData.artworktitle ||
+                !uploadedFile ||
+                (uploadedFile.type.startsWith('audio/') && !uploadedCoverFile)) ||
             (mode === 'onboarding' && artistLaunchLocksPrimaryButton)
           }
           className="flex-1 px-6 py-3 bg-gradient-to-r from-green-600 to-green-700 text-white rounded-lg font-bold hover:from-green-700 hover:to-green-800 disabled:opacity-50 disabled:cursor-not-allowed transition-all transform hover:scale-105"
@@ -1958,17 +2025,23 @@ const OnboardingPanel: React.FC<OnboardingPanelProps> = ({
       <div className="mt-4 text-center">
         <div className="text-xs text-gray-400">
           {mode === 'upload-asset' ? (
-            formData.artworktitle && uploadedFile ? (
+            formData.artworktitle &&
+            uploadedFile &&
+            (!uploadedFile.type.startsWith('audio/') || uploadedCoverFile) ? (
               <span className="text-green-400">✓ Ready to upload! Download price: ${formData.downloadPrice}</span>
+            ) : uploadedFile?.type.startsWith('audio/') ? (
+              'Add content title, audio file, and cover art'
             ) : (
               'Add content title and upload file'
             )
+          ) : formData.displayname &&
+            formData.tokenName &&
+            (!uploadedFile?.type.startsWith('audio/') || uploadedCoverFile) ? (
+            <span className="text-green-400">✓ Ready to launch! Download price: ${formData.downloadPrice}</span>
+          ) : uploadedFile?.type.startsWith('audio/') ? (
+            'Fill in artist name, token symbol, audio file, and Thumbnail / Cover Art'
           ) : (
-            formData.displayname && formData.tokenName ? (
-              <span className="text-green-400">✓ Ready to launch! Download price: ${formData.downloadPrice}</span>
-            ) : (
-              'Fill in artist name and token symbol'
-            )
+            'Fill in artist name and token symbol'
           )}
         </div>
       </div>

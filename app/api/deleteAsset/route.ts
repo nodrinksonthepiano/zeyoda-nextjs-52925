@@ -8,6 +8,34 @@ const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
+function parseSupabasePublicStorageUrl(
+  fileUrl: string,
+): { bucket: string; filePath: string } | null {
+  if (!fileUrl.includes('supabase.co/storage')) return null;
+  const urlMatch = fileUrl.match(/\/storage\/v1\/object\/public\/([^/]+)\/(.+)$/);
+  if (!urlMatch) return null;
+  return { bucket: urlMatch[1], filePath: urlMatch[2] };
+}
+
+async function deleteStorageObjectByPublicUrl(
+  fileUrl: string | null | undefined,
+): Promise<boolean> {
+  if (!fileUrl) return false;
+  const parsed = parseSupabasePublicStorageUrl(fileUrl);
+  if (!parsed) return false;
+
+  const { error: storageError } = await supabase.storage
+    .from(parsed.bucket)
+    .remove([parsed.filePath]);
+
+  if (storageError) {
+    console.warn('⚠️ Failed to delete file from storage:', storageError);
+    return false;
+  }
+
+  return true;
+}
+
 export async function POST(request: NextRequest) {
   // Security guards: secret header + whitelist + rate limit
   const secretCheck = requireSecret(request);
@@ -68,7 +96,7 @@ export async function POST(request: NextRequest) {
     // 3. Get asset to find file URL for storage cleanup
     const { data: asset, error: fetchError } = await supabase
       .from('artist_assets')
-      .select('file_url')
+      .select('file_url, metadata')
       .eq('artist_id', artistId)
       .eq('asset_number', assetNumber)
       .single();
@@ -110,37 +138,35 @@ export async function POST(request: NextRequest) {
       console.log('✅ Deleted related gas sponsorship events');
     }
     
-    // 5. Delete file from storage (if it's a Supabase storage URL)
+    // 5. Delete files from storage (primary + optional cover art)
     let storageDeleted = false;
-    if (asset.file_url && asset.file_url.includes('supabase.co/storage')) {
-      try {
-        // Extract bucket and path from URL
-        // Format: https://[project].supabase.co/storage/v1/object/public/[bucket]/[path]
-        const urlMatch = asset.file_url.match(/\/storage\/v1\/object\/public\/([^\/]+)\/(.+)$/);
-        if (urlMatch) {
-          const [, bucket, filePath] = urlMatch;
-          console.log('🗑️ Deleting file from storage:', { bucket, filePath });
-          
-          const { error: storageError } = await supabase.storage
-            .from(bucket)
-            .remove([filePath]);
-          
-          if (storageError) {
-            console.warn('⚠️ Failed to delete file from storage:', storageError);
-            // Don't fail - file might already be deleted or URL might be external
-          } else {
-            console.log('✅ Deleted file from storage');
-            storageDeleted = true;
-          }
-        } else {
-          console.log('ℹ️ File URL is not a Supabase storage URL, skipping storage deletion');
-        }
-      } catch (storageErr) {
-        console.warn('⚠️ Error deleting from storage:', storageErr);
-        // Don't fail - continue with database deletion
+    if (asset.file_url) {
+      console.log('🗑️ Deleting primary file from storage:', asset.file_url);
+      storageDeleted = await deleteStorageObjectByPublicUrl(asset.file_url);
+      if (storageDeleted) {
+        console.log('✅ Deleted primary file from storage');
+      } else if (asset.file_url.includes('supabase.co/storage')) {
+        console.warn('⚠️ Primary file storage deletion did not complete');
+      } else {
+        console.log('ℹ️ Primary file URL is not a Supabase storage URL, skipping storage deletion');
       }
-    } else {
-      console.log('ℹ️ File URL is not a Supabase storage URL, skipping storage deletion');
+    }
+
+    const coverImageUrl =
+      asset.metadata &&
+      typeof asset.metadata === 'object' &&
+      typeof (asset.metadata as { cover_image_url?: unknown }).cover_image_url === 'string'
+        ? (asset.metadata as { cover_image_url: string }).cover_image_url
+        : null;
+
+    if (coverImageUrl) {
+      console.log('🗑️ Deleting cover file from storage:', coverImageUrl);
+      const coverDeleted = await deleteStorageObjectByPublicUrl(coverImageUrl);
+      if (coverDeleted) {
+        console.log('✅ Deleted cover file from storage');
+      } else {
+        console.warn('⚠️ Cover file storage deletion did not complete');
+      }
     }
     
     // 6. Delete from database

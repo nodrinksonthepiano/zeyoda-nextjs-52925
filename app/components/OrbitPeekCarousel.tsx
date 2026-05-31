@@ -108,6 +108,7 @@ export const OrbitPeekCarousel: React.FC<Props> = ({ items, index, onIndexChange
   const pinnedWRef = useRef<number>(0);
   const pinnedHRef = useRef<number>(0);
   const videoRefs = useRef<Map<number, HTMLVideoElement>>(new Map()); // keyed by itemIdx
+  const audioRefs = useRef<Map<number, HTMLAudioElement>>(new Map()); // keyed by itemIdx
   const imageRefs = useRef<Map<number, HTMLImageElement>>(new Map()); // keyed by itemIdx
   const heroReadyRef = useRef<boolean>(false);
   const snapLockRef = useRef<boolean>(false);
@@ -164,6 +165,16 @@ export const OrbitPeekCarousel: React.FC<Props> = ({ items, index, onIndexChange
   useEffect(() => { isHeroMutedRef.current = isHeroMuted; }, [isHeroMuted]);
   // Reset description when index changes
   useEffect(() => { setShowTitleDescription(false); }, [effectiveIndex]);
+  // Pause audio slides that are no longer active
+  useEffect(() => {
+    audioRefs.current.forEach((audio, idx) => {
+      if (idx !== effectiveIndex) {
+        try {
+          if (!audio.paused) audio.pause();
+        } catch {}
+      }
+    });
+  }, [effectiveIndex]);
   // Sync overlay target to current hero video and listen to play/pause changes
   useEffect(() => {
     const v = videoRefs.current.get(effectiveIndex);
@@ -1135,6 +1146,169 @@ export const OrbitPeekCarousel: React.FC<Props> = ({ items, index, onIndexChange
               </div>
             );
           })()}
+        </div>
+      );
+    }
+    if (asset.type === 'audio') {
+      const coverUrl =
+        typeof asset.metadata?.cover_image_url === 'string' ? asset.metadata.cover_image_url : '';
+      return (
+        <div
+          ref={typeof itemIdx === 'number' ? setMediaWrapRef(itemIdx) : undefined}
+          style={{ position: 'relative', width: '100%', height: '100%' }}
+          onMouseEnter={() => {
+            setShowHeroOverlay(true);
+            if (overlayHideTimerRef.current) window.clearTimeout(overlayHideTimerRef.current);
+          }}
+          onMouseLeave={() => {
+            if (overlayHideTimerRef.current) window.clearTimeout(overlayHideTimerRef.current);
+            overlayHideTimerRef.current = window.setTimeout(
+              () => setShowHeroOverlay(false),
+              4000,
+            ) as unknown as number;
+          }}
+          onTouchStart={() => {
+            setShowHeroOverlay(true);
+            if (overlayHideTimerRef.current) window.clearTimeout(overlayHideTimerRef.current);
+          }}
+          onTouchEnd={() => {
+            if (overlayHideTimerRef.current) window.clearTimeout(overlayHideTimerRef.current);
+            overlayHideTimerRef.current = window.setTimeout(
+              () => setShowHeroOverlay(false),
+              4000,
+            ) as unknown as number;
+          }}
+        >
+          {coverUrl ? (
+            <img
+              src={coverUrl}
+              alt={asset.title || 'Cover art'}
+              loading="eager"
+              onLoad={(e) => {
+                const img = e.currentTarget as HTMLImageElement;
+                if (img.naturalWidth && img.naturalHeight) {
+                  setNaturalAspect(img.naturalWidth / img.naturalHeight);
+                }
+              }}
+              style={base as any}
+            />
+          ) : (
+            <div
+              style={{
+                ...(base as any),
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontSize: '4rem',
+              }}
+            >
+              🎵
+            </div>
+          )}
+          <div
+            style={{
+              position: 'absolute',
+              left: 'var(--pad-x, 12px)',
+              right: 'var(--pad-x, 12px)',
+              bottom: 12,
+              zIndex: 20,
+              pointerEvents: 'auto',
+            }}
+          >
+            <audio
+              controls
+              src={asset.url}
+              style={{ width: '100%' }}
+              preload="metadata"
+              ref={(el) => {
+                if (typeof itemIdx === 'number') {
+                  if (el) audioRefs.current.set(itemIdx, el);
+                  else audioRefs.current.delete(itemIdx);
+                }
+              }}
+            />
+          </div>
+          {isHero && (
+            <div
+              style={{
+                position: 'absolute',
+                left: 'var(--pad-x, 0px)',
+                top: 'var(--pad-y, 0px)',
+                width: 'var(--content-w, 100%)',
+                height: 'var(--content-h, 100%)',
+                pointerEvents: 'none',
+                transform: 'translateZ(1px)',
+              }}
+            >
+              <div
+                style={{
+                  position: 'absolute',
+                  left: 6,
+                  bottom: 52,
+                  maxWidth: '50%',
+                  zIndex: 10,
+                  pointerEvents: 'auto',
+                }}
+              >
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 4,
+                    padding: '5px 8px',
+                    borderRadius: 6,
+                    background: overlayBg,
+                    color: overlayFg,
+                    fontFamily: overlayFont,
+                    fontSize: 11,
+                    lineHeight: 1.2,
+                    opacity: showHeroOverlay ? 1 : 0,
+                    transition: 'opacity .15s ease',
+                  }}
+                  className="carousel-media-overlay"
+                >
+                  {isOwner && onEditAsset && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onEditAsset(asset);
+                      }}
+                      style={{
+                        marginRight: 6,
+                        padding: '2px 4px',
+                        background: 'rgba(255,255,255,0.2)',
+                        border: '1px solid rgba(255,255,255,0.4)',
+                        borderRadius: 4,
+                        cursor: 'pointer',
+                        fontSize: 10,
+                        lineHeight: 1,
+                        color: 'inherit',
+                      }}
+                      title="Edit asset"
+                    >
+                      ✏️
+                    </button>
+                  )}
+                  <span
+                    style={{
+                      fontWeight: 600,
+                      whiteSpace: 'normal',
+                      display: '-webkit-box',
+                      WebkitLineClamp: 2,
+                      WebkitBoxOrient: 'vertical',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      lineHeight: 1.2,
+                      maxHeight: '2.4em',
+                    }}
+                  >
+                    {asset.title || 'Untitled'}
+                  </span>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       );
     }

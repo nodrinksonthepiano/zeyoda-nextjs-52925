@@ -14,6 +14,33 @@ const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
 const MAX_BYTES = 280 * 1024 * 1024;
+const MAX_AUDIO_BYTES = 80 * 1024 * 1024;
+const MAX_COVER_BYTES = 5 * 1024 * 1024;
+const ALLOWED_COVER_MIMES = new Set(['image/jpeg', 'image/png', 'image/webp']);
+
+function coverExtensionForMime(mime: string): string {
+  switch (mime) {
+    case 'image/jpeg':
+      return 'jpg';
+    case 'image/png':
+      return 'png';
+    case 'image/webp':
+      return 'webp';
+    default:
+      return 'jpg';
+  }
+}
+
+function validateCoverUpload(file: File): { ok: true; mime: string; extension: string } | { ok: false; error: string } {
+  const mime = (file.type || '').toLowerCase();
+  if (!ALLOWED_COVER_MIMES.has(mime)) {
+    return { ok: false, error: 'Cover must be JPEG, PNG, or WebP' };
+  }
+  if (file.size > MAX_COVER_BYTES) {
+    return { ok: false, error: 'Cover image must be 5 MB or smaller' };
+  }
+  return { ok: true, mime, extension: coverExtensionForMime(mime) };
+}
 
 export async function POST(request: NextRequest) {
   const secretCheck = requireSecret(request);
@@ -48,6 +75,7 @@ export async function POST(request: NextRequest) {
     let fileExtension: string;
     let requestedAssetNumber: number | null = null;
     let requireMint = false;
+    let coverFile: File | null = null;
 
     if (contentType.includes('application/json')) {
       const body = await request.json();
@@ -130,7 +158,39 @@ export async function POST(request: NextRequest) {
       mime = file.type || 'application/octet-stream';
       fileExtension = file.name.split('.').pop() || 'bin';
 
-      console.log('📋 Form upload:', { artistId, title, price, fileSize });
+      const coverCandidate = formData.get('coverFile');
+      if (coverCandidate instanceof File && coverCandidate.size > 0) {
+        coverFile = coverCandidate;
+      }
+
+      console.log('📋 Form upload:', { artistId, title, price, fileSize, hasCover: !!coverFile });
+    }
+
+    const isAudioPrimary = mime.startsWith('audio/');
+    if (isAudioPrimary) {
+      if (!coverFile) {
+        return NextResponse.json(
+          { error: 'Cover image is required when uploading audio' },
+          { status: 400 },
+        );
+      }
+      if (fileSize > MAX_AUDIO_BYTES) {
+        return NextResponse.json({ error: 'Audio file must be 80 MB or smaller' }, { status: 413 });
+      }
+    } else if (coverFile) {
+      return NextResponse.json(
+        { error: 'Cover image can only be uploaded with audio files' },
+        { status: 400 },
+      );
+    }
+
+    let coverUploadMeta: { mime: string; extension: string } | null = null;
+    if (coverFile) {
+      const coverValidation = validateCoverUpload(coverFile);
+      if (!coverValidation.ok) {
+        return NextResponse.json({ error: coverValidation.error }, { status: 400 });
+      }
+      coverUploadMeta = { mime: coverValidation.mime, extension: coverValidation.extension };
     }
 
     const auth = await getMagicAuthFromBearer(request);
@@ -185,6 +245,27 @@ export async function POST(request: NextRequest) {
 
     console.log('📄 Public URL:', urlData.publicUrl);
 
+    let coverImageUrl: string | undefined;
+    if (coverFile && coverUploadMeta) {
+      const coverBuffer = Buffer.from(await coverFile.arrayBuffer());
+      const coverFileName = `${artistId}/${uuidv4()}.${coverUploadMeta.extension}`;
+      const { data: coverUploadData, error: coverUploadError } = await supabase.storage
+        .from('artist-assets')
+        .upload(coverFileName, coverBuffer, { contentType: coverUploadMeta.mime });
+
+      if (coverUploadError || !coverUploadData?.path) {
+        console.error('❌ Cover upload failed:', coverUploadError);
+        await supabase.storage.from('artist-assets').remove([uploadData.path]);
+        return NextResponse.json({ error: 'Cover image upload failed' }, { status: 500 });
+      }
+
+      const { data: coverUrlData } = supabase.storage
+        .from('artist-assets')
+        .getPublicUrl(coverUploadData.path);
+      coverImageUrl = coverUrlData.publicUrl;
+      console.log('✅ Cover uploaded:', coverUploadData.path);
+    }
+
     const { data: existingAssets, error: assetsError } = await supabase
       .from('artist_assets')
       .select('asset_number')
@@ -211,6 +292,7 @@ export async function POST(request: NextRequest) {
         title: title,
         description: description || `${title} - uploaded via Zeyoda`,
         desc: description || `${title} - uploaded via Zeyoda`,
+        ...(coverImageUrl ? { cover_image_url: coverImageUrl } : {}),
       },
     };
 

@@ -8,7 +8,7 @@ export type ArtistAsset = {
   artistId: string;
   assetNumber: number;
   url: string;
-  type: 'video' | 'image';
+  type: 'video' | 'image' | 'audio';
   title?: string;
   priceUSD?: number;
   metadata?: any;
@@ -112,13 +112,14 @@ export function useArtistAssets(artistId: string | null | undefined): UseArtistA
     const mapped: ArtistAsset[] = rows.map((r: any) => {
       const fileType = (r?.file_type || '').toString();
       const isVideo = fileType.startsWith('video/');
+      const isAudio = fileType.startsWith('audio/');
       const metaTitle = (r?.metadata && typeof r.metadata === 'object' && r.metadata?.title) ? String(r.metadata.title) : undefined;
       return {
         id: String(r?.id || ''),
         artistId: String(r?.artist_id || ''),
         assetNumber: typeof r?.asset_number === 'number' ? r.asset_number : parseInt(r?.asset_number || '0', 10) || 0,
         url: String(r?.file_url || ''),
-        type: isVideo ? 'video' : 'image',
+        type: isVideo ? 'video' : isAudio ? 'audio' : 'image',
         title: metaTitle,
         priceUSD: typeof r?.price_usd === 'number' ? r.price_usd : (r?.price_usd ? Number(r.price_usd) : undefined),
         metadata: r?.metadata || undefined,

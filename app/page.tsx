@@ -80,6 +80,12 @@ function workshopFeaturedUrlMediaKind(url: string): 'video' | 'audio' | 'image' 
   return 'image';
 }
 
+const UPLOAD_AUDIO_MAX_BYTES = 80 * 1024 * 1024;
+const UPLOAD_COVER_MAX_BYTES = 5 * 1024 * 1024;
+const UPLOAD_COVER_MIMES = new Set(['image/jpeg', 'image/png', 'image/webp']);
+const LAUNCH_HTTPS_AUDIO_NEEDS_B2_MESSAGE =
+  'Staged audio from a treasure draft cannot launch yet — upload your song and Thumbnail / Cover Art locally, or use image/video for this draft.';
+
 /** Safe row from GET /api/invite/admin-drafts */
 interface AdminInviteDraftListRow {
   coin_public_id: string;
@@ -106,6 +112,7 @@ const ArtistPageContent: React.FC<{
   user: string | null;
   magic: any | null;
   inviteLaunchBridge?: InviteLaunchBridge | null;
+  onRefreshArtistAssets?: () => Promise<void>;
 }> = ({ 
   artistConfig: initialArtistConfig, 
   allArtistsConfig, 
@@ -115,6 +122,7 @@ const ArtistPageContent: React.FC<{
   user, 
   magic,
   inviteLaunchBridge = null,
+  onRefreshArtistAssets,
 }) => {
   const { showToast } = useToast();
   const { getDidToken } = useWallet();
@@ -130,6 +138,7 @@ const ArtistPageContent: React.FC<{
   const [appMode, setAppMode] = useState<'normal' | 'onboarding' | 'upload-asset' | 'profile-edit' | 'edit-asset'>('normal');
   const [onboardingArtistName, setOnboardingArtistName] = useState('WELCOME, ARTIST!');
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
+  const [uploadedCoverFile, setUploadedCoverFile] = useState<File | null>(null);
   const [onboardingAspectRatio, setOnboardingAspectRatio] = useState<number | null>(null);
   const [onboardingData, setOnboardingData] = useState<any>({});
   const [onboardingStardustPreview, setOnboardingStardustPreview] = useState(false);
@@ -137,6 +146,7 @@ const ArtistPageContent: React.FC<{
   const [profileDisplayNamePreview, setProfileDisplayNamePreview] = useState<string | null>(null);
   const [editingAsset, setEditingAsset] = useState<any | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const coverFileInputRef = useRef<HTMLInputElement>(null);
   const inviteLaunchCoinRef = useRef<string | null>(null);
   const lastLaunchArtistPayloadRef = useRef<any>(null);
   const launchCeremonyVisibleRef = useRef(false);
@@ -625,6 +635,18 @@ const ArtistPageContent: React.FC<{
 
   // File upload handlers
   const [filePreviewUrl, setFilePreviewUrl] = useState<string | null>(null);
+  const [coverPreviewUrl, setCoverPreviewUrl] = useState<string | null>(null);
+
+  const clearCoverSelection = useCallback(() => {
+    setCoverPreviewUrl((prev) => {
+      if (prev) URL.revokeObjectURL(prev);
+      return null;
+    });
+    setUploadedCoverFile(null);
+    if (coverFileInputRef.current) {
+      coverFileInputRef.current.value = '';
+    }
+  }, []);
   
   const handleFileSelect = useCallback((file: File) => {
     // Same live blob preview for everyone (including admin treasure workshop).
@@ -637,6 +659,9 @@ const ArtistPageContent: React.FC<{
     setFilePreviewUrl(previewUrl);
     setUploadedFile(file);
     setOnboardingData((prev) => ({ ...prev, uploadedFile: file }));
+    if (!file.type.startsWith('audio/')) {
+      clearCoverSelection();
+    }
     console.log('File selected:', file.name, file.type, file.size);
 
     if (user && appMode === 'onboarding' && workshopTreasureCoinId?.trim()) {
@@ -654,7 +679,35 @@ const ArtistPageContent: React.FC<{
         }
       })();
     }
-  }, [appMode, filePreviewUrl, user, workshopTreasureCoinId]);
+  }, [appMode, filePreviewUrl, user, workshopTreasureCoinId, clearCoverSelection, showToast]);
+
+  const handleCoverSelect = useCallback((file: File) => {
+    const mime = (file.type || '').toLowerCase();
+    if (!UPLOAD_COVER_MIMES.has(mime)) {
+      showToast('Cover must be JPEG, PNG, or WebP', 'error');
+      return;
+    }
+    if (file.size > UPLOAD_COVER_MAX_BYTES) {
+      showToast('Cover image must be 5 MB or smaller', 'error');
+      return;
+    }
+    setCoverPreviewUrl((prev) => {
+      if (prev) URL.revokeObjectURL(prev);
+      return URL.createObjectURL(file);
+    });
+    setUploadedCoverFile(file);
+  }, [showToast]);
+
+  const handleCoverUploadClick = useCallback(() => {
+    coverFileInputRef.current?.click();
+  }, []);
+
+  const handleCoverInputChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      handleCoverSelect(file);
+    }
+  }, [handleCoverSelect]);
 
   // Cleanup preview URL when component unmounts
   useEffect(() => {
@@ -664,6 +717,14 @@ const ArtistPageContent: React.FC<{
       }
     };
   }, [filePreviewUrl]);
+
+  useEffect(() => {
+    return () => {
+      if (coverPreviewUrl) {
+        URL.revokeObjectURL(coverPreviewUrl);
+      }
+    };
+  }, [coverPreviewUrl]);
 
   // Pin onboarding hero to viewport width (same ruler as OrbitPeekCarousel computeFitBox)
   useEffect(() => {
@@ -996,6 +1057,31 @@ const ArtistPageContent: React.FC<{
         return;
       }
 
+      if (uploadedFile?.type.startsWith('audio/')) {
+        if (!uploadedCoverFile) {
+          showToast('Thumbnail / Cover Art is required for audio uploads', 'error');
+          return;
+        }
+        if (uploadedFile.size > UPLOAD_AUDIO_MAX_BYTES) {
+          showToast('Audio file must be 80 MB or smaller', 'error');
+          return;
+        }
+        const coverMime = (uploadedCoverFile.type || '').toLowerCase();
+        if (!UPLOAD_COVER_MIMES.has(coverMime)) {
+          showToast('Thumbnail / Cover Art must be JPEG, PNG, or WebP', 'error');
+          return;
+        }
+        if (uploadedCoverFile.size > UPLOAD_COVER_MAX_BYTES) {
+          showToast('Thumbnail / Cover Art must be 5 MB or smaller', 'error');
+          return;
+        }
+      }
+
+      if (featuredHttpsDraft && workshopFeaturedUrlMediaKind(featuredHttpsDraft) === 'audio') {
+        showToast(LAUNCH_HTTPS_AUDIO_NEEDS_B2_MESSAGE, 'error');
+        return;
+      }
+
       const provider = new ethers.BrowserProvider(magic.rpcProvider as any);
       const signer = await provider.getSigner();
       const artistWallet = await signer.getAddress();
@@ -1317,6 +1403,9 @@ const ArtistPageContent: React.FC<{
       if (uploadedFile) {
         const formData = new FormData();
         formData.append('file', uploadedFile);
+        if (uploadedFile.type.startsWith('audio/') && uploadedCoverFile) {
+          formData.append('coverFile', uploadedCoverFile);
+        }
         formData.append('artistId', artistId);
         formData.append('title', artistData.artworktitle || 'Featured Content');
         formData.append('price', downloadPrice.toString());
@@ -1409,6 +1498,7 @@ const ArtistPageContent: React.FC<{
   }, [
     magic,
     uploadedFile,
+    uploadedCoverFile,
     workshopFeaturedHttpsUrl,
     onboardingData,
     showToast,
@@ -1582,6 +1672,7 @@ const ArtistPageContent: React.FC<{
     setOnboardingArtistName('WELCOME, ARTIST!');
     setOnboardingData({});
     setUploadedFile(null);
+    clearCoverSelection();
     setFilePreviewUrl((prev) => {
       if (prev) URL.revokeObjectURL(prev);
       return null;
@@ -1593,7 +1684,7 @@ const ArtistPageContent: React.FC<{
     workshopFeaturedHandlersRef.current = null;
     setUploadAssetData({ title: '', price: 5, description: '' });
     showToast(appMode === 'upload-asset' ? 'Upload cancelled' : 'Onboarding cancelled', 'info');
-  }, [showToast, appMode, resetLaunchCeremony]);
+  }, [showToast, appMode, resetLaunchCeremony, clearCoverSelection]);
 
   const handleUploadAsset = useCallback(async (assetData: any) => {
     if (!artistConfig || !uploadedFile || !user) {
@@ -1601,11 +1692,35 @@ const ArtistPageContent: React.FC<{
       return;
     }
 
+    const isAudioUpload = uploadedFile.type.startsWith('audio/');
+    if (isAudioUpload && !uploadedCoverFile) {
+      showToast('Cover image is required for audio uploads', 'error');
+      return;
+    }
+    if (isAudioUpload && uploadedFile.size > UPLOAD_AUDIO_MAX_BYTES) {
+      showToast('Audio file must be 80 MB or smaller', 'error');
+      return;
+    }
+    if (uploadedCoverFile) {
+      const coverMime = (uploadedCoverFile.type || '').toLowerCase();
+      if (!UPLOAD_COVER_MIMES.has(coverMime)) {
+        showToast('Cover must be JPEG, PNG, or WebP', 'error');
+        return;
+      }
+      if (uploadedCoverFile.size > UPLOAD_COVER_MAX_BYTES) {
+        showToast('Cover image must be 5 MB or smaller', 'error');
+        return;
+      }
+    }
+
     console.log('🎨 Uploading new asset for', artistConfig.name, assetData);
     
     try {
       const formData = new FormData();
       formData.append('file', uploadedFile);
+      if (isAudioUpload && uploadedCoverFile) {
+        formData.append('coverFile', uploadedCoverFile);
+      }
       formData.append('artistId', artistIdFromUrl);
       formData.append('title', assetData.artworktitle);
       formData.append('price', assetData.downloadPrice.toString());
@@ -1623,15 +1738,34 @@ const ArtistPageContent: React.FC<{
         showToast(result.message, 'success');
         setAppMode('normal');
         setUploadedFile(null);
+        clearCoverSelection();
+        setFilePreviewUrl((prev) => {
+          if (prev) URL.revokeObjectURL(prev);
+          return null;
+        });
+        setOnboardingAspectRatio(null);
         setUploadAssetData({ title: '', price: 5, description: '' });
-        // TODO: Refresh the page to show new asset
+        await onRefreshArtistAssets?.();
       } else {
         showToast(`Upload failed: ${result.error}`, 'error');
       }
     } catch (error: any) {
       showToast(`Upload failed: ${error.message}`, 'error');
     }
-  }, [artistConfig, uploadedFile, user, showToast, setAppMode, setUploadedFile, setUploadAssetData, artistIdFromUrl]);
+  }, [
+    artistConfig,
+    uploadedFile,
+    uploadedCoverFile,
+    user,
+    showToast,
+    setAppMode,
+    setUploadedFile,
+    setUploadAssetData,
+    artistIdFromUrl,
+    getDidToken,
+    clearCoverSelection,
+    onRefreshArtistAssets,
+  ]);
 
   const [swapFromAsset, setSwapFromAsset] = useState<string>("USD");
   const [swapToAsset, setSwapToAsset] = useState<string>("");
@@ -2519,6 +2653,13 @@ const ArtistPageContent: React.FC<{
                         onChange={handleFileInputChange}
                         className="hidden"
                       />
+                      <input
+                        ref={coverFileInputRef}
+                        type="file"
+                        accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp"
+                        onChange={handleCoverInputChange}
+                        className="hidden"
+                      />
                       <div 
                         ref={onboardingContainerRef}
                         className="relative onboarding-hero-container"
@@ -2579,6 +2720,30 @@ const ArtistPageContent: React.FC<{
                                     }
                                   }}
                                 />
+                              ) : filePreviewUrl && uploadedFile.type.startsWith('audio/') ? (
+                                <>
+                                  {coverPreviewUrl ? (
+                                    <img
+                                      src={coverPreviewUrl}
+                                      alt="Cover art preview"
+                                      style={{ width: '100%', height: '100%', objectFit: 'contain', borderRadius: 14, background: 'transparent' }}
+                                      onLoad={(e) => {
+                                        const img = e.currentTarget as HTMLImageElement;
+                                        if (img.naturalWidth && img.naturalHeight) {
+                                          setOnboardingAspectRatio(img.naturalWidth / img.naturalHeight);
+                                        }
+                                      }}
+                                    />
+                                  ) : (
+                                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', width: '100%', height: '100%' }}>
+                                      <div style={{ fontSize: '4rem', marginBottom: '1rem' }}>🎵</div>
+                                      <div style={{ fontSize: '0.875rem', color: '#FFD700' }}>Add Thumbnail / Cover Art below</div>
+                                    </div>
+                                  )}
+                                  <div style={{ position: 'absolute', left: 12, right: 12, bottom: 12, zIndex: 20 }}>
+                                    <audio controls src={filePreviewUrl} style={{ width: '100%' }} preload="metadata" />
+                                  </div>
+                                </>
                               ) : (
                                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', width: '100%', height: '100%' }}>
                                   <div style={{ fontSize: '4rem', marginBottom: '1rem' }}>
@@ -2598,6 +2763,7 @@ const ArtistPageContent: React.FC<{
                                   }
                                   setFilePreviewUrl(null);
                                   setUploadedFile(null);
+                                  clearCoverSelection();
                                   setOnboardingAspectRatio(null);
                                 }}
                                 style={{
@@ -2988,7 +3154,11 @@ const ArtistPageContent: React.FC<{
               onExit={handleExitOnboarding}
               uploadedFile={uploadedFile}
               filePreviewUrl={filePreviewUrl}
+              uploadedCoverFile={uploadedCoverFile}
+              coverPreviewUrl={coverPreviewUrl}
               onUploadClick={handleUploadClick}
+              onCoverUploadClick={handleCoverUploadClick}
+              onCoverClear={clearCoverSelection}
               mode={appMode} // Pass mode to panel
               existingArtist={artistConfig} // Pass artist config
               initialInviteDraft={inviteLaunchBridge?.draft ?? null}
@@ -3630,7 +3800,7 @@ function LiveArtistPortal(props?: { inviteLaunchBridge?: InviteLaunchBridge | nu
 
   const { featuredAsset, videoUrl, isLoading: assetLoading, error: assetError } =
     useFeaturedAsset(artistIdFromUrl);
-  const { assets: artistAssets } = useArtistAssets(artistIdFromUrl);
+  const { assets: artistAssets, refresh: refreshArtistAssets } = useArtistAssets(artistIdFromUrl);
 
   const stubConfig = bridging
     ? buildStubArtistConfigFromDraft(inviteLaunchBridge!.draft as Record<string, unknown>)
@@ -3727,6 +3897,7 @@ function LiveArtistPortal(props?: { inviteLaunchBridge?: InviteLaunchBridge | nu
       user={user ?? null}
       magic={magic}
       inviteLaunchBridge={bridging ? inviteLaunchBridge : null}
+      onRefreshArtistAssets={refreshArtistAssets}
     />
   );
 }
