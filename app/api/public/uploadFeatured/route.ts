@@ -1,24 +1,55 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { verifyWhitelist } from '@/app/utils/server/whitelistCheck';
+import { assertMagicArtistUploader } from '@/app/utils/server/assertMagicArtistUploader';
+import { getMagicAuthFromBearer } from '@/app/utils/server/magicBearerEmail';
 
 /**
  * Public proxy for /api/uploadFeatured — copies HTTPS draft media into artist-assets for videosrc.
+ * Scoped auth: admin, treasury wallet, or claimed invite launcher for this artistId.
  */
 export async function POST(request: NextRequest) {
-  const whitelistResult = await verifyWhitelist(request);
-  if (!whitelistResult.verified) {
+  let bodyText: string;
+  try {
+    bodyText = await request.text();
+  } catch {
+    return NextResponse.json({ error: 'Invalid request body' }, { status: 400 });
+  }
+
+  let artistId = '';
+  try {
+    const parsed = JSON.parse(bodyText) as { artistId?: unknown };
+    artistId = typeof parsed.artistId === 'string' ? parsed.artistId.trim() : '';
+  } catch {
+    return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
+  }
+
+  if (!artistId) {
+    return NextResponse.json({ error: 'artistId required' }, { status: 400 });
+  }
+
+  const auth = await getMagicAuthFromBearer(request);
+  if (!auth) {
+    return NextResponse.json(
+      { error: 'Authentication required', message: 'Valid Magic DID token required' },
+      { status: 401 },
+    );
+  }
+
+  const uploadDenied = await assertMagicArtistUploader(request, artistId, auth);
+  if (uploadDenied) return uploadDenied;
+
+  const verifiedEmail = auth.email || auth.issuer;
+  if (!verifiedEmail) {
     return NextResponse.json(
       {
-        error: whitelistResult.error || 'Unauthorized',
-        message: 'Access denied - whitelist required',
+        error: 'Authentication required',
+        message: 'Magic session lacks email or issuer — cannot bind to proxy',
       },
-      { status: whitelistResult.email === null ? 401 : 403 },
+      { status: 401 },
     );
   }
 
   try {
     const origin = request.headers.get('x-forwarded-origin') || new URL(request.url).origin;
-    const bodyText = await request.text();
     const secret = process.env.INTERNAL_API_SECRET;
     if (!secret) {
       return NextResponse.json({ error: 'Server misconfigured: INTERNAL_API_SECRET missing' }, { status: 500 });
@@ -29,7 +60,7 @@ export async function POST(request: NextRequest) {
       headers: {
         'content-type': 'application/json',
         'x-internal-secret': secret,
-        'x-verified-email': whitelistResult.email!,
+        'x-verified-email': verifiedEmail,
       },
       body: bodyText,
     });
