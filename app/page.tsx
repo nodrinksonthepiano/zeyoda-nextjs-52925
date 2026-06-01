@@ -651,39 +651,6 @@ const ArtistPageContent: React.FC<{
       coverFileInputRef.current.value = '';
     }
   }, []);
-  
-  const handleFileSelect = useCallback((file: File) => {
-    // Same live blob preview for everyone (including admin treasure workshop).
-    // After a draft coin exists, admin path also POSTs draft-upload to stage HTTPS for Save Treasure Draft.
-    if (filePreviewUrl) {
-      URL.revokeObjectURL(filePreviewUrl);
-    }
-
-    const previewUrl = URL.createObjectURL(file);
-    setFilePreviewUrl(previewUrl);
-    setUploadedFile(file);
-    setOnboardingData((prev) => ({ ...prev, uploadedFile: file }));
-    if (!file.type.startsWith('audio/')) {
-      clearCoverSelection();
-    }
-    console.log('File selected:', file.name, file.type, file.size);
-
-    if (user && appMode === 'onboarding' && workshopTreasureCoinId?.trim()) {
-      void (async () => {
-        const uploadFn = workshopFeaturedHandlersRef.current?.uploadFeatured;
-        if (!uploadFn) return;
-        const ok = await uploadFn(file);
-        if (ok) {
-          setUploadedFile(null);
-          setFilePreviewUrl((prev) => {
-            if (prev) URL.revokeObjectURL(prev);
-            return null;
-          });
-          setOnboardingAspectRatio(null);
-        }
-      })();
-    }
-  }, [appMode, filePreviewUrl, user, workshopTreasureCoinId, clearCoverSelection, showToast]);
 
   const handleCoverSelect = useCallback((file: File) => {
     const mime = (file.type || '').toLowerCase();
@@ -719,6 +686,64 @@ const ArtistPageContent: React.FC<{
     });
     setUploadedCoverFile(file);
   }, [appMode, clearCoverSelection, showToast, user, workshopTreasureCoinId]);
+
+  const handleFileSelect = useCallback((file: File) => {
+    const mime = (file.type || '').toLowerCase();
+    const isTreasureDraft =
+      Boolean(user && appMode === 'onboarding' && workshopTreasureCoinId?.trim());
+    const featuredIsAudio =
+      (typeof workshopFeaturedHttpsUrl === 'string' &&
+        workshopFeaturedHttpsUrl.startsWith('https://') &&
+        workshopFeaturedUrlMediaKind(workshopFeaturedHttpsUrl) === 'audio') ||
+      Boolean(uploadedFile?.type.startsWith('audio/'));
+
+    if (isTreasureDraft && featuredIsAudio && UPLOAD_COVER_MIMES.has(mime)) {
+      showToast('Routed to Thumbnail / Cover Art', 'info');
+      handleCoverSelect(file);
+      return;
+    }
+
+    // Same live blob preview for everyone (including admin treasure workshop).
+    // After a draft coin exists, admin path also POSTs draft-upload to stage HTTPS for Save Treasure Draft.
+    if (filePreviewUrl) {
+      URL.revokeObjectURL(filePreviewUrl);
+    }
+
+    const previewUrl = URL.createObjectURL(file);
+    setFilePreviewUrl(previewUrl);
+    setUploadedFile(file);
+    setOnboardingData((prev) => ({ ...prev, uploadedFile: file }));
+    if (!file.type.startsWith('audio/')) {
+      clearCoverSelection();
+    }
+    console.log('File selected:', file.name, file.type, file.size);
+
+    if (isTreasureDraft) {
+      void (async () => {
+        const uploadFn = workshopFeaturedHandlersRef.current?.uploadFeatured;
+        if (!uploadFn) return;
+        const ok = await uploadFn(file);
+        if (ok) {
+          setUploadedFile(null);
+          setFilePreviewUrl((prev) => {
+            if (prev) URL.revokeObjectURL(prev);
+            return null;
+          });
+          setOnboardingAspectRatio(null);
+        }
+      })();
+    }
+  }, [
+    appMode,
+    filePreviewUrl,
+    handleCoverSelect,
+    uploadedFile,
+    user,
+    workshopFeaturedHttpsUrl,
+    workshopTreasureCoinId,
+    clearCoverSelection,
+    showToast,
+  ]);
 
   const handleCoverUploadClick = useCallback(() => {
     coverFileInputRef.current?.click();

@@ -675,6 +675,12 @@ const OnboardingPanel: React.FC<OnboardingPanelProps> = ({
       const coinId = treasureDraftCoinPublicId?.trim();
       if (!coinId || !getDidToken) return false;
 
+      const mime = (file.type || '').toLowerCase();
+      if (draftFeaturedIsAudio(formData, null) && DRAFT_COVER_MIMES.has(mime)) {
+        showToast('Use Thumbnail / Cover Art for cover images', 'error');
+        return false;
+      }
+
       setTreasureBusy('upload');
       try {
         const result = file.type.startsWith('audio/')
@@ -698,7 +704,7 @@ const OnboardingPanel: React.FC<OnboardingPanelProps> = ({
         setTreasureBusy('idle');
       }
     },
-    [getDidToken, onWorkshopFeaturedHttpsChange, showToast, treasureDraftCoinPublicId],
+    [formData, getDidToken, onWorkshopFeaturedHttpsChange, showToast, treasureDraftCoinPublicId],
   );
 
   const uploadFeaturedCoverViaDraft = useCallback(
@@ -1978,7 +1984,7 @@ const OnboardingPanel: React.FC<OnboardingPanelProps> = ({
         </div>
         
         {(mode === 'upload-asset' || mode === 'onboarding') &&
-          uploadedFile?.type.startsWith('audio/') && (
+          draftFeaturedIsAudio(formData, uploadedFile) && (
           <div className="swap-silver-bar mb-4">
             <div className="swap-silver-bar-row">
               <label className="swap-silver-bar-label">
@@ -2050,7 +2056,7 @@ const OnboardingPanel: React.FC<OnboardingPanelProps> = ({
                   onClick={onCoverUploadClick}
                   className="w-full p-4 border-2 border-dashed border-gray-500 rounded-lg text-gray-300 hover:border-yellow-500 hover:text-yellow-300 transition-colors"
                 >
-                  Upload Thumbnail / Cover Art (JPEG, PNG, or WebP • max 5 MB)
+                  Upload Thumbnail / Cover Art (JPEG, PNG, or WebP • max 4 MB)
                 </button>
               )}
             </div>
@@ -2199,12 +2205,14 @@ const OnboardingPanel: React.FC<OnboardingPanelProps> = ({
             ) : (
               'Add content title and upload file'
             )
-          ) : formData.displayname &&
-            formData.tokenName &&
-            (!uploadedFile?.type.startsWith('audio/') || uploadedCoverFile) ? (
-            <span className="text-green-400">✓ Ready to launch! Download price: ${formData.downloadPrice}</span>
-          ) : uploadedFile?.type.startsWith('audio/') ? (
-            'Fill in artist name, token symbol, audio file, and Thumbnail / Cover Art'
+          ) : formData.displayname && formData.tokenName ? (
+            draftFeaturedIsAudio(formData, uploadedFile) &&
+            !uploadedCoverFile &&
+            !isDraftMediaHttps(formData.featured_cover_image_url) ? (
+              'Fill in artist name, token symbol, audio file, and Thumbnail / Cover Art'
+            ) : (
+              <span className="text-green-400">✓ Ready to launch! Download price: ${formData.downloadPrice}</span>
+            )
           ) : (
             'Fill in artist name and token symbol'
           )}
