@@ -222,6 +222,7 @@ const ArtistPageContent: React.FC<{
   const [adminInviteDraftRows, setAdminInviteDraftRows] = useState<AdminInviteDraftListRow[]>([]);
   const [workshopTreasureCoinId, setWorkshopTreasureCoinId] = useState<string | null>(null);
   const [workshopFeaturedHttpsUrl, setWorkshopFeaturedHttpsUrl] = useState<string | null>(null);
+  const [workshopFeaturedCoverHttpsUrl, setWorkshopFeaturedCoverHttpsUrl] = useState<string | null>(null);
   const workshopFeaturedHandlersRef = useRef<{
     uploadFeatured: (file: File) => Promise<boolean>;
     clearFeatured: () => void;
@@ -626,6 +627,10 @@ const ArtistPageContent: React.FC<{
 
   const handleWorkshopFeaturedHttpsChange = useCallback((url: string | null) => {
     setWorkshopFeaturedHttpsUrl(url?.startsWith('https://') ? url : null);
+  }, []);
+
+  const handleWorkshopFeaturedCoverHttpsChange = useCallback((url: string | null) => {
+    setWorkshopFeaturedCoverHttpsUrl(url?.startsWith('https://') ? url : null);
   }, []);
 
   const handleClearWorkshopHeroStaging = useCallback(() => {
@@ -1806,6 +1811,7 @@ const ArtistPageContent: React.FC<{
     setOnboardingStardustPreview(false);
     setWorkshopTreasureCoinId(null);
     setWorkshopFeaturedHttpsUrl(null);
+    setWorkshopFeaturedCoverHttpsUrl(null);
     workshopFeaturedHandlersRef.current = null;
     setUploadAssetData({ title: '', price: 5, description: '' });
     showToast(appMode === 'upload-asset' ? 'Upload cancelled' : 'Onboarding cancelled', 'info');
@@ -2956,6 +2962,60 @@ const ArtistPageContent: React.FC<{
                                     }
                                   }}
                                 />
+                              ) : workshopFeaturedUrlMediaKind(workshopFeaturedHttpsUrl) === 'audio' ? (
+                                <>
+                                  {workshopFeaturedCoverHttpsUrl || coverPreviewUrl ? (
+                                    <img
+                                      src={workshopFeaturedCoverHttpsUrl || coverPreviewUrl || ''}
+                                      alt="Cover art preview"
+                                      style={{
+                                        width: '100%',
+                                        height: '100%',
+                                        objectFit: 'contain',
+                                        borderRadius: 14,
+                                        background: 'transparent',
+                                      }}
+                                      onLoad={(e) => {
+                                        const img = e.currentTarget as HTMLImageElement;
+                                        if (img.naturalWidth && img.naturalHeight) {
+                                          setOnboardingAspectRatio(img.naturalWidth / img.naturalHeight);
+                                        }
+                                      }}
+                                    />
+                                  ) : (
+                                    <div
+                                      style={{
+                                        display: 'flex',
+                                        flexDirection: 'column',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        width: '100%',
+                                        height: '100%',
+                                      }}
+                                    >
+                                      <div style={{ fontSize: '4rem', marginBottom: '1rem' }}>🎵</div>
+                                      <div style={{ fontSize: '0.875rem', color: '#FFD700' }}>
+                                        Add Thumbnail / Cover Art below
+                                      </div>
+                                    </div>
+                                  )}
+                                  <div
+                                    style={{
+                                      position: 'absolute',
+                                      left: 12,
+                                      right: 12,
+                                      bottom: 12,
+                                      zIndex: 20,
+                                    }}
+                                  >
+                                    <audio
+                                      controls
+                                      src={workshopFeaturedHttpsUrl}
+                                      style={{ width: '100%' }}
+                                      preload="metadata"
+                                    />
+                                  </div>
+                                </>
                               ) : (
                                 <div
                                   style={{
@@ -3290,6 +3350,7 @@ const ArtistPageContent: React.FC<{
               onRegisterLoadTreasureDraftByCoin={registerLoadTreasureDraftByCoin}
               onTreasureDraftCoinPublicIdChange={handleTreasureDraftCoinPublicIdChange}
               onWorkshopFeaturedHttpsChange={handleWorkshopFeaturedHttpsChange}
+              onWorkshopFeaturedCoverHttpsChange={handleWorkshopFeaturedCoverHttpsChange}
               onClearWorkshopHeroStaging={handleClearWorkshopHeroStaging}
               onRegisterWorkshopFeaturedHandlers={registerWorkshopFeaturedHandlers}
               artistLaunchLocksPrimaryButton={artistLaunchLocksPrimaryButton}

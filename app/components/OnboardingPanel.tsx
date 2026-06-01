@@ -37,6 +37,8 @@ interface OnboardingPanelProps {
   onTreasureDraftCoinPublicIdChange?: (coinPublicId: string | null) => void;
   /** Mirror persisted HTTPS featured URL for hero when local File preview is cleared. */
   onWorkshopFeaturedHttpsChange?: (url: string | null) => void;
+  /** Mirror persisted HTTPS cover URL for hero when local cover blob is cleared. */
+  onWorkshopFeaturedCoverHttpsChange?: (url: string | null) => void;
   /** Before revert / baseline restore: clear parent hero staged File + blob preview. */
   onClearWorkshopHeroStaging?: () => void;
   /** Parent registers hero featured draft-upload + clear (admin onboarding only). */
@@ -342,6 +344,7 @@ const OnboardingPanel: React.FC<OnboardingPanelProps> = ({
   onRegisterLoadTreasureDraftByCoin,
   onTreasureDraftCoinPublicIdChange,
   onWorkshopFeaturedHttpsChange,
+  onWorkshopFeaturedCoverHttpsChange,
   onClearWorkshopHeroStaging,
   onRegisterWorkshopFeaturedHandlers,
   artistLaunchLocksPrimaryButton = false,
@@ -434,8 +437,13 @@ const OnboardingPanel: React.FC<OnboardingPanelProps> = ({
     const featuredHttps = merged.featured_asset_url?.startsWith('https://')
       ? merged.featured_asset_url
       : null;
-    if (featuredHttps && (isAdmin || coinFromBridge)) {
-      onWorkshopFeaturedHttpsChange?.(featuredHttps);
+    if (isAdmin || coinFromBridge) {
+      if (featuredHttps) {
+        onWorkshopFeaturedHttpsChange?.(featuredHttps);
+      }
+      onWorkshopFeaturedCoverHttpsChange?.(
+        isDraftMediaHttps(merged.featured_cover_image_url) ? merged.featured_cover_image_url : null,
+      );
     }
   }, [
     ea,
@@ -444,6 +452,7 @@ const OnboardingPanel: React.FC<OnboardingPanelProps> = ({
     isAdmin,
     mode,
     onArtistNameChange,
+    onWorkshopFeaturedCoverHttpsChange,
     onWorkshopFeaturedHttpsChange,
   ]);
 
@@ -730,13 +739,14 @@ const OnboardingPanel: React.FC<OnboardingPanelProps> = ({
           return false;
         }
         setFormData((prev) => ({ ...prev, featured_cover_image_url: result.url }));
+        onWorkshopFeaturedCoverHttpsChange?.(result.url);
         showToast('Cover art staged — Save Treasure Draft to commit.', 'info');
         return true;
       } finally {
         setTreasureBusy('idle');
       }
     },
-    [getDidToken, showToast, treasureDraftCoinPublicId],
+    [getDidToken, onWorkshopFeaturedCoverHttpsChange, showToast, treasureDraftCoinPublicId],
   );
 
   const clearWorkshopFeatured = useCallback(() => {
@@ -883,6 +893,9 @@ const OnboardingPanel: React.FC<OnboardingPanelProps> = ({
           onWorkshopFeaturedHttpsChange?.(
             merged.featured_asset_url?.startsWith('https://') ? merged.featured_asset_url : null,
           );
+          onWorkshopFeaturedCoverHttpsChange?.(
+            isDraftMediaHttps(merged.featured_cover_image_url) ? merged.featured_cover_image_url : null,
+          );
         }
 
         showToast(`Loaded draft ${coin}`, 'success');
@@ -892,7 +905,16 @@ const OnboardingPanel: React.FC<OnboardingPanelProps> = ({
         setTreasureBusy('idle');
       }
     },
-    [ea, getDidToken, isAdmin, mode, onArtistNameChange, onWorkshopFeaturedHttpsChange, showToast],
+    [
+      ea,
+      getDidToken,
+      isAdmin,
+      mode,
+      onArtistNameChange,
+      onWorkshopFeaturedCoverHttpsChange,
+      onWorkshopFeaturedHttpsChange,
+      showToast,
+    ],
   );
 
   useEffect(() => {
@@ -921,6 +943,7 @@ const OnboardingPanel: React.FC<OnboardingPanelProps> = ({
       setBackgroundFile(null);
       onArtistNameChange('WELCOME, ARTIST!');
       onWorkshopFeaturedHttpsChange?.(null);
+      onWorkshopFeaturedCoverHttpsChange?.(null);
       showToast('Treasure workshop cleared to defaults.', 'info');
       return;
     }
@@ -957,6 +980,9 @@ const OnboardingPanel: React.FC<OnboardingPanelProps> = ({
     onWorkshopFeaturedHttpsChange?.(
       rest.featured_asset_url?.startsWith('https://') ? rest.featured_asset_url : null,
     );
+    onWorkshopFeaturedCoverHttpsChange?.(
+      isDraftMediaHttps(rest.featured_cover_image_url) ? rest.featured_cover_image_url : null,
+    );
 
     showToast('Reverted to last committed treasure draft.', 'info');
   }, [
@@ -967,6 +993,7 @@ const OnboardingPanel: React.FC<OnboardingPanelProps> = ({
     mode,
     onArtistNameChange,
     onClearWorkshopHeroStaging,
+    onWorkshopFeaturedCoverHttpsChange,
     onWorkshopFeaturedHttpsChange,
     showToast,
   ]);
@@ -1038,6 +1065,7 @@ const OnboardingPanel: React.FC<OnboardingPanelProps> = ({
           );
           if (r.ok) {
             workingForm = { ...workingForm, featured_cover_image_url: r.url };
+            onWorkshopFeaturedCoverHttpsChange?.(r.url);
             onCoverClear?.();
           }
         }
@@ -1145,6 +1173,7 @@ const OnboardingPanel: React.FC<OnboardingPanelProps> = ({
           const r = await postInviteDraftUpload(getDidToken, coin, 'featured_cover', uploadedCoverFile);
           if (r.ok) {
             workingForm = { ...workingForm, featured_cover_image_url: r.url };
+            onWorkshopFeaturedCoverHttpsChange?.(r.url);
             anyUploadSuccess = true;
             onCoverClear?.();
           } else failures.push(`Cover: ${r.error}`);
@@ -1181,6 +1210,20 @@ const OnboardingPanel: React.FC<OnboardingPanelProps> = ({
       if (tu) setTreasureDraftTreasureUrl(tu);
 
       setFormData(workingForm);
+
+      if (
+        failures.length === 0 &&
+        (!didAttemptSecondSave || secondSaveOk)
+      ) {
+        onWorkshopFeaturedHttpsChange?.(
+          isDraftMediaHttps(workingForm.featured_asset_url) ? workingForm.featured_asset_url : null,
+        );
+        onWorkshopFeaturedCoverHttpsChange?.(
+          isDraftMediaHttps(workingForm.featured_cover_image_url)
+            ? workingForm.featured_cover_image_url
+            : null,
+        );
+      }
 
       setLogoPreview((prev) => {
         if (isDraftMediaHttps(workingForm.logo_url)) {
@@ -1242,6 +1285,7 @@ const OnboardingPanel: React.FC<OnboardingPanelProps> = ({
     mode,
     onClearWorkshopHeroStaging,
     onCoverClear,
+    onWorkshopFeaturedCoverHttpsChange,
     onWorkshopFeaturedHttpsChange,
     showToast,
     treasureDraftCoinPublicId,
