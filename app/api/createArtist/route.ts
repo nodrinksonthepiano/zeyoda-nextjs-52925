@@ -26,9 +26,9 @@ export async function POST(request: NextRequest) {
     }
 
     /**
-     * When `coin_public_id` is sent, invite-driven launch requires a successful registry insert before
-     * marking the NFC invite as launched (no warn-only shortcut). Omit `coin_public_id` to keep legacy
-     * warn-and-continue behavior on registry insert failure.
+     * When `coin_public_id` is sent, invite-driven launch requires a successful registry insert
+     * (no warn-only shortcut). Invite stays `claimed` until finalizeLaunch succeeds.
+     * Omit `coin_public_id` to keep legacy warn-and-continue behavior on registry insert failure.
      */
     const inviteCoin =
       typeof artistData.coin_public_id === 'string' ? artistData.coin_public_id.trim() : '';
@@ -97,20 +97,6 @@ export async function POST(request: NextRequest) {
           },
           { status: 500 },
         );
-      }
-
-      const { error: inviteUpdErr } = await supabaseAdmin
-        .from('artist_invites')
-        .update({
-          status: 'launched',
-          launched_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        })
-        .eq('coin_public_id', inviteCoin)
-        .eq('status', 'claimed');
-
-      if (inviteUpdErr) {
-        console.error('❌ artist_invites launched update:', inviteUpdErr);
       }
     } else if (registryError) {
       console.warn('⚠️ Registry table error:', registryError);

@@ -12,6 +12,62 @@ const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey, {
   auth: { autoRefreshToken: false, persistSession: false },
 });
 
+function tokenNameToArtistId(tokenName: string): string {
+  return tokenName.trim().toUpperCase().replace(/\s+/g, '').toLowerCase();
+}
+
+type InviteCoinResolve =
+  | { coin: string }
+  | { error: string; status: number }
+  | null;
+
+/** Resolve NFC coin for invite → launched promotion (avoid artist_slug vs artists.id drift). */
+async function resolveInviteCoinForFinalize(
+  artistId: string,
+  treasuryWallet: string | null,
+  coinFromBody: string | null,
+): Promise<InviteCoinResolve> {
+  const coinTrim = coinFromBody?.trim() ?? '';
+  if (coinTrim) {
+    return { coin: coinTrim };
+  }
+  if (!treasuryWallet) {
+    return null;
+  }
+
+  const { data: rows, error } = await supabaseAdmin
+    .from('artist_invites')
+    .select('coin_public_id, draft_payload')
+    .eq('claimed_by_wallet', treasuryWallet)
+    .eq('status', 'claimed');
+
+  if (error) {
+    console.error('finalizeLaunch invite coin resolve:', error);
+    return { error: 'Failed to resolve invite for launch finalization', status: 500 };
+  }
+
+  const matches = (rows ?? []).filter((row) => {
+    const dp = row.draft_payload as Record<string, unknown> | null;
+    const tokenName = typeof dp?.tokenName === 'string' ? dp.tokenName : '';
+    if (!tokenName.trim()) return false;
+    return tokenNameToArtistId(tokenName) === artistId;
+  });
+
+  if (matches.length === 0) {
+    return null;
+  }
+  if (matches.length > 1) {
+    return {
+      error:
+        'Multiple claimed invites match this wallet; pass coin_public_id when finalizing launch',
+      status: 409,
+    };
+  }
+
+  const coin = matches[0].coin_public_id;
+  return typeof coin === 'string' && coin.trim() ? { coin: coin.trim() } : null;
+}
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
@@ -19,6 +75,9 @@ export async function POST(request: NextRequest) {
     if (!artistId) {
       return NextResponse.json({ error: 'artistId required' }, { status: 400 });
     }
+
+    const coinFromBody =
+      typeof body.coin_public_id === 'string' ? body.coin_public_id.trim() : '';
 
     const auth = await getMagicAuthFromBearer(request);
     if (!auth) {
@@ -208,6 +267,51 @@ export async function POST(request: NextRequest) {
     if (updErr) {
       console.error('finalizeLaunch pause update:', updErr);
       return NextResponse.json({ error: 'Failed to publish artist' }, { status: 500 });
+    }
+
+    const inviteCoinResolved = await resolveInviteCoinForFinalize(
+      artistId,
+      treasuryWallet,
+      coinFromBody || null,
+    );
+
+    if (inviteCoinResolved && 'error' in inviteCoinResolved) {
+      return NextResponse.json(
+        { error: inviteCoinResolved.error },
+        { status: inviteCoinResolved.status },
+      );
+    }
+
+    if (inviteCoinResolved && 'coin' in inviteCoinResolved) {
+      const now = new Date().toISOString();
+      const { data: updatedInvites, error: inviteLaunchedErr } = await supabaseAdmin
+        .from('artist_invites')
+        .update({
+          status: 'launched',
+          launched_at: now,
+          updated_at: now,
+        })
+        .eq('coin_public_id', inviteCoinResolved.coin)
+        .eq('status', 'claimed')
+        .select('coin_public_id');
+
+      if (inviteLaunchedErr) {
+        console.error('finalizeLaunch invite launched update:', inviteLaunchedErr);
+        return NextResponse.json(
+          {
+            error:
+              'Artist is live but invite status could not be updated. Contact support with your coin id.',
+          },
+          { status: 500 },
+        );
+      }
+
+      if (!updatedInvites?.length) {
+        console.warn(
+          'finalizeLaunch: artist unpaused but no claimed invite matched coin',
+          inviteCoinResolved.coin,
+        );
+      }
     }
 
     return NextResponse.json({ success: true, message: 'Artist is now live.' });

@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server';
 import { Magic } from '@magic-sdk/admin';
 import { createClient } from '@supabase/supabase-js';
+import { normalizeReservedEmail } from '@/app/utils/server/normalizeReservedEmail';
 
 // Initialize Magic Admin SDK (server-side only)
 const magicSecretKey = process.env.MAGIC_SECRET_KEY;
@@ -108,13 +109,14 @@ export async function verifyWhitelist(request: NextRequest): Promise<WhitelistCh
       };
     }
 
-    console.log(`✅ Token verified for email: ${email}`);
+    const normalizedEmail = normalizeReservedEmail(email);
+    console.log(`✅ Token verified for email: ${normalizedEmail}`);
 
     // 4. Check if email is whitelisted in Supabase
     const { data: whitelistData, error: whitelistError } = await serviceSupabase
       .from('whitelist_emails')
       .select('email, role')
-      .eq('email', email)
+      .eq('email', normalizedEmail)
       .single();
 
     if (whitelistError && whitelistError.code !== 'PGRST116') {
@@ -122,7 +124,7 @@ export async function verifyWhitelist(request: NextRequest): Promise<WhitelistCh
       console.error('❌ Whitelist database error:', whitelistError);
       return {
         verified: false,
-        email: email,
+        email: normalizedEmail,
         error: 'Database error checking whitelist'
       };
     }
@@ -130,17 +132,17 @@ export async function verifyWhitelist(request: NextRequest): Promise<WhitelistCh
     const isWhitelisted = !!whitelistData;
 
     if (isWhitelisted) {
-      console.log(`✅ Email ${email} is whitelisted (role: ${whitelistData.role})`);
+      console.log(`✅ Email ${normalizedEmail} is whitelisted (role: ${whitelistData.role})`);
       return {
         verified: true,
-        email: email,
+        email: normalizedEmail,
         error: null
       };
     } else {
-      console.log(`❌ Email ${email} is NOT whitelisted`);
+      console.log(`❌ Email ${normalizedEmail} is NOT whitelisted`);
       return {
         verified: false,
-        email: email,
+        email: normalizedEmail,
         error: 'Not whitelisted'
       };
     }

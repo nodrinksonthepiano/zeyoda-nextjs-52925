@@ -10,6 +10,7 @@ import { useWallet } from './components/MagicProvider';
 import { useToast } from './contexts/ToastContext';
 import { authenticatedFetch } from './utils/authenticatedFetch';
 import { uploadArtistAssetDirect } from './utils/client/directAssetUpload';
+import { requestFaucetAndNotify } from './utils/faucetClientNotify';
 import { UsdBalanceProvider } from './contexts/UsdBalanceContext';
 import { ethers } from "ethers";
 import { ArtistockABI } from './utils/abis/ArtistockABI';
@@ -59,6 +60,54 @@ function sleep(ms: number) {
   return new Promise<void>((resolve) => {
     setTimeout(resolve, ms);
   });
+}
+
+type WaitForLivePageReadyOptions = {
+  timeoutMs?: number;
+  intervalMs?: number;
+};
+
+/** One-shot: artist row is public and registry has contract entry (matches useArtistConfig gate). */
+async function isLiveArtistPageReady(artistId: string): Promise<boolean> {
+  const [{ data: artist }, registryRes] = await Promise.all([
+    supabase.from('artists').select('id, paused').eq('id', artistId).maybeSingle(),
+    fetch(`/api/registry?v=1&t=${Date.now()}`, { cache: 'no-store' }),
+  ]);
+
+  if (!artist?.id || artist.paused !== false) {
+    return false;
+  }
+
+  if (!registryRes.ok) {
+    return false;
+  }
+
+  const registryJson = await registryRes.json().catch(() => null);
+  const registryArtists = registryJson?.artists;
+  if (!Array.isArray(registryArtists)) {
+    return false;
+  }
+
+  return registryArtists.some((entry: { id?: string }) => entry?.id === artistId);
+}
+
+/** Poll until Supabase + registry both show the artist as live, or timeout. */
+async function waitForLivePageReady(
+  artistId: string,
+  options: WaitForLivePageReadyOptions = {},
+): Promise<boolean> {
+  const timeoutMs = options.timeoutMs ?? 20000;
+  const intervalMs = options.intervalMs ?? 500;
+  const deadline = Date.now() + timeoutMs;
+
+  while (Date.now() < deadline) {
+    if (await isLiveArtistPageReady(artistId)) {
+      return true;
+    }
+    await sleep(intervalMs);
+  }
+
+  return false;
 }
 
 interface OrbitalToken {
@@ -153,6 +202,11 @@ const ArtistPageContent: React.FC<{
   const lastLaunchArtistPayloadRef = useRef<any>(null);
   const launchCeremonyVisibleRef = useRef(false);
   const launchStepRef = useRef(0);
+  const pendingLaunchArtistIdRef = useRef<string | null>(null);
+  const [launchPublishGate, setLaunchPublishGate] = useState<{
+    timedOut: boolean;
+    retryBusy: boolean;
+  }>({ timedOut: false, retryBusy: false });
 
   const [launchCeremony, setLaunchCeremony] = useState<{
     visible: boolean;
@@ -1055,6 +1109,8 @@ const ArtistPageContent: React.FC<{
   const resetLaunchCeremony = useCallback(() => {
     launchCeremonyVisibleRef.current = false;
     launchPipelineBusyRef.current = false;
+    pendingLaunchArtistIdRef.current = null;
+    setLaunchPublishGate({ timedOut: false, retryBusy: false });
     setLaunchCeremony({
       visible: false,
       phase: 'idle',
@@ -1064,6 +1120,20 @@ const ArtistPageContent: React.FC<{
       celebrateTokenName: null,
       progressTokenName: null,
     });
+  }, []);
+
+  const enterLiveArtistPageWhenReady = useCallback(async (artistId: string) => {
+    pendingLaunchArtistIdRef.current = artistId;
+    setLaunchPublishGate({ timedOut: false, retryBusy: true });
+
+    const ready = await waitForLivePageReady(artistId, { timeoutMs: 20000, intervalMs: 500 });
+    if (ready) {
+      window.location.href = `/?artist=${artistId}`;
+      return;
+    }
+
+    launchPipelineBusyRef.current = false;
+    setLaunchPublishGate({ timedOut: true, retryBusy: false });
   }, []);
 
   const setLaunchProgressStep = useCallback((index: number) => {
@@ -1523,7 +1593,10 @@ const ArtistPageContent: React.FC<{
         '/api/artist/finalizeLaunch',
         {
           method: 'POST',
-          body: JSON.stringify({ artistId }),
+          body: JSON.stringify({
+            artistId,
+            coin_public_id: inviteLaunchCoinRef.current ?? undefined,
+          }),
         },
         getDidToken,
       );
@@ -1547,9 +1620,7 @@ const ArtistPageContent: React.FC<{
         activeStepIndex: 5,
       }));
 
-      await sleep(4200);
-
-      window.location.href = `/?artist=${artistId}`;
+      await enterLiveArtistPageWhenReady(artistId);
     } catch (error: any) {
       console.error('❌ Launch failed:', error);
       launchPipelineBusyRef.current = false;
@@ -1574,6 +1645,7 @@ const ArtistPageContent: React.FC<{
     showToast,
     getDidToken,
     setLaunchProgressStep,
+    enterLiveArtistPageWhenReady,
   ]);
 
   // ASSET EDIT HANDLER
@@ -2516,22 +2588,7 @@ const ArtistPageContent: React.FC<{
         localStorage.setItem('zeyodaUserEmail', meta.email);
         
         // Auto-fund new wallets (non-blocking — login continues if faucet fails)
-        try {
-          const fundingResponse = await authenticatedFetch(
-            '/api/faucet/v2',
-            { method: 'POST' },
-            getDidToken,
-          );
-
-          const fundingResult = await fundingResponse.json();
-
-          if (fundingResult.success) {
-            showToast(fundingResult.message || 'Wallet ready.', 'success');
-          }
-        } catch (fundingError) {
-          console.warn('⚠️ Auto-funding failed:', fundingError);
-          // Don't block login if funding fails
-        }
+        await requestFaucetAndNotify(getDidToken, showToast);
         
         showToast('Logged in as ' + meta.publicAddress, 'success');
         
@@ -3481,6 +3538,32 @@ const ArtistPageContent: React.FC<{
                     }}
                     onDismiss={resetLaunchCeremony}
                   />
+                  {launchCeremony.phase === 'celebrating' &&
+                    (launchPublishGate.retryBusy || launchPublishGate.timedOut) && (
+                      <div className="mt-3 w-full max-w-md mx-auto rounded-lg border border-emerald-500/30 bg-emerald-950/20 px-4 py-3 text-center">
+                        {launchPublishGate.retryBusy && !launchPublishGate.timedOut && (
+                          <p className="text-emerald-100/80 text-xs m-0">Waiting for your page to publish…</p>
+                        )}
+                        {launchPublishGate.timedOut && (
+                          <>
+                            <p className="text-amber-200/90 text-sm m-0 mb-2">
+                              Your page is still publishing. Try entering again.
+                            </p>
+                            <button
+                              type="button"
+                              disabled={launchPublishGate.retryBusy}
+                              onClick={() => {
+                                const id = pendingLaunchArtistIdRef.current;
+                                if (id) void enterLiveArtistPageWhenReady(id);
+                              }}
+                              className="px-3 py-1.5 rounded bg-emerald-700 hover:bg-emerald-600 disabled:opacity-60 text-white text-xs font-semibold"
+                            >
+                              {launchPublishGate.retryBusy ? 'Checking…' : 'Try entering again'}
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    )}
                 </div>
               )}
               {/* Treasure message */}

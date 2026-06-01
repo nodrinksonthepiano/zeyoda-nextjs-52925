@@ -351,7 +351,9 @@ Document the **presentation-only** vault launch experience above the chat strip 
 
 ## Part 11: Mobile onboarding fix (`feature/mobile-onboarding-fix`) — May 2026
 
-> **Checkpoint date:** 2026-05-24 (updated: Purchase Options panel polish documented). **Do not merge to `main` yet.**
+> **Checkpoint date:** 2026-05-24 (updated: Purchase Options panel polish documented). **Historical:** "Do not merge to `main` yet" applied at this checkpoint only — branch **merged to `main`** afterward. Current shipped truth for display name self-serve: **Part 14** (`c18cc7a6` on `main`).
+
+> **Merge status (May 2026 update):** `feature/mobile-onboarding-fix` is on `main`. Tables below are archival for this arc; see **Part 14** for Mister Guy display-name ship.
 
 ### Branch, gate, and process
 
@@ -664,13 +666,173 @@ Full detail: SESSION_REPORT_AND_BACKLOG.md Part 11.
 
 ---
 
-## Part 12: B2 treasure launch — audio/cover + auth gates (`feature/mobile-onboarding-fix`) — Jun 2026
+
+## Part 12: PEMF onboarding hardening pass (May 2026)
+
+### What got proven on testnet
+
+- Treasure claim → **auto-whitelist** is live in production. Every successful `/api/invite/claim` now upserts a `whitelist_emails` row with note `Treasure claim: <coin> (<slug>)`. Verified for `lisa@pemfnashville.com` (pemfcln1) and `rh@greenroadgroup.org` (cruisin9).
+- **Auto-fund via `/api/faucet/v2` works after Vercel redeploy** with `FAUCET_ENABLED=true`. Proven by cruisin9: real `wallet_funding` row at `2026-05-25T02:51:09` (status `pending`, `tx hash 0x3dac79fea7…`), wallet ended at `~0.001995 ETH` (≈0.002 from faucet minus forge gas). Lisa's earlier launch required manual funding because the redeploy had not yet been triggered.
+- Full launch chain (forge → upload → ERC-1155 master mint → finalize → live page) is repeatable on a clean coin. cruisin9 launched at `2026-05-25T02:51:32`, paused=false, asset #1 minted, public page returns HTTP 200.
+- Old PEMF DB rows removed in FK order (artist_earnings → artist_assets → artist_registry → artists). Coins `dcwq275y4zg8`, `nz4z6d3r1364`, `wqcgcab1gwy7` revoked. On-chain contracts left orphaned — expected, can't delete.
+
+### Phase 1 fix (shipped)
+
+- **Bug:** invite `artist_slug` (display-derived) and live `artists.id` (token-derived) can drift. Example: `displayname="Cruisin"` → slug `cruisin`; `tokenName="CRUISIN9"` → id `cruisin9`. After launch, `?coin=` URLs were redirecting via the slug → no matching artist → wizard fallback.
+- **Fix files:**
+  - `app/api/invite/resolve/route.ts` — when `status === 'launched'`, looks up `artists.id` by mirroring the launch normalization (`tokenName.toUpperCase().replace(/\s+/g,'').toLowerCase()`), with a `treasury_wallet` fallback for legacy rows. Returns optional `launched_artist_id` field.
+  - `app/components/TreasureAwareHome.tsx` — launched-status redirect prefers `launched_artist_id ?? artist_slug`.
+  - `types/treasure-invite.ts` — `InviteResolveLaunchedRedirectBody.launched_artist_id?: string`.
+- Backward compatible: when the lookup fails, the field is omitted and the frontend falls back to `artist_slug` exactly as before.
+- Build passes. Pre-existing TS-strict error in `app/components/PurchaseFlow.tsx:1521` (bare `->` in JSX text from prior purchase-panel work) is unrelated and out of scope.
+
+### Phase 2 / 3 (NOT done — explicit decisions for next session)
+
+- **Phase 2:** prevent slug-vs-id drift at draft save. Either enforce `slugFromDisplayName(displayname) === tokenName.toUpperCase().replace(/\s+/g,'').toLowerCase()` at `/api/invite/save-draft`, or move to a single canonical id field. Phase 1 makes drift recoverable; Phase 2 keeps it from happening.
+- **Phase 3 — faucet UX hardening, three smallest fixes:**
+  - Surface faucet result in claim UI (`app/components/TreasureInviteShell.tsx:426–437`): replace `console.warn` with explicit toasts for `funded:true`, `success`, `403 disabled`, `500 misconfigured`, network errors. Persistent banner if not funded.
+  - Pre-flight wallet-balance gate before forge (`app/page.tsx:handleSaveArtist`, before line 1103): read `signer.getBalance()`; if `< 0.0008 ETH`, abort with retry-faucet button instead of letting Magic throw "insufficient funds."
+  - Optional admin-only `/api/faucet/health` GET endpoint: returns `{ enabled, hasFaucetKey, hasRpcUrl, signerAddress, balanceEth, chainId }`. Never returns the private key. Permanent ops tool.
+- **Move `artist_invites.status = 'launched'` write** from `/api/createArtist:102` to `/api/artist/finalizeLaunch` so partial failures don't lock the invite as launched while the page is paused.
+- **Faucet `Not eligible` race** (rare): one `failed_validation` row appeared 50 s before the cruisin9 claim committed. System self-recovered via the second call. Optional one-shot retry-after-500ms in `TreasureInviteShell.tsx` would eliminate the zombie row class.
+
+### Operator rule still binding
+
+For inner-circle drafts: `displayname` and `tokenName` should resolve to the same lowercase string after `.toUpperCase().replace(/\s+/g,'').toLowerCase()`. ≤8 alphanumeric, no spaces, no hyphens. Phase 1 makes drift recoverable; this rule keeps it from happening in the first place.
+
+### Files changed in this pass
+
+- `app/api/invite/resolve/route.ts` (Phase 1)
+- `app/components/TreasureAwareHome.tsx` (Phase 1)
+- `types/treasure-invite.ts` (Phase 1)
+- `AGENT_NOTES.md` (memory update — Current Truths refresh, Gotcha clarification)
+- `SESSION_REPORT_AND_BACKLOG.md` (this Part 12)
+
+PRD.json deliberately untouched. Faucet UX hardening tracked in this Part and in `AGENT_NOTES.md` "Open onboarding risks"; if/when this becomes a formal backlog item, it would be `T-024 — Faucet UX visibility & pre-flight wallet gate`.
+
+---
+
+## Part 13: Client stability pass — diagnosed, deferred (May 2026)
+
+**Finding:** Stability refactor was half-done. Auto-refresh disabled in `useArtistConfig` and `useWalletBalances` (comments cite "prevent page remounts"); hard reloads and full-screen loading gates in `LiveArtistPortal` were left as workarounds.
+
+**Symptom:** Operator wallet/ops work feels unstable — repeated "Connecting wallet…" (hard reload → Magic re-init) and "Loading artist profile…" (`coreLoading` unmounts page + wallet on config refetch).
+
+**Proven infra gaps (do not one-line fix):**
+- `refreshWalletBalances` event dispatched from `PurchaseFlow` but **no listener** in repo.
+- `useAllArtistsDownloadAccess` (Wallet downloads panel) has **no refresh API**.
+- Login reload is **load-bearing**: `MagicProvider` init runs once; login handler does not update context `user` without reload.
+
+**Bundles (post–Mister Guy; one at a time):**
+- **Bundle A:** Remove `PurchaseFlow.tsx` reloads (~513, ~875); wire wallet-wide downloads refresh. Do not touch swap/sign handlers.
+- **Bundle B:** `isInitialLoading` vs `isRefreshing` in `useArtistConfig`; stale-while-revalidate in `LiveArtistPortal`; cached wallet artist switch. Must bundle gate change with cached artist swap.
+
+**Deferred:** Login/logout reload removal (MagicProvider redesign); optimistic Magic / whitelist fail-open (policy).
+
+**Gate:** After Mister Guy launch + Phase B unless purchase reloads block rehearsal. Full detail: `AGENT_NOTES.md` → "Client stability pass — HALF DONE, deferred post–Mister Guy."
+
+**Evidence session:** Cursor audit May 2026 (post–readiness-gate rehearsal).
+
+---
+
+## Part 14: Mister Guy display name edit — shipped (May 2026)
+
+### Context
+
+First Mister Guy feedback fix: *"Let me change my name."* Scoped as **Pass 1** — visible display/profile name only, not token ticker rename.
+
+### Shipped
+
+| Item | Detail |
+|------|--------|
+| Preview branch | `feature/mobile-onboarding-fix` — QA passed |
+| Preview commit | `c28ed3df` — `feat(profile): live preview display name edits` |
+| Main commit | `c18cc7a6` — cherry-picked; pushed clean |
+| Build | Passed before push |
+| Files | `app/api/artist/profile/route.ts`, `app/components/ProfileEditPanel.tsx`, `app/page.tsx` |
+
+### Behavior
+
+- Profile Edit → **Artist display name** field (init from `artistConfig.displayName`).
+- Top page title updates **letter-by-letter** while typing (`profileDisplayNamePreview` in `page.tsx`; explicit `!== null` — empty string during edit does not fall back to saved).
+- **Cancel / ✕** → preview cleared → title reverts to saved `artists.displayname`.
+- **Save** → PATCH `/api/artist/profile` → `artists.displayname` persisted; `artistConfig.displayName` merged; preview cleared in same handler (no flicker).
+
+### Backend
+
+- Added `displayname` to `SAFE_PROFILE_PATCH_KEYS`.
+- Validation: trim, non-empty after trim, max **64** characters → 400 on invalid.
+- Authorization unchanged (`assertMagicArtistUploader`).
+- `tokenName`, `id`, treasury, contracts, paused, etc. still rejected.
+
+### What did NOT change
+
+- `tokenName` / on-chain symbol (`MRGUY` for Mister Guy).
+- `artists.id` (`mrguy`).
+- Contracts, registry, NFC coin (`n52by4gz21fw`), swaps, purchases, earnings, assets.
+- Invite slug (`mister-guy`).
+
+### Mister Guy live state (post-fix)
+
+- Canonical URL: `/?artist=mrguy`
+- Display name: artist-editable (e.g. `MISTERGUY`)
+- Swap ticker: still `MRGUY`
+- Coin retap: still resolves to `mrguy` via `launched_artist_id`
+
+### Product decisions captured for future passes
+
+| Topic | Decision |
+|-------|----------|
+| Display name max | 64 chars (enforced) |
+| Token ticker max (future) | 12 chars — policy; onboarding UI still 8 until updated |
+| Token ticker rename | Separate epic — UUPS/protocol-safe on-chain + alias/reservation system |
+| Old tickers | Reserve/redirect forever; owner retains aliases; aliases → canonical `artists.id` |
+| `artists.id` | Do not casually change |
+| DB `tokenName` | Update only after successful chain rename |
+| NFC | Stable via `coin_public_id`; no reprogram for display/ticker changes |
+
+### Acceptance (manual — operator verified on preview)
+
+1. Open profile edit → type `MISTERGUY` → title updates live
+2. Cancel → reverts to saved name
+3. Save → persists; refresh/incognito shows new display name
+4. Swap ticker unchanged (`MRGUY`)
+5. Coin retap → `/?artist=mrguy`
+6. PATCH with `tokenName` or `id` → 400
+
+### Next (assessed, not shipped)
+
+**Song + cover image upload** — Mister Guy also wants audio + separate cover (CD Baby / SoundCloud style):
+
+- Current upload: single file only.
+- Schema: `artist_assets.file_url`, `file_type`, `metadata` — no `cover_url` column; likely `metadata.cover_image_url`.
+- Carousel: audio incorrectly rendered as image — needs dedicated audio branch.
+- Contracts: likely no change if `file_url` stays the audio download.
+- **Own pass** — do not combine with display name or ticker rename.
+
+### Recommended order
+
+1. Memory/docs update (this Part + `AGENT_NOTES.md` naming section)
+2. Song + cover upload pass
+3. Token ticker alias / rename epic (Pass 2–4)
+
+### Files changed in code pass
+
+- `app/api/artist/profile/route.ts`
+- `app/components/ProfileEditPanel.tsx`
+- `app/page.tsx`
+
+PRD.json deliberately untouched; run `npm run sync-feedback` locally before PRD updates.
+
+---
+
+## Part 15: B2 treasure launch — audio/cover + auth gates (Jun 2026)
 
 ### Strategic frame
 
 **Product rule locked:** A valid treasure claimant who launches must finish launch **and** remain logged in to manage their live page — **no** manual `whitelist_emails` row for Johnny-style recipients.
 
-**Branch:** `feature/mobile-onboarding-fix` (preview). **Main** already has display-name self-serve + earlier launch safety; this arc stays on branch until merge signoff.
+**Integration:** Merged with main launch-safety (`finalizeLaunch` invite flip, coin-scoped `checkWhitelist`, `waitForLivePageReady`, `launched_artist_id` redirect). Preview proof predates merge; re-smoke required on integrated branch.
 
 **Process:** Same surgical loop — plan → approve → implement → build → audit → preview. Agent does not git.
 
@@ -683,20 +845,20 @@ Full detail: SESSION_REPORT_AND_BACKLOG.md Part 11.
 | Audio + cover assets | `cd744029`, `1e2085bd`, `f27533ff` | Artists need MP3 + cover, not video-only; direct Supabase upload avoids RLS anon failures |
 | B2 treasure drafts | `66325d0d`, `28bc30af`, `3aa247ae` | Admin prepares HTTPS MP3 + cover on coin; cover must stay separate from featured file; hero preview must show both |
 | Launch upload auth (steps 4–5) | `ab8e3fe1` | Public proxies used bare `verifyWhitelist`; disposable claimants passed login but failed HTTPS upload — aligned with `assertMagicArtistUploader` |
-| Post-launch session (P0) | **`4200d7b1`** | `createArtist` flips invite to `launched` early; `checkWhitelist` only knew `draft`/`claimed` → `MagicProvider` force-logout + “rare treasure” |
+| Post-launch session (P0) | **`4200d7b1`** | After launch, `checkWhitelist` must recognize **`launched`** owners by `claimed_by_email` — combined at merge with main coin-scoped bypass |
 
 ---
 
-### Auth gate pattern (lesson)
+### Auth gate pattern (post-merge target)
 
 ```text
-Gate 1 — Login/claim:     checkWhitelist invite bypass (draft/claimed/launched)     ✅ after 4200d7b1
-Gate 2 — Launch step 4/5: public uploadFeatured/uploadAsset → assertMagicArtistUploader ✅ after ab8e3fe1
-Gate 3 — Post-launch reload: MagicProvider → checkWhitelist                        ✅ after 4200d7b1
-Gate 4 — File-path step 5:  asset-upload/prepare|finalize → verifyWhitelist only    ⚠️ open if file disposable launch needed
+Gate 1 — Login/claim:     checkWhitelist coin-scoped draft/claimed + launched owner bypass
+Gate 2 — Launch step 4/5: public uploadFeatured/uploadAsset → assertMagicArtistUploader
+Gate 3 — Post-launch reload: MagicProvider → checkWhitelist (launched owners)
+Gate 4 — File-path step 5:  asset-upload/prepare|finalize → verifyWhitelist only    ⚠️ open
+Gate 5 — Invite flip:       artist_invites → launched only in finalizeLaunch (main)
+Gate 6 — Redirect:          waitForLivePageReady before post-launch navigation (main)
 ```
-
-**Why Mister Guy / whitelisted operators didn’t see this:** Likely `whitelist_emails` and/or file upload path — never hit the B2 HTTPS + disposable combination.
 
 ---
 
@@ -704,15 +866,13 @@ Gate 4 — File-path step 5:  asset-upload/prepare|finalize → verifyWhitelist 
 
 | Artist | Verdict | Use for |
 |--------|---------|---------|
-| **`l55555a`** (L55555A, coin `5xdbzgy17ck5`, `lt4@greenroadgroup.org`) | ✅ **Current Johnny-style proof** — treasure path, **not** in `whitelist_emails`; published (`paused: false`); asset #1 + mint; reload + logout + re-login **confirmed pass** (no rare treasure) | Readiness signoff |
-| **`l4444a`** (coin `e7qw498r3t8d`) | ❌ **Stale partial noise** — contracts + hero only; `paused: true`; no asset row; mint 0 | Ignore for Johnny; optional cleanup later |
-| **`green333`** | ✅ Earlier preview success (operator/whitelisted context) | Regression reference only |
-
-**Evidence snapshot (`l55555a`, Supabase + chain + user):** invite `launched` · token deployed · registry complete · `videosrc` HTTPS MP3 · `artist_assets` #1 with cover metadata · ERC-1155 `balanceOf(treasury,1)=1` · post-launch session: reload → logout → re-login → no “rare treasure”.
+| **`l55555a`** (L55555A, coin `5xdbzgy17ck5`, `lt4@greenroadgroup.org`) | ✅ **Johnny-style proof on preview** — **not** in `whitelist_emails`; published; asset #1 + mint; session confirmed | Re-smoke after merge |
+| **`l4444a`** (coin `e7qw498r3t8d`) | ❌ **Stale partial noise** — paused, no asset/mint | Ignore for Johnny |
+| **`green333`** | ✅ Earlier preview success | Regression reference only |
 
 ---
 
-### Johnny readiness gate
+### Johnny readiness gate (updated Jun 2026)
 
 ```text
 ✅ B2 draft save (MP3 + cover)
@@ -721,10 +881,10 @@ Gate 4 — File-path step 5:  asset-upload/prepare|finalize → verifyWhitelist 
 ✅ Post-launch session (checkWhitelist launched owners)
 ✅ End-to-end disposable on preview (l55555a)
 ✅ Reload + logout + re-login (lt4@greenroadgroup.org — user-confirmed)
-⏳ Preview final sanity
-⏳ Main merge/cherry-pick plan
-⏳ Production sanity after main deploy
-⛔ Johnny coin #2 until ⏳ merge + prod sanity pass
+✅ Main integration merge (origin/main → feature)
+⏳ Build + preview re-smoke on integrated branch
+⏳ Commit merge → merge feature → main → prod sanity
+⛔ Johnny coin #2 until integrated preview + prod sanity pass
 ```
 
 ---
@@ -733,35 +893,11 @@ Gate 4 — File-path step 5:  asset-upload/prepare|finalize → verifyWhitelist 
 
 | Priority | Item |
 |----------|------|
-| Gate | Preview final sanity |
-| Gate | Main merge/cherry-pick → production sanity |
+| Gate | Preview re-smoke on integrated branch |
+| Gate | Commit merge → main → production sanity |
 | P2 | `app/api/public/asset-upload/prepare` + `finalize` — same auth class as uploadFeatured fix |
 | P1 | Post-launch UX polish (BurialWizard flash, `appMode`, clear invite sessionStorage) |
-| Ops | `l4444a` cleanup; `wallet_funding` rows stuck `pending` (ETH arrived — hygiene only) |
-| Support | Brave Shields / ad block can block Supabase signed uploads — document for artists |
+| Ops | `l4444a` cleanup; `wallet_funding` rows stuck `pending` |
+| Support | Brave Shields / ad block can block Supabase signed uploads |
 
----
-
-### Next-session handoff (paste block)
-
-```text
-Branch: feature/mobile-onboarding-fix — do not merge to main until signoff.
-
-Done (Jun 2026 preview):
-- Audio+cover: D1 add asset, D2 launch, B2 treasure draft + admin hero preview
-- Launch upload auth: public uploadFeatured + uploadAsset → assertMagicArtistUploader (ab8e3fe1)
-- Post-launch session: checkWhitelist recognizes launched invite owners (4200d7b1)
-- Johnny-style proof: l55555a / coin 5xdbzgy17ck5 / lt4@greenroadgroup.org (NOT whitelist_emails)
-- Session confirmed: reload + logout + re-login → no rare treasure
-
-Ignore l4444a (stale partial).
-
-Before Johnny coin #2:
-1) preview final sanity
-2) main merge plan + prod sanity
-
-Open: file-path asset-upload auth; P1 post-launch UX; Brave/ad-block note.
-
-Full detail: SESSION_REPORT_AND_BACKLOG.md Part 12. Agent truths: AGENT_NOTES.md.
-Process: plan → approve → implement → build → audit → preview. No git by agent.
-```
+**Note:** Part 14 “Song + cover upload” next pass is **superseded** by this Part 15 for the B2/launch paths; ticker rename epic remains separate.
