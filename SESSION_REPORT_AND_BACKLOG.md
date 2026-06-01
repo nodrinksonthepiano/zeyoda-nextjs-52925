@@ -559,6 +559,7 @@ Edit works functionally; mobile UX not polished.
 |-------|--------|--------|
 | Mobile onboarding chassis | ✅ | User-reported + code |
 | Treasure → claim → wallet → factory → mint → publish | ✅ | User-reported (after factory fund + ABI fix) |
+| B2 disposable treasure launch (`l55555a`) | ✅ preview + DB + session | Part 12; supersedes `l4444a` for Johnny gate |
 | `green333` deployed from preview | ✅ | User-reported |
 | Desktop GOSHEESH + `zeyoda` draft orbit | ✅ | User-reported |
 | iPhone draft orbit tap | ✅ | Code fix + user-reported |
@@ -659,4 +660,108 @@ Purchase panel rule: handlers/confirm logic forbidden; approved layout/copy/CSS 
 
 Process: plan → approve → implement → build → audit → preview. No git by agent.
 Full detail: SESSION_REPORT_AND_BACKLOG.md Part 11.
+```
+
+---
+
+## Part 12: B2 treasure launch — audio/cover + auth gates (`feature/mobile-onboarding-fix`) — Jun 2026
+
+### Strategic frame
+
+**Product rule locked:** A valid treasure claimant who launches must finish launch **and** remain logged in to manage their live page — **no** manual `whitelist_emails` row for Johnny-style recipients.
+
+**Branch:** `feature/mobile-onboarding-fix` (preview). **Main** already has display-name self-serve + earlier launch safety; this arc stays on branch until merge signoff.
+
+**Process:** Same surgical loop — plan → approve → implement → build → audit → preview. Agent does not git.
+
+---
+
+### What shipped (preview commits)
+
+| Area | Commit(s) | Decision / why |
+|------|-----------|----------------|
+| Audio + cover assets | `cd744029`, `1e2085bd`, `f27533ff` | Artists need MP3 + cover, not video-only; direct Supabase upload avoids RLS anon failures |
+| B2 treasure drafts | `66325d0d`, `28bc30af`, `3aa247ae` | Admin prepares HTTPS MP3 + cover on coin; cover must stay separate from featured file; hero preview must show both |
+| Launch upload auth (steps 4–5) | `ab8e3fe1` | Public proxies used bare `verifyWhitelist`; disposable claimants passed login but failed HTTPS upload — aligned with `assertMagicArtistUploader` |
+| Post-launch session (P0) | **`4200d7b1`** | `createArtist` flips invite to `launched` early; `checkWhitelist` only knew `draft`/`claimed` → `MagicProvider` force-logout + “rare treasure” |
+
+---
+
+### Auth gate pattern (lesson)
+
+```text
+Gate 1 — Login/claim:     checkWhitelist invite bypass (draft/claimed/launched)     ✅ after 4200d7b1
+Gate 2 — Launch step 4/5: public uploadFeatured/uploadAsset → assertMagicArtistUploader ✅ after ab8e3fe1
+Gate 3 — Post-launch reload: MagicProvider → checkWhitelist                        ✅ after 4200d7b1
+Gate 4 — File-path step 5:  asset-upload/prepare|finalize → verifyWhitelist only    ⚠️ open if file disposable launch needed
+```
+
+**Why Mister Guy / whitelisted operators didn’t see this:** Likely `whitelist_emails` and/or file upload path — never hit the B2 HTTPS + disposable combination.
+
+---
+
+### Truth sources (do not confuse)
+
+| Artist | Verdict | Use for |
+|--------|---------|---------|
+| **`l55555a`** (L55555A, coin `5xdbzgy17ck5`, `lt4@greenroadgroup.org`) | ✅ **Current Johnny-style proof** — treasure path, **not** in `whitelist_emails`; published (`paused: false`); asset #1 + mint; reload + logout + re-login **confirmed pass** (no rare treasure) | Readiness signoff |
+| **`l4444a`** (coin `e7qw498r3t8d`) | ❌ **Stale partial noise** — contracts + hero only; `paused: true`; no asset row; mint 0 | Ignore for Johnny; optional cleanup later |
+| **`green333`** | ✅ Earlier preview success (operator/whitelisted context) | Regression reference only |
+
+**Evidence snapshot (`l55555a`, Supabase + chain + user):** invite `launched` · token deployed · registry complete · `videosrc` HTTPS MP3 · `artist_assets` #1 with cover metadata · ERC-1155 `balanceOf(treasury,1)=1` · post-launch session: reload → logout → re-login → no “rare treasure”.
+
+---
+
+### Johnny readiness gate
+
+```text
+✅ B2 draft save (MP3 + cover)
+✅ Admin hero preview (HTTPS audio + cover)
+✅ Launch steps 4–5 auth (disposable HTTPS path)
+✅ Post-launch session (checkWhitelist launched owners)
+✅ End-to-end disposable on preview (l55555a)
+✅ Reload + logout + re-login (lt4@greenroadgroup.org — user-confirmed)
+⏳ Preview final sanity
+⏳ Main merge/cherry-pick plan
+⏳ Production sanity after main deploy
+⛔ Johnny coin #2 until ⏳ merge + prod sanity pass
+```
+
+---
+
+### Still open (do not overstate)
+
+| Priority | Item |
+|----------|------|
+| Gate | Preview final sanity |
+| Gate | Main merge/cherry-pick → production sanity |
+| P2 | `app/api/public/asset-upload/prepare` + `finalize` — same auth class as uploadFeatured fix |
+| P1 | Post-launch UX polish (BurialWizard flash, `appMode`, clear invite sessionStorage) |
+| Ops | `l4444a` cleanup; `wallet_funding` rows stuck `pending` (ETH arrived — hygiene only) |
+| Support | Brave Shields / ad block can block Supabase signed uploads — document for artists |
+
+---
+
+### Next-session handoff (paste block)
+
+```text
+Branch: feature/mobile-onboarding-fix — do not merge to main until signoff.
+
+Done (Jun 2026 preview):
+- Audio+cover: D1 add asset, D2 launch, B2 treasure draft + admin hero preview
+- Launch upload auth: public uploadFeatured + uploadAsset → assertMagicArtistUploader (ab8e3fe1)
+- Post-launch session: checkWhitelist recognizes launched invite owners (4200d7b1)
+- Johnny-style proof: l55555a / coin 5xdbzgy17ck5 / lt4@greenroadgroup.org (NOT whitelist_emails)
+- Session confirmed: reload + logout + re-login → no rare treasure
+
+Ignore l4444a (stale partial).
+
+Before Johnny coin #2:
+1) preview final sanity
+2) main merge plan + prod sanity
+
+Open: file-path asset-upload auth; P1 post-launch UX; Brave/ad-block note.
+
+Full detail: SESSION_REPORT_AND_BACKLOG.md Part 12. Agent truths: AGENT_NOTES.md.
+Process: plan → approve → implement → build → audit → preview. No git by agent.
 ```
