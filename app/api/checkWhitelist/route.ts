@@ -32,7 +32,7 @@ export async function POST(request: NextRequest) {
 
     let isWhitelisted = !!whitelistData;
 
-    // Allow Magic sessions for active treasure invites (reserved or claimed artist email),
+    // Allow Magic sessions for treasure invites (reserved, claimed, or launched owner email),
     // even if they are not in whitelist_emails yet — claim API still enforces per-coin matching.
     if (!isWhitelisted && email && typeof email === 'string') {
       const norm = normalizeReservedEmail(email);
@@ -54,7 +54,17 @@ export async function POST(request: NextRequest) {
               .maybeSingle()
           : { data: null };
 
-      if (draftRow ?? claimedRow) {
+      const { data: launchedRow } =
+        draftRow == null && claimedRow == null
+          ? await serviceSupabase
+              .from('artist_invites')
+              .select('id')
+              .eq('status', 'launched')
+              .eq('claimed_by_email', norm)
+              .maybeSingle()
+          : { data: null };
+
+      if (draftRow ?? claimedRow ?? launchedRow) {
         isWhitelisted = true;
         console.log('✅ Treasure invite bypass for curated artist email session');
       }
