@@ -1028,81 +1028,6 @@ export const OrbitPeekCarousel: React.FC<Props> = ({ items, index, onIndexChange
                         {desc && <span style={{ fontSize:10, flexShrink: 0 }}>{showTitleDescription ? '▼' : '▲'}</span>}
                         </button>
                       </div>
-                      
-                      {/* Description panel - responsive sizing, drops DOWN from title */}
-                      {showTitleDescription && desc && (
-                        <div 
-                          className="description-scroll-panel"
-                          style={{ 
-                            position:'absolute',
-                            left:6,
-                            bottom:-68,
-                            padding:'8px 12px', 
-                            borderRadius:8, 
-                            background: overlayBg,
-                            color: overlayFg,
-                            fontFamily: overlayFont,
-                            fontSize:'clamp(10px, 1.5vw, 12px)',
-                            lineHeight:1.4,
-                            width:'clamp(180px, 25vw, 320px)',
-                            height:'clamp(60px, 10vh, 120px)',
-                            overflowY:'auto',
-                            overflowX:'hidden',
-                            whiteSpace:'pre-wrap',
-                            wordBreak:'break-word',
-                            pointerEvents:'auto',
-                            opacity: 1,
-                            transition:'all .2s ease',
-                            border: '1px solid rgba(255,255,255,0.5)',
-                            boxShadow: '0 4px 8px rgba(0,0,0,0.4)',
-                            zIndex: 9999,
-                            WebkitOverflowScrolling: 'touch',
-                            touchAction: 'pan-y'
-                          }}
-                          onClick={(e) => e.stopPropagation()}
-                          onMouseEnter={() => {
-                            controlOwnerRef.current = 'description';
-                          }}
-                          onMouseLeave={() => {
-                            controlOwnerRef.current = null;
-                          }}
-                          onPointerDown={(e) => {
-                            e.stopPropagation();
-                            try { (e.currentTarget as any).setPointerCapture?.(e.pointerId); } catch {}
-                            controlOwnerRef.current = 'description';
-                          }}
-                          onPointerMove={(e) => {
-                            e.stopPropagation();
-                          }}
-                          onPointerUp={(e) => {
-                            e.stopPropagation();
-                            try { (e.currentTarget as any).releasePointerCapture?.(e.pointerId); } catch {}
-                            controlOwnerRef.current = null;
-                          }}
-                          onPointerCancel={(e) => {
-                            e.stopPropagation();
-                            try { (e.currentTarget as any).releasePointerCapture?.(e.pointerId); } catch {}
-                            controlOwnerRef.current = null;
-                          }}
-                          onTouchStart={(e) => {
-                            e.stopPropagation();
-                            controlOwnerRef.current = 'description';
-                          }}
-                          onTouchMove={(e) => {
-                            e.stopPropagation();
-                          }}
-                          onTouchEnd={(e) => {
-                            e.stopPropagation();
-                            controlOwnerRef.current = null;
-                          }}
-                          onWheel={(e) => {
-                            e.stopPropagation();
-                            // Don't preventDefault - allow natural scroll inside panel
-                          }}
-                        >
-                          {desc}
-                        </div>
-                      )}
                     </>
                   );
                 })()}
@@ -1228,87 +1153,6 @@ export const OrbitPeekCarousel: React.FC<Props> = ({ items, index, onIndexChange
               }}
             />
           </div>
-          {isHero && (
-            <div
-              style={{
-                position: 'absolute',
-                left: 'var(--pad-x, 0px)',
-                top: 'var(--pad-y, 0px)',
-                width: 'var(--content-w, 100%)',
-                height: 'var(--content-h, 100%)',
-                pointerEvents: 'none',
-                transform: 'translateZ(1px)',
-              }}
-            >
-              <div
-                style={{
-                  position: 'absolute',
-                  left: 6,
-                  bottom: 52,
-                  maxWidth: '50%',
-                  zIndex: 10,
-                  pointerEvents: 'auto',
-                }}
-              >
-                <div
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 4,
-                    padding: '5px 8px',
-                    borderRadius: 6,
-                    background: overlayBg,
-                    color: overlayFg,
-                    fontFamily: overlayFont,
-                    fontSize: 11,
-                    lineHeight: 1.2,
-                    opacity: showHeroOverlay ? 1 : 0,
-                    transition: 'opacity .15s ease',
-                  }}
-                  className="carousel-media-overlay"
-                >
-                  {isOwner && onEditAsset && (
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onEditAsset(asset);
-                      }}
-                      style={{
-                        marginRight: 6,
-                        padding: '2px 4px',
-                        background: 'rgba(255,255,255,0.2)',
-                        border: '1px solid rgba(255,255,255,0.4)',
-                        borderRadius: 4,
-                        cursor: 'pointer',
-                        fontSize: 10,
-                        lineHeight: 1,
-                        color: 'inherit',
-                      }}
-                      title="Edit asset"
-                    >
-                      ✏️
-                    </button>
-                  )}
-                  <span
-                    style={{
-                      fontWeight: 600,
-                      whiteSpace: 'normal',
-                      display: '-webkit-box',
-                      WebkitLineClamp: 2,
-                      WebkitBoxOrient: 'vertical',
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                      lineHeight: 1.2,
-                      maxHeight: '2.4em',
-                    }}
-                  >
-                    {asset.title || 'Untitled'}
-                  </span>
-                </div>
-              </div>
-            </div>
-          )}
         </div>
       );
     }
@@ -1428,81 +1272,6 @@ export const OrbitPeekCarousel: React.FC<Props> = ({ items, index, onIndexChange
                       {desc && <span style={{ fontSize:10, flexShrink: 0 }}>{showTitleDescription ? '▼' : '▲'}</span>}
                       </button>
                     </div>
-                    
-                    {/* Description panel - responsive sizing, drops DOWN from title */}
-                    {showTitleDescription && desc && (
-                      <div 
-                        className="description-scroll-panel"
-                        style={{ 
-                          position:'absolute',
-                          left:6,
-                          bottom:-68,
-                          padding:'8px 12px', 
-                          borderRadius:8, 
-                          background: overlayBg,
-                          color: overlayFg,
-                          fontFamily: overlayFont,
-                          fontSize:'clamp(10px, 1.5vw, 12px)',
-                          lineHeight:1.4,
-                          width:'clamp(180px, 25vw, 320px)',
-                          height:'clamp(60px, 10vh, 120px)',
-                          overflowY:'auto',
-                          overflowX:'hidden',
-                          whiteSpace:'pre-wrap',
-                          wordBreak:'break-word',
-                          pointerEvents:'auto',
-                          opacity: 1,
-                          transition:'all .2s ease',
-                          border: '1px solid rgba(255,255,255,0.5)',
-                          boxShadow: '0 4px 8px rgba(0,0,0,0.4)',
-                          zIndex: 9999,
-                          WebkitOverflowScrolling: 'touch',
-                          touchAction: 'pan-y'
-                        }}
-                        onClick={(e) => e.stopPropagation()}
-                        onMouseEnter={() => {
-                          controlOwnerRef.current = 'description';
-                        }}
-                        onMouseLeave={() => {
-                          controlOwnerRef.current = null;
-                        }}
-                        onPointerDown={(e) => {
-                          e.stopPropagation();
-                          try { (e.currentTarget as any).setPointerCapture?.(e.pointerId); } catch {}
-                          controlOwnerRef.current = 'description';
-                        }}
-                        onPointerMove={(e) => {
-                          e.stopPropagation();
-                        }}
-                        onPointerUp={(e) => {
-                          e.stopPropagation();
-                          try { (e.currentTarget as any).releasePointerCapture?.(e.pointerId); } catch {}
-                          controlOwnerRef.current = null;
-                        }}
-                        onPointerCancel={(e) => {
-                          e.stopPropagation();
-                          try { (e.currentTarget as any).releasePointerCapture?.(e.pointerId); } catch {}
-                          controlOwnerRef.current = null;
-                        }}
-                        onTouchStart={(e) => {
-                          e.stopPropagation();
-                          controlOwnerRef.current = 'description';
-                        }}
-                        onTouchMove={(e) => {
-                          e.stopPropagation();
-                        }}
-                        onTouchEnd={(e) => {
-                          e.stopPropagation();
-                          controlOwnerRef.current = null;
-                        }}
-                        onWheel={(e) => {
-                          e.stopPropagation();
-                          // Don't preventDefault - allow natural scroll inside panel
-                        }}
-                      >
-                        {desc}
-                      </div>
-                    )}
                   </>
                 );
               })()}
@@ -1520,13 +1289,88 @@ export const OrbitPeekCarousel: React.FC<Props> = ({ items, index, onIndexChange
     width: 'auto',
     maxWidth: 'min(92vw, 1000px)',
     aspectRatio: String(naturalAspect || 16/9),
-    margin: '0 auto 16px auto',
+    margin: '0 auto',
     // perspective moved to stage for stability
     overflow: 'visible',
     touchAction: 'none',
     overscrollBehavior: 'contain',
     zIndex: 10
   }), [naturalAspect]);
+
+  const heroDesc = useMemo(() => {
+    if (!currItem) return '';
+    const meta = (currItem as { metadata?: { description?: string; desc?: string } }).metadata;
+    return meta?.description ?? meta?.desc ?? '';
+  }, [currItem]);
+
+  const heroIsAudio = currItem?.type === 'audio';
+  const flowOverlayFont = theme?.fontFamily || 'inherit';
+  const flowOverlayBg = theme?.primaryColor || 'rgba(0,0,0,0.6)';
+  const flowOverlayFg = theme?.accentColor || '#ffffff';
+
+  const toggleHeroDescription = useCallback(() => {
+    setShowTitleDescription((open) => !open);
+    setShowHeroOverlay(true);
+    if (overlayHideTimerRef.current) window.clearTimeout(overlayHideTimerRef.current);
+  }, []);
+
+  const bindDescriptionPanelHandlers = () => ({
+    onClick: (e: React.MouseEvent) => e.stopPropagation(),
+    onMouseEnter: () => { controlOwnerRef.current = 'description'; },
+    onMouseLeave: () => { controlOwnerRef.current = null; },
+    onPointerDown: (e: React.PointerEvent) => {
+      e.stopPropagation();
+      try { (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId); } catch {}
+      controlOwnerRef.current = 'description';
+    },
+    onPointerMove: (e: React.PointerEvent) => { e.stopPropagation(); },
+    onPointerUp: (e: React.PointerEvent) => {
+      e.stopPropagation();
+      try { (e.currentTarget as HTMLElement).releasePointerCapture?.(e.pointerId); } catch {}
+      controlOwnerRef.current = null;
+    },
+    onPointerCancel: (e: React.PointerEvent) => {
+      e.stopPropagation();
+      try { (e.currentTarget as HTMLElement).releasePointerCapture?.(e.pointerId); } catch {}
+      controlOwnerRef.current = null;
+    },
+    onTouchStart: (e: React.TouchEvent) => {
+      e.stopPropagation();
+      controlOwnerRef.current = 'description';
+    },
+    onTouchMove: (e: React.TouchEvent) => { e.stopPropagation(); },
+    onTouchEnd: (e: React.TouchEvent) => {
+      e.stopPropagation();
+      controlOwnerRef.current = null;
+    },
+    onWheel: (e: React.WheelEvent) => { e.stopPropagation(); },
+  });
+
+  const flowDescriptionPanelStyle: React.CSSProperties = {
+    marginTop: 8,
+    padding: '8px 12px',
+    borderRadius: 8,
+    background: flowOverlayBg,
+    color: flowOverlayFg,
+    fontFamily: flowOverlayFont,
+    fontSize: 'clamp(10px, 1.5vw, 12px)',
+    lineHeight: 1.4,
+    width: '100%',
+    maxWidth: 'min(92vw, 1000px)',
+    maxHeight: 'clamp(60px, 10vh, 120px)',
+    overflowY: 'auto',
+    overflowX: 'hidden',
+    whiteSpace: 'pre-wrap',
+    wordBreak: 'break-word',
+    border: '1px solid rgba(255,255,255,0.5)',
+    boxShadow: '0 4px 8px rgba(0,0,0,0.4)',
+    WebkitOverflowScrolling: 'touch',
+    touchAction: 'pan-y',
+  };
+
+  const showAudioFlowTitle = heroIsAudio && Boolean(currItem);
+  const showFlowDescriptionPanel = Boolean(heroDesc) && showTitleDescription;
+  const showFlowDescriptionBlock = showAudioFlowTitle || showFlowDescriptionPanel;
 
   const stageStyle: React.CSSProperties = useMemo(() => ({
     position: 'absolute', inset: 0,
@@ -1537,6 +1381,10 @@ export const OrbitPeekCarousel: React.FC<Props> = ({ items, index, onIndexChange
   }), []);
 
   return (
+    <div
+      className="orbit-peek-root"
+      style={{ width: '100%', maxWidth: 'min(92vw, 1000px)', margin: '0 auto 16px auto' }}
+    >
     <div ref={rootRef as any} aria-roledescription="carousel" aria-label="Artist content" aria-disabled={disabled} style={containerStyle}
       onMouseEnter={(e) => { setShowHeroOverlay(true); if (overlayHideTimerRef.current) window.clearTimeout(overlayHideTimerRef.current); overlayHideTimerRef.current = window.setTimeout(()=>setShowHeroOverlay(false), 4000) as unknown as number; }}
       onMouseLeave={() => { if (overlayHideTimerRef.current) window.clearTimeout(overlayHideTimerRef.current); setShowHeroOverlay(false); }}
@@ -1566,6 +1414,107 @@ export const OrbitPeekCarousel: React.FC<Props> = ({ items, index, onIndexChange
         })()}
       </div>
       <p className="sr-only" aria-live="polite">{`Showing item ${effectiveIndex + 1} of ${Math.max(1,count)}: ${currItem?.title || 'Untitled'}`}</p>
+    </div>
+    {showFlowDescriptionBlock && (
+      <div
+        className="hero-description-flow"
+        style={{ width: '100%', touchAction: 'auto' }}
+      >
+        {heroIsAudio && showAudioFlowTitle && (
+          <div style={{ marginTop: 8, maxWidth: '50%' }}>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                if (heroDesc) toggleHeroDescription();
+              }}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 4,
+                padding: '5px 8px',
+                borderRadius: 6,
+                background: flowOverlayBg,
+                color: flowOverlayFg,
+                fontFamily: flowOverlayFont,
+                fontSize: 11,
+                lineHeight: 1.2,
+                pointerEvents: 'auto',
+                cursor: heroDesc ? 'pointer' : 'default',
+                border: heroDesc ? '1px solid rgba(255,255,255,0.5)' : 'none',
+                touchAction: 'manipulation',
+                width: '100%',
+                textAlign: 'left',
+              }}
+              className="carousel-media-overlay"
+            >
+              {isOwner && onEditAsset && currItem && (
+                <span
+                  role="button"
+                  tabIndex={0}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onEditAsset(currItem);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      onEditAsset(currItem);
+                    }
+                  }}
+                  style={{
+                    marginRight: 6,
+                    padding: '2px 4px',
+                    background: 'rgba(255,255,255,0.2)',
+                    border: '1px solid rgba(255,255,255,0.4)',
+                    borderRadius: 4,
+                    cursor: 'pointer',
+                    fontSize: 10,
+                    lineHeight: 1,
+                    color: 'inherit',
+                    flexShrink: 0,
+                  }}
+                  title="Edit asset"
+                >
+                  ✏️
+                </span>
+              )}
+              <span
+                style={{
+                  fontWeight: 600,
+                  whiteSpace: 'normal',
+                  display: '-webkit-box',
+                  WebkitLineClamp: 2,
+                  WebkitBoxOrient: 'vertical',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  lineHeight: 1.2,
+                  maxHeight: '2.4em',
+                  flex: 1,
+                  minWidth: 0,
+                }}
+              >
+                {currItem?.title || 'Untitled'}
+              </span>
+              {heroDesc ? (
+                <span style={{ fontSize: 10, flexShrink: 0 }}>{showTitleDescription ? '▼' : '▲'}</span>
+              ) : null}
+            </button>
+          </div>
+        )}
+        {showFlowDescriptionPanel ? (
+          <div
+            className="description-scroll-panel"
+            style={flowDescriptionPanelStyle}
+            {...bindDescriptionPanelHandlers()}
+          >
+            {heroDesc}
+          </div>
+        ) : null}
+      </div>
+    )}
     </div>
   );
 };
