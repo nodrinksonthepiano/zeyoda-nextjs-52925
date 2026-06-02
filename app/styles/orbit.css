@@ -1,12 +1,19 @@
 /* orbit.css - Orbital token animations and stylings */
 
-/* Orbital tokens container */
+/* Cover hero band for absolute positioning; does not affect document flow */
+.orbit-theme {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+}
+
+/* Orbital tokens container — center pinned to carousel via ThemeOrbitRenderer JS */
 .orbit-theme .orbital-tokens {
     position: absolute;
-    top: 50%;
-    left: 50%;
-    width: 100%;
-    height: 100%;
+    top: 0;
+    left: 0;
+    width: 0;
+    height: 0;
     transform: translate(-50%, -50%);
     pointer-events: none;
     z-index: 5; /* behind featured hero (carousel z-index: 10) */

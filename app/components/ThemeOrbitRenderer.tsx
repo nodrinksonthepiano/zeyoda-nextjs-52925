@@ -196,6 +196,22 @@ const ThemeOrbitRenderer: React.FC<ThemeOrbitRendererProps> = ({
       const radiusX = ((contentWidth / 2) + 60) * scale;
       const radiusY = ((contentHeight / 2) + 40) * scale;
       const currentGlobalAngleOffset = naturalOffsetRef.current + userOffsetRef.current;
+
+      // Pin orbit ring center to carousel (videoContainerRef), not hero-band 50% —
+      // description spacer grows the band but must not drift the coin ring.
+      const orbitContainer = orbitContainerRef.current;
+      if (orbitContainer && rect) {
+        const anchor = orbitContainer.offsetParent as HTMLElement | null;
+        const anchorRect = anchor?.getBoundingClientRect();
+        if (anchorRect) {
+          const pinLeft = rect.left + rect.width / 2 - anchorRect.left;
+          const pinTop = rect.top + rect.height / 2 - anchorRect.top;
+          orbitContainer.style.left = `${pinLeft}px`;
+          orbitContainer.style.top = `${pinTop}px`;
+          orbitContainer.style.width = `${contentWidth}px`;
+          orbitContainer.style.height = `${contentHeight}px`;
+        }
+      }
       
       allTokens.forEach((tokenData, index) => {
         const tokenElement = tokenElementRefs.current[index];
