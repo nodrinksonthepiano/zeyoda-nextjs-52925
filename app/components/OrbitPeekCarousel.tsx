@@ -50,6 +50,31 @@ function softCapProgress(raw: number): number {
   return sign * eased;
 }
 
+const SCRUBBER_RIGHT_RESERVE_PX = 52;
+const SCRUBBER_LEFT_FALLBACK_PX = 110;
+const MIN_FULL_SCRUBBER_WIDTH = 160;
+const SCRUBBER_NARROW_BOTTOM_PX = 44;
+const SCRUBBER_NARROW_RIGHT_PX = 12;
+
+function formatMediaTime(seconds: number): string {
+  if (!Number.isFinite(seconds) || seconds < 0) return '0:00';
+  const total = Math.floor(seconds);
+  const m = Math.floor(total /  60);
+  const s = total % 60;
+  return `${m}:${s.toString().padStart(2, '0')}`;
+}
+
+function withOverlayAlpha(color: string, alpha: number): string {
+  if (color.startsWith('rgba(')) return color;
+  if (color.startsWith('#') && color.length >= 7) {
+    const r = parseInt(color.slice(1, 3), 16);
+    const g = parseInt(color.slice(3, 5), 16);
+    const b = parseInt(color.slice(5, 7), 16);
+    return `rgba(${r},${g},${b},${alpha})`;
+  }
+  return `rgba(0,0,0,${alpha})`;
+}
+
 function isDescriptionScrollTarget(target: EventTarget | null): boolean {
   const node = target as Node | null;
   if (!node) return false;
@@ -88,13 +113,18 @@ export const OrbitPeekCarousel: React.FC<Props> = ({ items, index, onIndexChange
     safeGap: 68,
     expandedHeightPx: 68,
   });
+  const [heroMediaProgress, setHeroMediaProgress] = useState({ current: 0, duration: 0 });
+  const [scrubberLeftPx, setScrubberLeftPx] = useState(SCRUBBER_LEFT_FALLBACK_PX);
+  const [scrubberNarrowMode, setScrubberNarrowMode] = useState(false);
   const descriptionBodyRef = useRef<HTMLDivElement | null>(null);
+  const heroTitleChipRef = useRef<HTMLDivElement | null>(null);
+  const heroOverlayBoxRef = useRef<HTMLDivElement | null>(null);
   const overlayHideTimerRef = useRef<number | null>(null);
   const volumeHideTimerRef = useRef<number | null>(null);
   const lastNonZeroVolumeRef = useRef<number | null>(null);
   const isHeroMutedRef = useRef<boolean>(true);
   const volumeSliderRef = useRef<HTMLInputElement | null>(null);
-  const controlOwnerRef = useRef<'volume' | 'description' | null>(null);
+  const controlOwnerRef = useRef<'volume' | 'description' | 'media' | null>(null);
   const descriptionToggleAtRef = useRef<number>(0);
   
   // Check if current user is the artist (can edit assets)
@@ -209,22 +239,48 @@ export const OrbitPeekCarousel: React.FC<Props> = ({ items, index, onIndexChange
       }
     });
   }, [effectiveIndex]);
-  // Sync overlay target to current hero video and listen to play/pause changes
+  // Sync overlay to current hero video or audio
   useEffect(() => {
-    const v = videoRefs.current.get(effectiveIndex);
-    if (!v) { setIsHeroPaused(false); return; }
+    const media = videoRefs.current.get(effectiveIndex) ?? audioRefs.current.get(effectiveIndex);
+    if (!media) {
+      setIsHeroPaused(false);
+      setHeroMediaProgress({ current: 0, duration: 0 });
+      return;
+    }
+    const syncProgress = () => {
+      setHeroMediaProgress({
+        current: media.currentTime || 0,
+        duration: Number.isFinite(media.duration) ? media.duration : 0,
+      });
+    };
     const onPlay = () => { setIsHeroPaused(false); };
     const onPause = () => { setIsHeroPaused(true); };
-    const onVol = () => { try { setIsHeroMuted(v.muted || v.volume === 0); if (v.volume > 0) lastNonZeroVolumeRef.current = v.volume; } catch {} };
+    const onVol = () => {
+      try {
+        setIsHeroMuted(media.muted || media.volume === 0);
+        if (media.volume > 0) lastNonZeroVolumeRef.current = media.volume;
+      } catch {}
+    };
     try {
-      setIsHeroPaused(v.paused);
-      setIsHeroMuted(v.muted || v.volume === 0);
-      v.addEventListener('play', onPlay);
-      v.addEventListener('pause', onPause);
-      v.addEventListener('volumechange', onVol);
+      setIsHeroPaused(media.paused);
+      setIsHeroMuted(media.muted || media.volume === 0);
+      syncProgress();
+      media.addEventListener('play', onPlay);
+      media.addEventListener('pause', onPause);
+      media.addEventListener('volumechange', onVol);
+      media.addEventListener('timeupdate', syncProgress);
+      media.addEventListener('loadedmetadata', syncProgress);
+      media.addEventListener('durationchange', syncProgress);
     } catch {}
     return () => {
-      try { v.removeEventListener('play', onPlay); v.removeEventListener('pause', onPause); v.removeEventListener('volumechange', onVol); } catch {}
+      try {
+        media.removeEventListener('play', onPlay);
+        media.removeEventListener('pause', onPause);
+        media.removeEventListener('volumechange', onVol);
+        media.removeEventListener('timeupdate', syncProgress);
+        media.removeEventListener('loadedmetadata', syncProgress);
+        media.removeEventListener('durationchange', syncProgress);
+      } catch {}
     };
   }, [effectiveIndex]);
 
@@ -259,6 +315,19 @@ export const OrbitPeekCarousel: React.FC<Props> = ({ items, index, onIndexChange
     } catch {}
   }, [naturalAspect]);
 
+  const measureScrubberLayout = useCallback(() => {
+    const titleEl = heroTitleChipRef.current;
+    const boxEl = heroOverlayBoxRef.current;
+    if (!titleEl || !boxEl) return;
+    const titleRight = titleEl.getBoundingClientRect().right;
+    const boxLeft = boxEl.getBoundingClientRect().left;
+    const leftPx = Math.max(6, Math.round(titleRight - boxLeft + 6));
+    setScrubberLeftPx(leftPx);
+    const boxWidth = Math.round(boxEl.clientWidth || boxEl.getBoundingClientRect().width);
+    const available = boxWidth - leftPx - SCRUBBER_RIGHT_RESERVE_PX;
+    setScrubberNarrowMode(available < MIN_FULL_SCRUBBER_WIDTH);
+  }, []);
+
   // Attach ResizeObserver to the current hero's wrapper and refresh on hero:pinned
   useEffect(() => {
     const attach = () => {
@@ -268,23 +337,38 @@ export const OrbitPeekCarousel: React.FC<Props> = ({ items, index, onIndexChange
       if (!target) return;
       if (!ref.ro) {
         try {
-          ref.ro = new ResizeObserver(() => { requestAnimationFrame(updateHeroOverlayVars); });
+          ref.ro = new ResizeObserver(() => {
+            requestAnimationFrame(() => {
+              updateHeroOverlayVars();
+              measureScrubberLayout();
+            });
+          });
         } catch {
           ref.ro = null;
         }
       }
       ref.el = target;
       if (ref.ro) { try { ref.ro.observe(target); } catch {} }
-      requestAnimationFrame(() => { requestAnimationFrame(updateHeroOverlayVars); });
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          updateHeroOverlayVars();
+          measureScrubberLayout();
+        });
+      });
     };
     attach();
     const onPinned = () => {
       // Two-rAF settle after pin to avoid transient viewport/toolbar deltas
-      requestAnimationFrame(() => requestAnimationFrame(updateHeroOverlayVars));
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          updateHeroOverlayVars();
+          measureScrubberLayout();
+        });
+      });
     };
     window.addEventListener('hero:pinned', onPinned);
     return () => { window.removeEventListener('hero:pinned', onPinned); };
-  }, [effectiveIndex, updateHeroOverlayVars]);
+  }, [effectiveIndex, updateHeroOverlayVars, measureScrubberLayout]);
 
   // Briefly show title on hero land (from hero:pinned)
   useEffect(() => {
@@ -302,9 +386,13 @@ export const OrbitPeekCarousel: React.FC<Props> = ({ items, index, onIndexChange
     setShowHeroOverlay(false);
     setShowPauseFlash(false);
     setShowVolumeSlider(false);
+    setHeroMediaProgress({ current: 0, duration: 0 });
+    setScrubberLeftPx(SCRUBBER_LEFT_FALLBACK_PX);
+    setScrubberNarrowMode(false);
     if (overlayHideTimerRef.current) { window.clearTimeout(overlayHideTimerRef.current); overlayHideTimerRef.current = null; }
     if (volumeHideTimerRef.current) { window.clearTimeout(volumeHideTimerRef.current); volumeHideTimerRef.current = null; }
   }, [effectiveIndex]);
+
   const itemsSignature = useMemo(() => {
     try {
       return `${items.length}:${items.map((it: any) => (it?.id ?? it?.url ?? '')).join('|')}`;
@@ -312,6 +400,19 @@ export const OrbitPeekCarousel: React.FC<Props> = ({ items, index, onIndexChange
       return String(items.length);
     }
   }, [items]);
+
+  useLayoutEffect(() => {
+    measureScrubberLayout();
+    let raf2 = 0;
+    const raf1 = requestAnimationFrame(() => {
+      raf2 = requestAnimationFrame(measureScrubberLayout);
+    });
+    return () => {
+      cancelAnimationFrame(raf1);
+      cancelAnimationFrame(raf2);
+    };
+  }, [measureScrubberLayout, showHeroOverlay, effectiveIndex, showTitleDescription, itemsSignature, naturalAspect]);
+
   // Reset pinned measurements and gesture/snap state whenever the dataset changes
   // Ensures sizes/peeks don't leak across artists and drag state is clean
   useLayoutEffect(() => {
@@ -1133,6 +1234,263 @@ export const OrbitPeekCarousel: React.FC<Props> = ({ items, index, onIndexChange
     );
   };
 
+  const getHeroMediaEl = (itemIdx: number) =>
+    videoRefs.current.get(itemIdx) ?? audioRefs.current.get(itemIdx);
+
+  const bumpHeroOverlay = () => {
+    setShowHeroOverlay(true);
+    if (overlayHideTimerRef.current) window.clearTimeout(overlayHideTimerRef.current);
+    overlayHideTimerRef.current = window.setTimeout(() => setShowHeroOverlay(false), 4000) as unknown as number;
+  };
+
+  const renderHeroMediaScrubberCluster = (
+    itemIdx: number,
+    overlayBg: string,
+    overlayFg: string,
+    overlayFont: string,
+  ) => {
+    const media = getHeroMediaEl(itemIdx);
+    const { current, duration } = heroMediaProgress;
+    const scrubberBg = withOverlayAlpha(overlayBg, 0.62);
+    const isNarrow = scrubberNarrowMode;
+
+    return (
+      <div
+        className="carousel-media-overlay hero-media-scrubber-cluster"
+        style={{
+          position: 'absolute',
+          bottom: isNarrow ? SCRUBBER_NARROW_BOTTOM_PX : 12,
+          left: isNarrow ? 6 : (scrubberLeftPx || SCRUBBER_LEFT_FALLBACK_PX),
+          right: isNarrow ? SCRUBBER_NARROW_RIGHT_PX : SCRUBBER_RIGHT_RESERVE_PX,
+          height: 28,
+          minWidth: 0,
+          overflow: 'hidden',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 6,
+          padding: '0 8px',
+          borderRadius: 8,
+          background: scrubberBg,
+          border: '1px solid rgba(255,255,255,0.35)',
+          color: overlayFg,
+          fontFamily: overlayFont,
+          pointerEvents: 'auto',
+          opacity: showHeroOverlay ? 1 : 0,
+          transition: 'opacity .15s ease',
+          zIndex: isNarrow ? 5 : 15,
+          touchAction: 'manipulation',
+        }}
+        onMouseEnter={() => { if (overlayHideTimerRef.current) window.clearTimeout(overlayHideTimerRef.current); }}
+      >
+        <button
+          type="button"
+          aria-label={isHeroPaused ? 'Play' : 'Pause'}
+          onClick={(e) => {
+            e.stopPropagation();
+            if (!media) return;
+            bumpHeroOverlay();
+            try {
+              if (media.paused) void media.play();
+              else media.pause();
+            } catch {}
+          }}
+          onTouchStart={(e) => {
+            e.stopPropagation();
+            if (!media) return;
+            bumpHeroOverlay();
+            try {
+              if (media.paused) void media.play();
+              else media.pause();
+            } catch {}
+          }}
+          style={{
+            flexShrink: 0,
+            width: 24,
+            height: 24,
+            padding: 0,
+            border: 'none',
+            borderRadius: 4,
+            background: 'rgba(255,255,255,0.15)',
+            color: overlayFg,
+            fontFamily: overlayFont,
+            fontSize: 11,
+            lineHeight: 1,
+            cursor: 'pointer',
+            display: 'inline-flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            touchAction: 'manipulation',
+          }}
+        >
+          {isHeroPaused ? '▶' : '⏸'}
+        </button>
+        {!isNarrow && (
+          <span style={{ flexShrink: 0, fontSize: 10, lineHeight: 1, minWidth: 28, textAlign: 'right' }}>
+            {formatMediaTime(current)}
+          </span>
+        )}
+        <input
+          type="range"
+          min={0}
+          max={duration > 0 ? duration : 0}
+          step={0.1}
+          value={duration > 0 ? Math.min(current, duration) : 0}
+          aria-label="Seek"
+          onInput={(e) => {
+            if (!media) return;
+            const val = Number((e.currentTarget as HTMLInputElement).value);
+            try { media.currentTime = val; } catch {}
+            setHeroMediaProgress((prev) => ({ ...prev, current: val }));
+          }}
+          onChange={(e) => {
+            if (!media) return;
+            const val = Number((e.currentTarget as HTMLInputElement).value);
+            try { media.currentTime = val; } catch {}
+            setHeroMediaProgress((prev) => ({ ...prev, current: val }));
+            bumpHeroOverlay();
+          }}
+          onPointerDown={(e) => {
+            e.stopPropagation();
+            try { (e.currentTarget as HTMLInputElement).setPointerCapture?.(e.pointerId); } catch {}
+            controlOwnerRef.current = 'media';
+            lockBodyScroll();
+            bumpHeroOverlay();
+          }}
+          onPointerMove={(e) => { e.stopPropagation(); }}
+          onPointerUp={(e) => {
+            e.stopPropagation();
+            try { (e.currentTarget as HTMLInputElement).releasePointerCapture?.(e.pointerId); } catch {}
+            controlOwnerRef.current = null;
+            unlockBodyScroll();
+            bumpHeroOverlay();
+          }}
+          onPointerCancel={(e) => {
+            e.stopPropagation();
+            controlOwnerRef.current = null;
+            unlockBodyScroll();
+          }}
+          onTouchStart={(e) => {
+            e.stopPropagation();
+            controlOwnerRef.current = 'media';
+            lockBodyScroll();
+            bumpHeroOverlay();
+          }}
+          onTouchMove={(e) => { e.stopPropagation(); }}
+          onTouchEnd={(e) => {
+            e.stopPropagation();
+            controlOwnerRef.current = null;
+            unlockBodyScroll();
+            bumpHeroOverlay();
+          }}
+          style={{
+            flex: 1,
+            minWidth: isNarrow ? 0 : 40,
+            height: 22,
+            margin: 0,
+            cursor: 'pointer',
+            touchAction: 'manipulation',
+            accentColor: overlayFg,
+          }}
+        />
+        {!isNarrow && (
+          <span style={{ flexShrink: 0, fontSize: 10, lineHeight: 1, minWidth: 28 }}>
+            {formatMediaTime(duration)}
+          </span>
+        )}
+      </div>
+    );
+  };
+
+  const renderHeroAudioMuteCluster = (
+    itemIdx: number,
+    overlayBg: string,
+    overlayFg: string,
+  ) => (
+    <div
+      style={{
+        position: 'absolute',
+        right: 12,
+        bottom: 12,
+        display: 'block',
+        opacity: showHeroOverlay ? 1 : 0,
+        transition: 'opacity .15s ease',
+        pointerEvents: 'auto',
+      }}
+      className="carousel-media-overlay"
+      onMouseEnter={() => { if (overlayHideTimerRef.current) window.clearTimeout(overlayHideTimerRef.current); }}
+      onMouseLeave={() => { overlayHideTimerRef.current = window.setTimeout(() => setShowHeroOverlay(false), 4000) as unknown as number; }}
+    >
+      <div style={{ position: 'relative', display: 'inline-block' }}>
+        {showVolumeSlider && (
+          <input
+            ref={(el) => { volumeSliderRef.current = el; }}
+            type="range"
+            min={0}
+            max={1}
+            step={0.01}
+            defaultValue={(audioRefs.current.get(itemIdx)?.muted ? 0 : (audioRefs.current.get(itemIdx)?.volume ?? 1))}
+            onInput={(e) => {
+              const a = audioRefs.current.get(itemIdx);
+              if (!a) return;
+              const val = Number((e.currentTarget as HTMLInputElement).value);
+              a.volume = val;
+              if (val > 0) { a.muted = false; lastNonZeroVolumeRef.current = val; } else { a.muted = true; }
+              setIsHeroMuted(a.muted);
+            }}
+            onChange={(e) => {
+              const a = audioRefs.current.get(itemIdx);
+              if (!a) return;
+              const val = Number((e.currentTarget as HTMLInputElement).value);
+              a.volume = val;
+              if (val > 0) { a.muted = false; lastNonZeroVolumeRef.current = val; } else { a.muted = true; }
+              setIsHeroMuted(a.muted);
+              if (volumeHideTimerRef.current) window.clearTimeout(volumeHideTimerRef.current);
+              volumeHideTimerRef.current = window.setTimeout(() => setShowVolumeSlider(false), 3000) as unknown as number;
+            }}
+            onPointerDown={(e) => { e.stopPropagation(); try { (e.currentTarget as any).setPointerCapture?.(e.pointerId); } catch {}; controlOwnerRef.current = 'volume'; lockBodyScroll(); bumpHeroOverlay(); }}
+            onPointerMove={(e) => { e.stopPropagation(); }}
+            onPointerUp={(e) => { e.stopPropagation(); try { (e.currentTarget as any).releasePointerCapture?.(e.pointerId); } catch {}; controlOwnerRef.current = null; unlockBodyScroll(); bumpHeroOverlay(); }}
+            onWheel={(e) => { e.stopPropagation(); e.preventDefault(); }}
+            onPointerCancel={(e) => { e.stopPropagation(); controlOwnerRef.current = null; unlockBodyScroll(); }}
+            onTouchStart={(e) => { e.stopPropagation(); controlOwnerRef.current = 'volume'; lockBodyScroll(); bumpHeroOverlay(); }}
+            onTouchMove={(e) => { e.stopPropagation(); bumpHeroOverlay(); }}
+            onTouchEnd={(e) => { e.stopPropagation(); controlOwnerRef.current = null; unlockBodyScroll(); bumpHeroOverlay(); }}
+            aria-label="Volume"
+            aria-orientation="vertical"
+            style={{ position: 'absolute', left: '50%', bottom: 'calc(100% + 6px)', transform: 'translateX(-50%) rotate(-90deg)', transformOrigin: 'center bottom', width: 64, height: 22, background: 'transparent', touchAction: 'manipulation' }}
+          />
+        )}
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            const a = audioRefs.current.get(itemIdx);
+            if (!a) return;
+            bumpHeroOverlay();
+            setShowVolumeSlider(true);
+            if (volumeHideTimerRef.current) window.clearTimeout(volumeHideTimerRef.current);
+            volumeHideTimerRef.current = window.setTimeout(() => setShowVolumeSlider(false), 3000) as unknown as number;
+            if (a.muted || a.volume === 0) {
+              a.muted = false;
+              a.volume = lastNonZeroVolumeRef.current || 1;
+              setIsHeroMuted(false);
+              try { if (volumeSliderRef.current) volumeSliderRef.current.value = String(a.volume); } catch {}
+              try { void a.play(); } catch {}
+            } else {
+              a.muted = true;
+              setIsHeroMuted(true);
+              try { if (volumeSliderRef.current) volumeSliderRef.current.value = '0'; } catch {}
+            }
+          }}
+          aria-label="Mute/Volume"
+          style={{ background: overlayBg, border: '1px solid rgba(255,255,255,0.5)', color: overlayFg, borderRadius: 8, padding: '6px 8px', fontSize: 12, cursor: 'pointer', height: 28, lineHeight: 1, display: 'inline-flex', alignItems: 'center' }}
+        >
+          {isHeroMuted ? '🔇' : '🔊'}
+        </button>
+      </div>
+    </div>
+  );
+
   const renderOverlayDescriptionPanel = (
     desc: string,
     overlayBg: string,
@@ -1260,7 +1618,7 @@ export const OrbitPeekCarousel: React.FC<Props> = ({ items, index, onIndexChange
           {isHero && (() => {
             const overlayBoxStyle: React.CSSProperties = { position:'absolute', left:'var(--pad-x, 0px)', top:'var(--pad-y, 0px)', width: 'var(--content-w, 100%)', height: 'var(--content-h, 100%)', pointerEvents:'none', transform:'translateZ(1px)' };
             return (
-              <div style={overlayBoxStyle}>
+              <div ref={heroOverlayBoxRef} style={overlayBoxStyle}>
                 {/* Title with clickable description */}
                 {(() => {
                   const desc = (asset as any).metadata?.description ?? (asset as any).metadata?.desc ?? '';
@@ -1269,7 +1627,7 @@ export const OrbitPeekCarousel: React.FC<Props> = ({ items, index, onIndexChange
                   return (
                     <>
                       {/* Title button - stays in same position */}
-                      <div style={{ position:'absolute', left:6, bottom:12, maxWidth:'50%', zIndex:10 }}>
+                      <div ref={heroTitleChipRef} style={{ position:'absolute', left:6, bottom:12, maxWidth:'50%', zIndex:10 }}>
                         <button
                         onClick={(e) => {
                           e.preventDefault();
@@ -1354,6 +1712,7 @@ export const OrbitPeekCarousel: React.FC<Props> = ({ items, index, onIndexChange
                     </>
                   );
                 })()}
+                {renderHeroMediaScrubberCluster(itemIdx!, overlayBg, overlayFg, overlayFont)}
                 {/* Mute/Volume bottom-right with vertical slider above */}
                 <div style={{ position:'absolute', right:12, bottom:12, display:'block', opacity:(showHeroOverlay ? 1 : 0), transition:'opacity .15s ease', pointerEvents:'auto' }} className="carousel-media-overlay" onMouseEnter={() => { if (overlayHideTimerRef.current) window.clearTimeout(overlayHideTimerRef.current); }} onMouseLeave={() => { overlayHideTimerRef.current = window.setTimeout(()=>setShowHeroOverlay(false), 4000) as unknown as number; }}>
                   <div style={{ position:'relative', display:'inline-block' }}>
@@ -1453,29 +1812,17 @@ export const OrbitPeekCarousel: React.FC<Props> = ({ items, index, onIndexChange
               🎵
             </div>
           )}
-          <div
-            style={{
-              position: 'absolute',
-              left: 'var(--pad-x, 12px)',
-              right: 'var(--pad-x, 12px)',
-              bottom: 12,
-              zIndex: 20,
-              pointerEvents: 'auto',
+          <audio
+            src={asset.url}
+            preload="metadata"
+            style={{ position: 'absolute', width: 0, height: 0, opacity: 0, pointerEvents: 'none' }}
+            ref={(el) => {
+              if (typeof itemIdx === 'number') {
+                if (el) audioRefs.current.set(itemIdx, el);
+                else audioRefs.current.delete(itemIdx);
+              }
             }}
-          >
-            <audio
-              controls
-              src={asset.url}
-              style={{ width: '100%' }}
-              preload="metadata"
-              ref={(el) => {
-                if (typeof itemIdx === 'number') {
-                  if (el) audioRefs.current.set(itemIdx, el);
-                  else audioRefs.current.delete(itemIdx);
-                }
-              }}
-            />
-          </div>
+          />
           {isHero && (() => {
             const desc = (asset as any).metadata?.description ?? (asset as any).metadata?.desc ?? '';
             const overlayBoxStyle: React.CSSProperties = {
@@ -1488,8 +1835,8 @@ export const OrbitPeekCarousel: React.FC<Props> = ({ items, index, onIndexChange
               transform: 'translateZ(1px)',
             };
             return (
-              <div style={overlayBoxStyle}>
-                <div style={{ position: 'absolute', left: 6, bottom: 52, maxWidth: '50%', zIndex: 10, pointerEvents: 'auto' }}>
+              <div ref={heroOverlayBoxRef} style={overlayBoxStyle}>
+                <div ref={heroTitleChipRef} style={{ position: 'absolute', left: 6, bottom: 12, maxWidth: '50%', zIndex: 10, pointerEvents: 'auto' }}>
                   <button
                     type="button"
                     onClick={(e) => {
@@ -1577,6 +1924,8 @@ export const OrbitPeekCarousel: React.FC<Props> = ({ items, index, onIndexChange
                     ) : null}
                   </button>
                 </div>
+                {renderHeroMediaScrubberCluster(itemIdx!, overlayBg, overlayFg, overlayFont)}
+                {renderHeroAudioMuteCluster(itemIdx!, overlayBg, overlayFg)}
                 {renderOverlayDescriptionPanel(desc, overlayBg, overlayFg, overlayFont)}
               </div>
             );
