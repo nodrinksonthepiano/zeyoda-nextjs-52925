@@ -68,6 +68,7 @@ export const OrbitPeekCarousel: React.FC<Props> = ({ items, index, onIndexChange
   const [isHeroMuted, setIsHeroMuted] = useState<boolean>(true);
   const [showVolumeSlider, setShowVolumeSlider] = useState<boolean>(false);
   const [showTitleDescription, setShowTitleDescription] = useState<boolean>(false);
+  const [descriptionGapFit, setDescriptionGapFit] = useState({ dropPx: 68, maxHeightPx: 68 });
   const overlayHideTimerRef = useRef<number | null>(null);
   const volumeHideTimerRef = useRef<number | null>(null);
   const lastNonZeroVolumeRef = useRef<number | null>(null);
@@ -891,8 +892,65 @@ export const OrbitPeekCarousel: React.FC<Props> = ({ items, index, onIndexChange
 
   useEffect(() => { dirtyRef.current = true; startLoop(); }, [effectiveIndex, startLoop]);
 
-  /** Matches overlay panel drop (68px) + panel height so PurchaseFlow shifts without visible flow text. */
-  const DESCRIPTION_FLOW_SPACER_MIN = 'clamp(128px, calc(10vh + 68px), 188px)';
+  const DESCRIPTION_GAP_BUFFER_PX = 10;
+  const DESCRIPTION_DROP_MAX_PX = 68;
+
+  const measureDescriptionGapFit = useCallback(() => {
+    if (!showTitleDescription) return;
+
+    const wrap = mediaWrapRefs.current.get(effectiveIndexRef.current);
+    const buyBtn =
+      document.querySelector('.purchase-download-cta') ??
+      document.querySelector('.purchase-panel-cta') ??
+      document.querySelector('.app-main-z10 .custom-buy-button');
+
+    let pictureBottom: number | null = null;
+    if (wrap) {
+      const rect = wrap.getBoundingClientRect();
+      const style = getComputedStyle(wrap);
+      const padY = parseFloat(style.getPropertyValue('--pad-y')) || 0;
+      const contentH = parseFloat(style.getPropertyValue('--content-h')) || rect.height;
+      pictureBottom = rect.top + padY + contentH;
+    } else {
+      const root = (rootRef as React.RefObject<HTMLDivElement>).current;
+      if (root) pictureBottom = root.getBoundingClientRect().bottom;
+    }
+
+    const buttonTop = buyBtn ? buyBtn.getBoundingClientRect().top : null;
+    if (pictureBottom == null || buttonTop == null) {
+      setDescriptionGapFit({ dropPx: DESCRIPTION_DROP_MAX_PX, maxHeightPx: DESCRIPTION_DROP_MAX_PX });
+      return;
+    }
+
+    const vh = window.innerHeight;
+    const visualMaxHeight = Math.min(120, Math.max(60, vh * 0.1));
+    const safeGap = Math.max(0, buttonTop - pictureBottom - DESCRIPTION_GAP_BUFFER_PX);
+    const dropPx = Math.min(DESCRIPTION_DROP_MAX_PX, safeGap);
+    const maxHeightPx = Math.min(dropPx, visualMaxHeight);
+
+    setDescriptionGapFit({ dropPx, maxHeightPx });
+  }, [showTitleDescription, rootRef]);
+
+  useLayoutEffect(() => {
+    if (!showTitleDescription) return;
+    let raf1 = 0;
+    let raf2 = 0;
+    const schedule = () => {
+      raf1 = requestAnimationFrame(() => {
+        raf2 = requestAnimationFrame(measureDescriptionGapFit);
+      });
+    };
+    schedule();
+    const onReflow = () => schedule();
+    window.addEventListener('resize', onReflow);
+    window.addEventListener('hero:pinned', onReflow);
+    return () => {
+      cancelAnimationFrame(raf1);
+      cancelAnimationFrame(raf2);
+      window.removeEventListener('resize', onReflow);
+      window.removeEventListener('hero:pinned', onReflow);
+    };
+  }, [showTitleDescription, effectiveIndex, naturalAspect, measureDescriptionGapFit]);
 
   const bindDescriptionPanelHandlers = () => ({
     onClick: (e: React.MouseEvent) => e.stopPropagation(),
@@ -933,13 +991,15 @@ export const OrbitPeekCarousel: React.FC<Props> = ({ items, index, onIndexChange
     overlayFont: string,
   ) => {
     if (!showTitleDescription || !desc) return null;
+    const { dropPx, maxHeightPx } = descriptionGapFit;
     return (
       <div
         className="description-scroll-panel"
         style={{
           position: 'absolute',
-          left: 6,
-          bottom: -68,
+          left: '50%',
+          transform: 'translateX(-50%)',
+          bottom: dropPx > 0 ? -dropPx : 0,
           padding: '8px 12px',
           borderRadius: 8,
           background: overlayBg,
@@ -948,7 +1008,7 @@ export const OrbitPeekCarousel: React.FC<Props> = ({ items, index, onIndexChange
           fontSize: 'clamp(10px, 1.5vw, 12px)',
           lineHeight: 1.4,
           width: 'clamp(180px, 25vw, 320px)',
-          height: 'clamp(60px, 10vh, 120px)',
+          maxHeight: maxHeightPx > 0 ? maxHeightPx : undefined,
           overflowY: 'auto',
           overflowX: 'hidden',
           whiteSpace: 'pre-wrap',
@@ -1482,14 +1542,6 @@ export const OrbitPeekCarousel: React.FC<Props> = ({ items, index, onIndexChange
     zIndex: 10
   }), [naturalAspect]);
 
-  const heroDesc = useMemo(() => {
-    if (!currItem) return '';
-    const meta = (currItem as { metadata?: { description?: string; desc?: string } }).metadata;
-    return meta?.description ?? meta?.desc ?? '';
-  }, [currItem]);
-
-  const showDescriptionSpacer = Boolean(heroDesc) && showTitleDescription;
-
   const stageStyle: React.CSSProperties = useMemo(() => ({
     position: 'absolute', inset: 0,
     perspective: '1100px',
@@ -1533,13 +1585,6 @@ export const OrbitPeekCarousel: React.FC<Props> = ({ items, index, onIndexChange
       </div>
       <p className="sr-only" aria-live="polite">{`Showing item ${effectiveIndex + 1} of ${Math.max(1,count)}: ${currItem?.title || 'Untitled'}`}</p>
     </div>
-    {showDescriptionSpacer ? (
-      <div
-        className="hero-description-spacer"
-        aria-hidden="true"
-        style={{ minHeight: DESCRIPTION_FLOW_SPACER_MIN, width: '100%' }}
-      />
-    ) : null}
     </div>
   );
 };
