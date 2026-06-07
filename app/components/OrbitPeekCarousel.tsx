@@ -50,6 +50,15 @@ function softCapProgress(raw: number): number {
   return sign * eased;
 }
 
+function isDescriptionScrollTarget(target: EventTarget | null): boolean {
+  const node = target as Node | null;
+  if (!node) return false;
+  const el = node.nodeType === 1 ? (target as HTMLElement) : node.parentElement;
+  const panel = el?.closest?.('.description-scroll-panel') as HTMLElement | null;
+  if (!panel) return false;
+  return panel.scrollHeight > panel.clientHeight + 1;
+}
+
 export const OrbitPeekCarousel: React.FC<Props> = ({ items, index, onIndexChange, containerRef, peekPercent = 10, theme, artistId, treasuryWallet, currentUser, onEditAsset, disabled = false, onShakeRequest }) => {
   // Attach the provided containerRef so ThemeOrbitRenderer can measure the same element
   const internalRootRef = useRef<HTMLDivElement | null>(null);
@@ -841,8 +850,8 @@ export const OrbitPeekCarousel: React.FC<Props> = ({ items, index, onIndexChange
     root.addEventListener('wheel', onWheel as any, { passive: false });
     root.addEventListener('touchmove', (e: any) => {
       try {
-        // Allow native handling for in-control drags (e.g., volume slider)
-        if (!controlOwnerRef.current) {
+        // Allow native handling for in-control drags (e.g., volume slider) and description scroll
+        if (!controlOwnerRef.current && !isDescriptionScrollTarget(e.target)) {
           e.preventDefault();
         }
       } catch {}
@@ -958,25 +967,20 @@ export const OrbitPeekCarousel: React.FC<Props> = ({ items, index, onIndexChange
     onMouseLeave: () => { controlOwnerRef.current = null; },
     onPointerDown: (e: React.PointerEvent) => {
       e.stopPropagation();
-      try { (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId); } catch {}
       controlOwnerRef.current = 'description';
     },
-    onPointerMove: (e: React.PointerEvent) => { e.stopPropagation(); },
     onPointerUp: (e: React.PointerEvent) => {
       e.stopPropagation();
-      try { (e.currentTarget as HTMLElement).releasePointerCapture?.(e.pointerId); } catch {}
       controlOwnerRef.current = null;
     },
     onPointerCancel: (e: React.PointerEvent) => {
       e.stopPropagation();
-      try { (e.currentTarget as HTMLElement).releasePointerCapture?.(e.pointerId); } catch {}
       controlOwnerRef.current = null;
     },
     onTouchStart: (e: React.TouchEvent) => {
       e.stopPropagation();
       controlOwnerRef.current = 'description';
     },
-    onTouchMove: (e: React.TouchEvent) => { e.stopPropagation(); },
     onTouchEnd: (e: React.TouchEvent) => {
       e.stopPropagation();
       controlOwnerRef.current = null;
@@ -1008,9 +1012,10 @@ export const OrbitPeekCarousel: React.FC<Props> = ({ items, index, onIndexChange
           fontSize: 'clamp(10px, 1.5vw, 12px)',
           lineHeight: 1.4,
           width: 'clamp(180px, 25vw, 320px)',
-          maxHeight: maxHeightPx > 0 ? maxHeightPx : undefined,
+          ...(maxHeightPx > 0 ? { height: maxHeightPx, maxHeight: maxHeightPx } : {}),
           overflowY: 'auto',
           overflowX: 'hidden',
+          overscrollBehavior: 'contain',
           whiteSpace: 'pre-wrap',
           wordBreak: 'break-word',
           pointerEvents: 'auto',
@@ -1537,10 +1542,10 @@ export const OrbitPeekCarousel: React.FC<Props> = ({ items, index, onIndexChange
     margin: '0 auto',
     // perspective moved to stage for stability
     overflow: 'visible',
-    touchAction: 'none',
+    touchAction: showTitleDescription ? 'pan-y' : 'none',
     overscrollBehavior: 'contain',
     zIndex: 10
-  }), [naturalAspect]);
+  }), [naturalAspect, showTitleDescription]);
 
   const stageStyle: React.CSSProperties = useMemo(() => ({
     position: 'absolute', inset: 0,
