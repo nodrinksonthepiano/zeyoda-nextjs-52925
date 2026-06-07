@@ -95,6 +95,7 @@ export const OrbitPeekCarousel: React.FC<Props> = ({ items, index, onIndexChange
   const isHeroMutedRef = useRef<boolean>(true);
   const volumeSliderRef = useRef<HTMLInputElement | null>(null);
   const controlOwnerRef = useRef<'volume' | 'description' | null>(null);
+  const descriptionToggleAtRef = useRef<number>(0);
   
   // Check if current user is the artist (can edit assets)
   const isOwner = currentUser && treasuryWallet && currentUser.toLowerCase() === treasuryWallet.toLowerCase();
@@ -931,6 +932,9 @@ export const OrbitPeekCarousel: React.FC<Props> = ({ items, index, onIndexChange
   const DESCRIPTION_ART_ENCROACH_RATIO = 0.45;
   const DESCRIPTION_PANEL_PAD_Y = 16;
   const DESCRIPTION_TOGGLE_BODY_PAD = 16;
+  const DESCRIPTION_LAPTOP_COLLAPSED_PX = 68;
+  const DESCRIPTION_TOGGLE_BODY_PAD_RIGHT = 32;
+  const DESCRIPTION_TOGGLE_BODY_PAD_BOTTOM = 19;
 
   const measureDescriptionGapFit = useCallback(() => {
     if (!showTitleDescription) return;
@@ -1024,73 +1028,111 @@ export const OrbitPeekCarousel: React.FC<Props> = ({ items, index, onIndexChange
     };
   }, [showTitleDescription, descriptionExpanded, descriptionGapFit, effectiveIndex]);
 
+  const isDescriptionToggleTarget = (target: EventTarget | null) => {
+    const el = target as HTMLElement | null;
+    return !!el?.closest?.('.description-toggle-btn');
+  };
+
   const bindDescriptionPanelHandlers = () => ({
     onClick: (e: React.MouseEvent) => e.stopPropagation(),
     onMouseEnter: () => { controlOwnerRef.current = 'description'; },
     onMouseLeave: () => { controlOwnerRef.current = null; },
     onPointerDown: (e: React.PointerEvent) => {
       e.stopPropagation();
+      if (isDescriptionToggleTarget(e.target)) return;
       controlOwnerRef.current = 'description';
     },
     onPointerUp: (e: React.PointerEvent) => {
       e.stopPropagation();
+      if (isDescriptionToggleTarget(e.target)) return;
       controlOwnerRef.current = null;
     },
     onPointerCancel: (e: React.PointerEvent) => {
       e.stopPropagation();
+      if (isDescriptionToggleTarget(e.target)) return;
       controlOwnerRef.current = null;
     },
     onTouchStart: (e: React.TouchEvent) => {
       e.stopPropagation();
+      if (isDescriptionToggleTarget(e.target)) return;
       controlOwnerRef.current = 'description';
     },
     onTouchEnd: (e: React.TouchEvent) => {
       e.stopPropagation();
+      if (isDescriptionToggleTarget(e.target)) return;
       controlOwnerRef.current = null;
     },
     onWheel: (e: React.WheelEvent) => { e.stopPropagation(); },
   });
 
   const renderDescriptionToggle = (
-    label: 'See more' | 'See less',
+    mode: 'more' | 'less',
     onActivate: () => void,
     overlayFg: string,
     overlayFont: string,
-  ) => (
-    <button
-      type="button"
-      onClick={(e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        onActivate();
-      }}
-      onTouchEnd={(e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        onActivate();
-      }}
-      style={{
-        position: 'absolute',
-        bottom: 3,
-        right: 5,
-        zIndex: 1,
-        padding: '2px 5px',
-        background: 'rgba(0,0,0,0.35)',
-        border: 'none',
-        borderRadius: 4,
-        color: overlayFg,
-        fontFamily: overlayFont,
-        fontSize: 8,
-        fontWeight: 500,
-        lineHeight: 1.2,
-        cursor: 'pointer',
-        opacity: 0.9,
-        touchAction: 'manipulation',
-      }}
-    >
-      {label}
-    </button>
-  );
+  ) => {
+    const runActivate = () => {
+      const now = performance.now();
+      if (now - descriptionToggleAtRef.current < 400) return;
+      descriptionToggleAtRef.current = now;
+      onActivate();
+    };
+
+    return (
+      <button
+        type="button"
+        className="description-toggle-btn"
+        onClick={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          runActivate();
+        }}
+        onTouchStart={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          runActivate();
+        }}
+        style={{
+          position: 'absolute',
+          bottom: 2,
+          right: 2,
+          zIndex: 2,
+          width: 44,
+          height: 44,
+          padding: 0,
+          border: 'none',
+          background: 'transparent',
+          cursor: 'pointer',
+          touchAction: 'manipulation',
+          display: 'flex',
+          alignItems: 'flex-end',
+          justifyContent: 'flex-end',
+        }}
+      >
+        <span
+          style={{
+            width: 26,
+            height: 26,
+            borderRadius: '50%',
+            background: 'rgba(0,0,0,0.35)',
+            color: overlayFg,
+            fontFamily: overlayFont,
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            opacity: 0.9,
+            lineHeight: 1,
+            marginRight: 2,
+            marginBottom: 2,
+          }}
+        >
+          <span style={{ fontSize: 7, fontWeight: 500 }}>{mode}</span>
+          <span style={{ fontSize: 9, fontWeight: 600, marginTop: 1 }}>{mode === 'more' ? '+' : '−'}</span>
+        </span>
+      </button>
+    );
+  };
 
   const renderOverlayDescriptionPanel = (
     desc: string,
@@ -1104,9 +1146,16 @@ export const OrbitPeekCarousel: React.FC<Props> = ({ items, index, onIndexChange
     const contentNeededPx = descriptionContentHeightPx > 0
       ? descriptionContentHeightPx + DESCRIPTION_PANEL_PAD_Y + togglePad
       : 0;
-    const panelHeightPx = descriptionExpanded
-      ? (contentNeededPx > 0 ? Math.min(expandedHeightPx, contentNeededPx) : expandedHeightPx)
-      : maxHeightPx;
+    let panelHeightPx: number;
+    if (descriptionExpanded) {
+      panelHeightPx = contentNeededPx > 0
+        ? Math.min(expandedHeightPx, contentNeededPx)
+        : expandedHeightPx;
+    } else if (descriptionTruncatable) {
+      panelHeightPx = Math.max(maxHeightPx, DESCRIPTION_LAPTOP_COLLAPSED_PX);
+    } else {
+      panelHeightPx = maxHeightPx;
+    }
     const showSeeMore = !descriptionExpanded && descriptionTruncatable;
     const showSeeLess = descriptionExpanded && descriptionTruncatable;
     return (
@@ -1152,13 +1201,14 @@ export const OrbitPeekCarousel: React.FC<Props> = ({ items, index, onIndexChange
             overflowX: 'hidden',
             overscrollBehavior: 'contain',
             WebkitOverflowScrolling: 'touch',
-            paddingBottom: (showSeeMore || showSeeLess) ? 16 : 0,
+            paddingBottom: (showSeeMore || showSeeLess) ? DESCRIPTION_TOGGLE_BODY_PAD_BOTTOM : 0,
+            paddingRight: (showSeeMore || showSeeLess) ? DESCRIPTION_TOGGLE_BODY_PAD_RIGHT : 0,
           }}
         >
           {desc}
         </div>
-        {showSeeMore && renderDescriptionToggle('See more', () => setDescriptionExpanded(true), overlayFg, overlayFont)}
-        {showSeeLess && renderDescriptionToggle('See less', () => setDescriptionExpanded(false), overlayFg, overlayFont)}
+        {showSeeMore && renderDescriptionToggle('more', () => setDescriptionExpanded(true), overlayFg, overlayFont)}
+        {showSeeLess && renderDescriptionToggle('less', () => setDescriptionExpanded(false), overlayFg, overlayFont)}
       </div>
     );
   };
