@@ -933,7 +933,6 @@ export const OrbitPeekCarousel: React.FC<Props> = ({ items, index, onIndexChange
   const DESCRIPTION_PANEL_PAD_Y = 16;
   const DESCRIPTION_TOGGLE_BODY_PAD = 16;
   const DESCRIPTION_LAPTOP_COLLAPSED_PX = 68;
-  const DESCRIPTION_TOGGLE_BODY_PAD_RIGHT = 32;
   const DESCRIPTION_TOGGLE_BODY_PAD_BOTTOM = 19;
 
   const measureDescriptionGapFit = useCallback(() => {
@@ -1202,7 +1201,8 @@ export const OrbitPeekCarousel: React.FC<Props> = ({ items, index, onIndexChange
             overscrollBehavior: 'contain',
             WebkitOverflowScrolling: 'touch',
             paddingBottom: (showSeeMore || showSeeLess) ? DESCRIPTION_TOGGLE_BODY_PAD_BOTTOM : 0,
-            paddingRight: (showSeeMore || showSeeLess) ? DESCRIPTION_TOGGLE_BODY_PAD_RIGHT : 0,
+            scrollbarWidth: 'none',
+            msOverflowStyle: 'none',
           }}
         >
           {desc}
