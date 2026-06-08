@@ -55,8 +55,6 @@ const DOCK_TITLE_MAX_WIDTH_PCT = 100;
 const DOCK_SIDE_LEFT_PX = 6;
 const DOCK_SIDE_RIGHT_PX = 12;
 const DOCK_COMPACT_WIDE_PX = 300;
-const DOCK_COMPACT_MEDIUM_PX = 220;
-const DOCK_RIGHT_ACTIONS_WIDTH_PX = 104;
 
 function formatMediaTime(seconds: number): string {
   if (!Number.isFinite(seconds) || seconds < 0) return '0:00';
@@ -1281,21 +1279,25 @@ export const OrbitPeekCarousel: React.FC<Props> = ({ items, index, onIndexChange
       borderRadius: 8,
       padding: '4px 6px',
     };
-    const showCurrentTime = dockContentWidth >= DOCK_COMPACT_WIDE_PX;
-    const showDurationTime = dockContentWidth >= DOCK_COMPACT_MEDIUM_PX;
+    const showDockTimeOverlays = dockContentWidth >= DOCK_COMPACT_WIDE_PX;
     const dockActionBtn: React.CSSProperties = {
       background: overlayBg,
       border: '1px solid rgba(255,255,255,0.5)',
       color: overlayFg,
+      fontFamily: overlayFont,
       borderRadius: 8,
-      padding: '5px 6px',
+      padding: 0,
       fontSize: 12,
       cursor: 'pointer',
+      width: 28,
+      minWidth: 28,
       height: 28,
       lineHeight: 1,
       display: 'inline-flex',
       alignItems: 'center',
+      justifyContent: 'center',
       flexShrink: 0,
+      touchAction: 'manipulation',
     };
 
     let dockDescriptionPanel: React.ReactNode = null;
@@ -1501,6 +1503,7 @@ export const OrbitPeekCarousel: React.FC<Props> = ({ items, index, onIndexChange
             minWidth: 0,
             overflow: 'hidden',
             width: '100%',
+            padding: 0,
           }}
         >
           <button
@@ -1524,109 +1527,131 @@ export const OrbitPeekCarousel: React.FC<Props> = ({ items, index, onIndexChange
                 else media.pause();
               } catch {}
             }}
-            style={{
-              flexShrink: 0,
-              width: 24,
-              height: 24,
-              padding: 0,
-              border: 'none',
-              borderRadius: 4,
-              background: 'rgba(255,255,255,0.15)',
-              color: overlayFg,
-              fontFamily: overlayFont,
-              fontSize: 11,
-              lineHeight: 1,
-              cursor: 'pointer',
-              display: 'inline-flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              touchAction: 'manipulation',
-            }}
+            style={dockActionBtn}
           >
             {isHeroPaused ? '▶' : '⏸'}
           </button>
-          {showCurrentTime && (
-            <span style={{ flexShrink: 0, fontSize: 10, lineHeight: 1, minWidth: 28, textAlign: 'right', opacity: 0.85 }}>
-              {formatMediaTime(current)}
-            </span>
-          )}
-          <input
-            type="range"
-            className="hero-dock-slider"
-            min={0}
-            max={duration > 0 ? duration : 0}
-            step={0.1}
-            value={duration > 0 ? Math.min(current, duration) : 0}
-            aria-label="Seek"
-            onInput={(e) => {
-              if (!media) return;
-              const val = Number((e.currentTarget as HTMLInputElement).value);
-              try { media.currentTime = val; } catch {}
-              setHeroMediaProgress((prev) => ({ ...prev, current: val }));
-            }}
-            onChange={(e) => {
-              if (!media) return;
-              const val = Number((e.currentTarget as HTMLInputElement).value);
-              try { media.currentTime = val; } catch {}
-              setHeroMediaProgress((prev) => ({ ...prev, current: val }));
-              bumpHeroOverlay();
-            }}
-            onPointerDown={(e) => {
-              e.stopPropagation();
-              try { (e.currentTarget as HTMLInputElement).setPointerCapture?.(e.pointerId); } catch {}
-              controlOwnerRef.current = 'media';
-              lockBodyScroll();
-              bumpHeroOverlay();
-            }}
-            onPointerMove={(e) => { e.stopPropagation(); }}
-            onPointerUp={(e) => {
-              e.stopPropagation();
-              try { (e.currentTarget as HTMLInputElement).releasePointerCapture?.(e.pointerId); } catch {}
-              controlOwnerRef.current = null;
-              unlockBodyScroll();
-              bumpHeroOverlay();
-            }}
-            onPointerCancel={(e) => {
-              e.stopPropagation();
-              controlOwnerRef.current = null;
-              unlockBodyScroll();
-            }}
-            onTouchStart={(e) => {
-              e.stopPropagation();
-              controlOwnerRef.current = 'media';
-              lockBodyScroll();
-              bumpHeroOverlay();
-            }}
-            onTouchMove={(e) => { e.stopPropagation(); }}
-            onTouchEnd={(e) => {
-              e.stopPropagation();
-              controlOwnerRef.current = null;
-              unlockBodyScroll();
-              bumpHeroOverlay();
-            }}
+          <div
             style={{
               flex: 1,
               minWidth: 0,
-              margin: 0,
-              cursor: 'pointer',
-              touchAction: 'manipulation',
-              accentColor: overlayFg,
-              ...dockSliderStyle,
+              display: 'flex',
+              alignItems: 'center',
+              position: 'relative',
             }}
-          />
-          {showDurationTime && (
-            <span style={{ flexShrink: 0, fontSize: 10, lineHeight: 1, minWidth: 28, opacity: 0.85 }}>
-              {formatMediaTime(duration)}
-            </span>
-          )}
+          >
+            {showDockTimeOverlays && (
+              <span
+                style={{
+                  position: 'absolute',
+                  left: 0,
+                  top: '50%',
+                  transform: 'translateY(-50%)',
+                  fontSize: 9,
+                  lineHeight: 1,
+                  opacity: 0.85,
+                  pointerEvents: 'none',
+                  zIndex: 1,
+                  fontFamily: overlayFont,
+                  color: overlayFg,
+                }}
+              >
+                {formatMediaTime(current)}
+              </span>
+            )}
+            <input
+              type="range"
+              className="hero-dock-slider"
+              min={0}
+              max={duration > 0 ? duration : 0}
+              step={0.1}
+              value={duration > 0 ? Math.min(current, duration) : 0}
+              aria-label="Seek"
+              onInput={(e) => {
+                if (!media) return;
+                const val = Number((e.currentTarget as HTMLInputElement).value);
+                try { media.currentTime = val; } catch {}
+                setHeroMediaProgress((prev) => ({ ...prev, current: val }));
+              }}
+              onChange={(e) => {
+                if (!media) return;
+                const val = Number((e.currentTarget as HTMLInputElement).value);
+                try { media.currentTime = val; } catch {}
+                setHeroMediaProgress((prev) => ({ ...prev, current: val }));
+                bumpHeroOverlay();
+              }}
+              onPointerDown={(e) => {
+                e.stopPropagation();
+                try { (e.currentTarget as HTMLInputElement).setPointerCapture?.(e.pointerId); } catch {}
+                controlOwnerRef.current = 'media';
+                lockBodyScroll();
+                bumpHeroOverlay();
+              }}
+              onPointerMove={(e) => { e.stopPropagation(); }}
+              onPointerUp={(e) => {
+                e.stopPropagation();
+                try { (e.currentTarget as HTMLInputElement).releasePointerCapture?.(e.pointerId); } catch {}
+                controlOwnerRef.current = null;
+                unlockBodyScroll();
+                bumpHeroOverlay();
+              }}
+              onPointerCancel={(e) => {
+                e.stopPropagation();
+                controlOwnerRef.current = null;
+                unlockBodyScroll();
+              }}
+              onTouchStart={(e) => {
+                e.stopPropagation();
+                controlOwnerRef.current = 'media';
+                lockBodyScroll();
+                bumpHeroOverlay();
+              }}
+              onTouchMove={(e) => { e.stopPropagation(); }}
+              onTouchEnd={(e) => {
+                e.stopPropagation();
+                controlOwnerRef.current = null;
+                unlockBodyScroll();
+                bumpHeroOverlay();
+              }}
+              style={{
+                width: '100%',
+                flex: 1,
+                minWidth: 0,
+                margin: 0,
+                cursor: 'pointer',
+                touchAction: 'manipulation',
+                accentColor: overlayFg,
+                ...(showDockTimeOverlays ? { paddingLeft: 26, paddingRight: 30 } : {}),
+                ...dockSliderStyle,
+              }}
+            />
+            {showDockTimeOverlays && (
+              <span
+                style={{
+                  position: 'absolute',
+                  right: 0,
+                  top: '50%',
+                  transform: 'translateY(-50%)',
+                  fontSize: 9,
+                  lineHeight: 1,
+                  opacity: 0.85,
+                  pointerEvents: 'none',
+                  zIndex: 1,
+                  fontFamily: overlayFont,
+                  color: overlayFg,
+                }}
+              >
+                {formatMediaTime(duration)}
+              </span>
+            )}
+          </div>
           <div
             style={{
               display: 'flex',
               alignItems: 'center',
               gap: 4,
               flexShrink: 0,
-              width: DOCK_RIGHT_ACTIONS_WIDTH_PX,
-              justifyContent: 'flex-end',
+              width: 'auto',
             }}
           >
             <div style={{ position: 'relative', display: 'inline-block' }}>
