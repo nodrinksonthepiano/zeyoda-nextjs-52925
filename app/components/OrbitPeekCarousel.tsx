@@ -50,11 +50,13 @@ function softCapProgress(raw: number): number {
   return sign * eased;
 }
 
-const SCRUBBER_RIGHT_RESERVE_PX = 52;
-const SCRUBBER_LEFT_FALLBACK_PX = 110;
-const MIN_FULL_SCRUBBER_WIDTH = 160;
-const SCRUBBER_NARROW_BOTTOM_PX = 44;
-const SCRUBBER_NARROW_RIGHT_PX = 12;
+const DOCK_BOTTOM_PX = 2;
+const DOCK_TITLE_MAX_WIDTH_PCT = 100;
+const DOCK_SIDE_LEFT_PX = 6;
+const DOCK_SIDE_RIGHT_PX = 12;
+const DOCK_COMPACT_WIDE_PX = 300;
+const DOCK_COMPACT_MEDIUM_PX = 220;
+const DOCK_RIGHT_ACTIONS_WIDTH_PX = 104;
 
 function formatMediaTime(seconds: number): string {
   if (!Number.isFinite(seconds) || seconds < 0) return '0:00';
@@ -73,6 +75,15 @@ function withOverlayAlpha(color: string, alpha: number): string {
     return `rgba(${r},${g},${b},${alpha})`;
   }
   return `rgba(0,0,0,${alpha})`;
+}
+
+function lightenHex(color: string, amount: number): string {
+  if (!color.startsWith('#') || color.length < 7) return color;
+  const r = parseInt(color.slice(1, 3), 16);
+  const g = parseInt(color.slice(3, 5), 16);
+  const b = parseInt(color.slice(5, 7), 16);
+  const mix = (c: number) => Math.round(c + (255 - c) * amount);
+  return `rgb(${mix(r)},${mix(g)},${mix(b)})`;
 }
 
 function isDescriptionScrollTarget(target: EventTarget | null): boolean {
@@ -99,7 +110,6 @@ export const OrbitPeekCarousel: React.FC<Props> = ({ items, index, onIndexChange
 
   const [naturalAspect, setNaturalAspect] = useState<number | null>(null);
   const [showHeroOverlay, setShowHeroOverlay] = useState<boolean>(false);
-  const [showPauseFlash, setShowPauseFlash] = useState<boolean>(false);
   const [isHeroPaused, setIsHeroPaused] = useState<boolean>(false);
   const [isHeroMuted, setIsHeroMuted] = useState<boolean>(true);
   const [showVolumeSlider, setShowVolumeSlider] = useState<boolean>(false);
@@ -114,8 +124,7 @@ export const OrbitPeekCarousel: React.FC<Props> = ({ items, index, onIndexChange
     expandedHeightPx: 68,
   });
   const [heroMediaProgress, setHeroMediaProgress] = useState({ current: 0, duration: 0 });
-  const [scrubberLeftPx, setScrubberLeftPx] = useState(SCRUBBER_LEFT_FALLBACK_PX);
-  const [scrubberNarrowMode, setScrubberNarrowMode] = useState(false);
+  const [dockContentWidth, setDockContentWidth] = useState(320);
   const descriptionBodyRef = useRef<HTMLDivElement | null>(null);
   const heroTitleChipRef = useRef<HTMLDivElement | null>(null);
   const heroOverlayBoxRef = useRef<HTMLDivElement | null>(null);
@@ -315,17 +324,11 @@ export const OrbitPeekCarousel: React.FC<Props> = ({ items, index, onIndexChange
     } catch {}
   }, [naturalAspect]);
 
-  const measureScrubberLayout = useCallback(() => {
-    const titleEl = heroTitleChipRef.current;
+  const measureDockWidth = useCallback(() => {
     const boxEl = heroOverlayBoxRef.current;
-    if (!titleEl || !boxEl) return;
-    const titleRight = titleEl.getBoundingClientRect().right;
-    const boxLeft = boxEl.getBoundingClientRect().left;
-    const leftPx = Math.max(6, Math.round(titleRight - boxLeft + 6));
-    setScrubberLeftPx(leftPx);
-    const boxWidth = Math.round(boxEl.clientWidth || boxEl.getBoundingClientRect().width);
-    const available = boxWidth - leftPx - SCRUBBER_RIGHT_RESERVE_PX;
-    setScrubberNarrowMode(available < MIN_FULL_SCRUBBER_WIDTH);
+    if (!boxEl) return;
+    const w = Math.round(boxEl.clientWidth || boxEl.getBoundingClientRect().width);
+    if (w > 0) setDockContentWidth(w);
   }, []);
 
   // Attach ResizeObserver to the current hero's wrapper and refresh on hero:pinned
@@ -340,7 +343,7 @@ export const OrbitPeekCarousel: React.FC<Props> = ({ items, index, onIndexChange
           ref.ro = new ResizeObserver(() => {
             requestAnimationFrame(() => {
               updateHeroOverlayVars();
-              measureScrubberLayout();
+              measureDockWidth();
             });
           });
         } catch {
@@ -352,7 +355,7 @@ export const OrbitPeekCarousel: React.FC<Props> = ({ items, index, onIndexChange
       requestAnimationFrame(() => {
         requestAnimationFrame(() => {
           updateHeroOverlayVars();
-          measureScrubberLayout();
+          measureDockWidth();
         });
       });
     };
@@ -362,13 +365,13 @@ export const OrbitPeekCarousel: React.FC<Props> = ({ items, index, onIndexChange
       requestAnimationFrame(() => {
         requestAnimationFrame(() => {
           updateHeroOverlayVars();
-          measureScrubberLayout();
+          measureDockWidth();
         });
       });
     };
     window.addEventListener('hero:pinned', onPinned);
     return () => { window.removeEventListener('hero:pinned', onPinned); };
-  }, [effectiveIndex, updateHeroOverlayVars, measureScrubberLayout]);
+  }, [effectiveIndex, updateHeroOverlayVars, measureDockWidth]);
 
   // Briefly show title on hero land (from hero:pinned)
   useEffect(() => {
@@ -384,11 +387,8 @@ export const OrbitPeekCarousel: React.FC<Props> = ({ items, index, onIndexChange
   // Reset overlay state on hero index change
   useEffect(() => {
     setShowHeroOverlay(false);
-    setShowPauseFlash(false);
     setShowVolumeSlider(false);
     setHeroMediaProgress({ current: 0, duration: 0 });
-    setScrubberLeftPx(SCRUBBER_LEFT_FALLBACK_PX);
-    setScrubberNarrowMode(false);
     if (overlayHideTimerRef.current) { window.clearTimeout(overlayHideTimerRef.current); overlayHideTimerRef.current = null; }
     if (volumeHideTimerRef.current) { window.clearTimeout(volumeHideTimerRef.current); volumeHideTimerRef.current = null; }
   }, [effectiveIndex]);
@@ -402,16 +402,16 @@ export const OrbitPeekCarousel: React.FC<Props> = ({ items, index, onIndexChange
   }, [items]);
 
   useLayoutEffect(() => {
-    measureScrubberLayout();
+    measureDockWidth();
     let raf2 = 0;
     const raf1 = requestAnimationFrame(() => {
-      raf2 = requestAnimationFrame(measureScrubberLayout);
+      raf2 = requestAnimationFrame(measureDockWidth);
     });
     return () => {
       cancelAnimationFrame(raf1);
       cancelAnimationFrame(raf2);
     };
-  }, [measureScrubberLayout, showHeroOverlay, effectiveIndex, showTitleDescription, itemsSignature, naturalAspect]);
+  }, [measureDockWidth, showHeroOverlay, effectiveIndex, showTitleDescription, itemsSignature, naturalAspect]);
 
   // Reset pinned measurements and gesture/snap state whenever the dataset changes
   // Ensures sizes/peeks don't leak across artists and drag state is clean
@@ -1028,7 +1028,7 @@ export const OrbitPeekCarousel: React.FC<Props> = ({ items, index, onIndexChange
 
   const DESCRIPTION_GAP_BUFFER_PX = 10;
   const DESCRIPTION_DROP_MAX_PX = 68;
-  const DESCRIPTION_TITLE_RESERVE_PX = 44;
+  const DESCRIPTION_DOCK_RESERVE_PX = 80;
   const DESCRIPTION_ART_ENCROACH_MAX_PX = 160;
   const DESCRIPTION_ART_ENCROACH_RATIO = 0.45;
   const DESCRIPTION_PANEL_PAD_Y = 16;
@@ -1062,7 +1062,7 @@ export const OrbitPeekCarousel: React.FC<Props> = ({ items, index, onIndexChange
     const artEncroachPx = Math.min(
       Math.round(contentH * DESCRIPTION_ART_ENCROACH_RATIO),
       DESCRIPTION_ART_ENCROACH_MAX_PX,
-      Math.max(0, contentH - DESCRIPTION_TITLE_RESERVE_PX),
+      Math.max(0, contentH - DESCRIPTION_DOCK_RESERVE_PX),
     );
 
     if (pictureBottom == null || buttonTop == null) {
@@ -1243,255 +1243,489 @@ export const OrbitPeekCarousel: React.FC<Props> = ({ items, index, onIndexChange
     overlayHideTimerRef.current = window.setTimeout(() => setShowHeroOverlay(false), 4000) as unknown as number;
   };
 
-  const renderHeroMediaScrubberCluster = (
+  const toggleHeroTitleDescription = (desc: string) => {
+    if (!desc) return;
+    setShowTitleDescription((open) => !open);
+    setShowHeroOverlay(true);
+    if (overlayHideTimerRef.current) window.clearTimeout(overlayHideTimerRef.current);
+  };
+
+  const renderHeroMediaDock = (
     itemIdx: number,
+    asset: ArtistAsset,
+    mediaType: 'video' | 'audio',
     overlayBg: string,
     overlayFg: string,
     overlayFont: string,
   ) => {
+    const desc = (asset as any).metadata?.description ?? (asset as any).metadata?.desc ?? '';
     const media = getHeroMediaEl(itemIdx);
+    const volMedia = mediaType === 'video' ? videoRefs.current.get(itemIdx) : audioRefs.current.get(itemIdx);
     const { current, duration } = heroMediaProgress;
-    const scrubberBg = withOverlayAlpha(overlayBg, 0.62);
-    const isNarrow = scrubberNarrowMode;
+    const seekPct = duration > 0 ? (current / duration) * 100 : 0;
+    const dockSliderStyle = {
+      '--seek-pct': `${seekPct}%`,
+      '--slider-played': overlayFg.startsWith('#') ? withOverlayAlpha(overlayFg, 0.92) : overlayFg,
+      '--slider-unplayed': 'rgba(55, 65, 81, 0.95)',
+      '--slider-track-tint': withOverlayAlpha(overlayBg, 0.22),
+      '--slider-thumb-center': lightenHex(overlayFg, 0.38),
+      '--slider-thumb-mid': overlayFg,
+      '--slider-thumb-edge': withOverlayAlpha(overlayBg, 0.82),
+    } as React.CSSProperties;
+    const dockBg = withOverlayAlpha(overlayBg, 0.68);
+    const dockGlassStrip: React.CSSProperties = {
+      background: dockBg,
+      backdropFilter: 'blur(8px)',
+      WebkitBackdropFilter: 'blur(8px)',
+      border: '1px solid rgba(255,255,255,0.35)',
+      borderRadius: 8,
+      padding: '4px 6px',
+    };
+    const showCurrentTime = dockContentWidth >= DOCK_COMPACT_WIDE_PX;
+    const showDurationTime = dockContentWidth >= DOCK_COMPACT_MEDIUM_PX;
+    const dockActionBtn: React.CSSProperties = {
+      background: overlayBg,
+      border: '1px solid rgba(255,255,255,0.5)',
+      color: overlayFg,
+      borderRadius: 8,
+      padding: '5px 6px',
+      fontSize: 12,
+      cursor: 'pointer',
+      height: 28,
+      lineHeight: 1,
+      display: 'inline-flex',
+      alignItems: 'center',
+      flexShrink: 0,
+    };
+
+    let dockDescriptionPanel: React.ReactNode = null;
+    if (showTitleDescription && desc) {
+      const { maxHeightPx, expandedHeightPx } = descriptionGapFit;
+      const togglePad = descriptionTruncatable ? DESCRIPTION_TOGGLE_BODY_PAD : 0;
+      const contentNeededPx = descriptionContentHeightPx > 0
+        ? descriptionContentHeightPx + DESCRIPTION_PANEL_PAD_Y + togglePad
+        : 0;
+      let panelHeightPx: number;
+      if (descriptionExpanded) {
+        panelHeightPx = contentNeededPx > 0
+          ? Math.min(expandedHeightPx, contentNeededPx)
+          : expandedHeightPx;
+      } else if (descriptionTruncatable) {
+        panelHeightPx = Math.max(maxHeightPx, DESCRIPTION_LAPTOP_COLLAPSED_PX);
+      } else {
+        panelHeightPx = maxHeightPx;
+      }
+      const showSeeMore = !descriptionExpanded && descriptionTruncatable;
+      const showSeeLess = descriptionExpanded && descriptionTruncatable;
+      dockDescriptionPanel = (
+        <div
+          className="description-scroll-panel"
+          style={{
+            position: 'relative',
+            padding: '8px 10px',
+            borderRadius: 6,
+            background: withOverlayAlpha(overlayBg, 1),
+            color: overlayFg,
+            fontFamily: overlayFont,
+            fontSize: 'clamp(10px, 1.5vw, 12px)',
+            lineHeight: 1.4,
+            width: '100%',
+            display: 'flex',
+            flexDirection: 'column',
+            ...(panelHeightPx > 0 ? { height: panelHeightPx, maxHeight: panelHeightPx } : {}),
+            overflow: 'hidden',
+            whiteSpace: 'pre-wrap',
+            wordBreak: 'break-word',
+            pointerEvents: 'auto',
+            border: '1px solid rgba(255,255,255,0.35)',
+            touchAction: 'pan-y',
+          }}
+          {...bindDescriptionPanelHandlers()}
+        >
+          <div
+            ref={descriptionBodyRef}
+            className="description-scroll-body"
+            style={{
+              flex: 1,
+              minHeight: 0,
+              overflowY: 'auto',
+              overflowX: 'hidden',
+              overscrollBehavior: 'contain',
+              WebkitOverflowScrolling: 'touch',
+              paddingBottom: (showSeeMore || showSeeLess) ? DESCRIPTION_TOGGLE_BODY_PAD_BOTTOM : 0,
+              scrollbarWidth: 'none',
+              msOverflowStyle: 'none',
+            }}
+          >
+            {desc}
+          </div>
+          {showSeeMore && renderDescriptionToggle('more', () => setDescriptionExpanded(true), overlayFg, overlayFont)}
+          {showSeeLess && renderDescriptionToggle('less', () => setDescriptionExpanded(false), overlayFg, overlayFont)}
+        </div>
+      );
+    }
 
     return (
       <div
-        className="carousel-media-overlay hero-media-scrubber-cluster"
+        className="carousel-media-overlay hero-media-dock"
         style={{
           position: 'absolute',
-          bottom: isNarrow ? SCRUBBER_NARROW_BOTTOM_PX : 12,
-          left: isNarrow ? 6 : (scrubberLeftPx || SCRUBBER_LEFT_FALLBACK_PX),
-          right: isNarrow ? SCRUBBER_NARROW_RIGHT_PX : SCRUBBER_RIGHT_RESERVE_PX,
-          height: 28,
-          minWidth: 0,
-          overflow: 'hidden',
+          bottom: DOCK_BOTTOM_PX,
+          left: DOCK_SIDE_LEFT_PX,
+          right: DOCK_SIDE_RIGHT_PX,
           display: 'flex',
-          alignItems: 'center',
-          gap: 6,
-          padding: '0 8px',
-          borderRadius: 8,
-          background: scrubberBg,
-          border: '1px solid rgba(255,255,255,0.35)',
+          flexDirection: 'column',
+          alignItems: 'stretch',
+          gap: 4,
+          padding: 0,
+          background: 'transparent',
+          border: 'none',
           color: overlayFg,
           fontFamily: overlayFont,
           pointerEvents: 'auto',
-          opacity: showHeroOverlay ? 1 : 0,
+          opacity: (showHeroOverlay || showTitleDescription) ? 1 : 0,
           transition: 'opacity .15s ease',
-          zIndex: isNarrow ? 5 : 15,
+          zIndex: 20,
+          minWidth: 0,
           touchAction: 'manipulation',
         }}
         onMouseEnter={() => { if (overlayHideTimerRef.current) window.clearTimeout(overlayHideTimerRef.current); }}
+        onMouseLeave={() => {
+          if (!showTitleDescription) {
+            overlayHideTimerRef.current = window.setTimeout(() => setShowHeroOverlay(false), 4000) as unknown as number;
+          }
+        }}
       >
-        <button
-          type="button"
-          aria-label={isHeroPaused ? 'Play' : 'Pause'}
-          onClick={(e) => {
-            e.stopPropagation();
-            if (!media) return;
-            bumpHeroOverlay();
-            try {
-              if (media.paused) void media.play();
-              else media.pause();
-            } catch {}
-          }}
-          onTouchStart={(e) => {
-            e.stopPropagation();
-            if (!media) return;
-            bumpHeroOverlay();
-            try {
-              if (media.paused) void media.play();
-              else media.pause();
-            } catch {}
-          }}
+        <div
+          ref={heroTitleChipRef}
           style={{
-            flexShrink: 0,
-            width: 24,
-            height: 24,
-            padding: 0,
-            border: 'none',
-            borderRadius: 4,
-            background: 'rgba(255,255,255,0.15)',
-            color: overlayFg,
-            fontFamily: overlayFont,
-            fontSize: 11,
-            lineHeight: 1,
-            cursor: 'pointer',
-            display: 'inline-flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            touchAction: 'manipulation',
+            display: 'flex',
+            alignItems: 'flex-start',
+            alignSelf: 'flex-start',
+            width: 'fit-content',
+            maxWidth: `${DOCK_TITLE_MAX_WIDTH_PCT}%`,
+            minWidth: 0,
           }}
         >
-          {isHeroPaused ? '▶' : '⏸'}
-        </button>
-        {!isNarrow && (
-          <span style={{ flexShrink: 0, fontSize: 10, lineHeight: 1, minWidth: 28, textAlign: 'right' }}>
-            {formatMediaTime(current)}
-          </span>
-        )}
-        <input
-          type="range"
-          min={0}
-          max={duration > 0 ? duration : 0}
-          step={0.1}
-          value={duration > 0 ? Math.min(current, duration) : 0}
-          aria-label="Seek"
-          onInput={(e) => {
-            if (!media) return;
-            const val = Number((e.currentTarget as HTMLInputElement).value);
-            try { media.currentTime = val; } catch {}
-            setHeroMediaProgress((prev) => ({ ...prev, current: val }));
-          }}
-          onChange={(e) => {
-            if (!media) return;
-            const val = Number((e.currentTarget as HTMLInputElement).value);
-            try { media.currentTime = val; } catch {}
-            setHeroMediaProgress((prev) => ({ ...prev, current: val }));
-            bumpHeroOverlay();
-          }}
-          onPointerDown={(e) => {
-            e.stopPropagation();
-            try { (e.currentTarget as HTMLInputElement).setPointerCapture?.(e.pointerId); } catch {}
-            controlOwnerRef.current = 'media';
-            lockBodyScroll();
-            bumpHeroOverlay();
-          }}
-          onPointerMove={(e) => { e.stopPropagation(); }}
-          onPointerUp={(e) => {
-            e.stopPropagation();
-            try { (e.currentTarget as HTMLInputElement).releasePointerCapture?.(e.pointerId); } catch {}
-            controlOwnerRef.current = null;
-            unlockBodyScroll();
-            bumpHeroOverlay();
-          }}
-          onPointerCancel={(e) => {
-            e.stopPropagation();
-            controlOwnerRef.current = null;
-            unlockBodyScroll();
-          }}
-          onTouchStart={(e) => {
-            e.stopPropagation();
-            controlOwnerRef.current = 'media';
-            lockBodyScroll();
-            bumpHeroOverlay();
-          }}
-          onTouchMove={(e) => { e.stopPropagation(); }}
-          onTouchEnd={(e) => {
-            e.stopPropagation();
-            controlOwnerRef.current = null;
-            unlockBodyScroll();
-            bumpHeroOverlay();
-          }}
+          <button
+            type="button"
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              toggleHeroTitleDescription(desc);
+            }}
+            onTouchEnd={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              toggleHeroTitleDescription(desc);
+            }}
+            onMouseEnter={() => {
+              if (desc) {
+                setShowHeroOverlay(true);
+                if (overlayHideTimerRef.current) window.clearTimeout(overlayHideTimerRef.current);
+              }
+            }}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'flex-start',
+              gap: 4,
+              padding: '4px 6px',
+              borderRadius: 6,
+              background: withOverlayAlpha(overlayBg, 0.82),
+              color: overlayFg,
+              fontFamily: overlayFont,
+              fontSize: 11,
+              lineHeight: 1.2,
+              border: desc ? '1px solid rgba(255,255,255,0.35)' : '1px solid rgba(255,255,255,0.25)',
+              cursor: desc ? 'pointer' : 'default',
+              touchAction: 'manipulation',
+              maxWidth: '100%',
+              textAlign: 'left',
+            }}
+          >
+            {isOwner && onEditAsset && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onEditAsset(asset);
+                }}
+                style={{
+                  marginRight: 4,
+                  padding: '2px 4px',
+                  background: 'rgba(255,255,255,0.2)',
+                  border: '1px solid rgba(255,255,255,0.4)',
+                  borderRadius: 4,
+                  cursor: 'pointer',
+                  fontSize: 10,
+                  lineHeight: 1,
+                  color: 'inherit',
+                  flexShrink: 0,
+                }}
+                title="Edit asset"
+              >
+                ✏️
+              </button>
+            )}
+            <span
+              style={{
+                fontWeight: 600,
+                whiteSpace: 'normal',
+                display: '-webkit-box',
+                WebkitLineClamp: 2,
+                WebkitBoxOrient: 'vertical',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                lineHeight: 1.2,
+                maxHeight: '2.4em',
+                minWidth: 0,
+              }}
+            >
+              {asset.title || 'Untitled'}
+            </span>
+            {desc ? (
+              <span style={{ fontSize: 10, flexShrink: 0, marginTop: 1 }}>{showTitleDescription ? '▼' : '▲'}</span>
+            ) : null}
+          </button>
+        </div>
+
+        {dockDescriptionPanel}
+
+        <div
           style={{
-            flex: 1,
-            minWidth: isNarrow ? 0 : 40,
-            height: 22,
-            margin: 0,
-            cursor: 'pointer',
-            touchAction: 'manipulation',
-            accentColor: overlayFg,
+            ...dockGlassStrip,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 6,
+            height: 28,
+            minWidth: 0,
+            overflow: 'hidden',
+            width: '100%',
           }}
-        />
-        {!isNarrow && (
-          <span style={{ flexShrink: 0, fontSize: 10, lineHeight: 1, minWidth: 28 }}>
-            {formatMediaTime(duration)}
-          </span>
-        )}
+        >
+          <button
+            type="button"
+            aria-label={isHeroPaused ? 'Play' : 'Pause'}
+            onClick={(e) => {
+              e.stopPropagation();
+              if (!media) return;
+              bumpHeroOverlay();
+              try {
+                if (media.paused) void media.play();
+                else media.pause();
+              } catch {}
+            }}
+            onTouchStart={(e) => {
+              e.stopPropagation();
+              if (!media) return;
+              bumpHeroOverlay();
+              try {
+                if (media.paused) void media.play();
+                else media.pause();
+              } catch {}
+            }}
+            style={{
+              flexShrink: 0,
+              width: 24,
+              height: 24,
+              padding: 0,
+              border: 'none',
+              borderRadius: 4,
+              background: 'rgba(255,255,255,0.15)',
+              color: overlayFg,
+              fontFamily: overlayFont,
+              fontSize: 11,
+              lineHeight: 1,
+              cursor: 'pointer',
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              touchAction: 'manipulation',
+            }}
+          >
+            {isHeroPaused ? '▶' : '⏸'}
+          </button>
+          {showCurrentTime && (
+            <span style={{ flexShrink: 0, fontSize: 10, lineHeight: 1, minWidth: 28, textAlign: 'right', opacity: 0.85 }}>
+              {formatMediaTime(current)}
+            </span>
+          )}
+          <input
+            type="range"
+            className="hero-dock-slider"
+            min={0}
+            max={duration > 0 ? duration : 0}
+            step={0.1}
+            value={duration > 0 ? Math.min(current, duration) : 0}
+            aria-label="Seek"
+            onInput={(e) => {
+              if (!media) return;
+              const val = Number((e.currentTarget as HTMLInputElement).value);
+              try { media.currentTime = val; } catch {}
+              setHeroMediaProgress((prev) => ({ ...prev, current: val }));
+            }}
+            onChange={(e) => {
+              if (!media) return;
+              const val = Number((e.currentTarget as HTMLInputElement).value);
+              try { media.currentTime = val; } catch {}
+              setHeroMediaProgress((prev) => ({ ...prev, current: val }));
+              bumpHeroOverlay();
+            }}
+            onPointerDown={(e) => {
+              e.stopPropagation();
+              try { (e.currentTarget as HTMLInputElement).setPointerCapture?.(e.pointerId); } catch {}
+              controlOwnerRef.current = 'media';
+              lockBodyScroll();
+              bumpHeroOverlay();
+            }}
+            onPointerMove={(e) => { e.stopPropagation(); }}
+            onPointerUp={(e) => {
+              e.stopPropagation();
+              try { (e.currentTarget as HTMLInputElement).releasePointerCapture?.(e.pointerId); } catch {}
+              controlOwnerRef.current = null;
+              unlockBodyScroll();
+              bumpHeroOverlay();
+            }}
+            onPointerCancel={(e) => {
+              e.stopPropagation();
+              controlOwnerRef.current = null;
+              unlockBodyScroll();
+            }}
+            onTouchStart={(e) => {
+              e.stopPropagation();
+              controlOwnerRef.current = 'media';
+              lockBodyScroll();
+              bumpHeroOverlay();
+            }}
+            onTouchMove={(e) => { e.stopPropagation(); }}
+            onTouchEnd={(e) => {
+              e.stopPropagation();
+              controlOwnerRef.current = null;
+              unlockBodyScroll();
+              bumpHeroOverlay();
+            }}
+            style={{
+              flex: 1,
+              minWidth: 0,
+              margin: 0,
+              cursor: 'pointer',
+              touchAction: 'manipulation',
+              accentColor: overlayFg,
+              ...dockSliderStyle,
+            }}
+          />
+          {showDurationTime && (
+            <span style={{ flexShrink: 0, fontSize: 10, lineHeight: 1, minWidth: 28, opacity: 0.85 }}>
+              {formatMediaTime(duration)}
+            </span>
+          )}
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 4,
+              flexShrink: 0,
+              width: DOCK_RIGHT_ACTIONS_WIDTH_PX,
+              justifyContent: 'flex-end',
+            }}
+          >
+            <div style={{ position: 'relative', display: 'inline-block' }}>
+              {showVolumeSlider && (
+                <input
+                  ref={(el) => { volumeSliderRef.current = el; }}
+                  type="range"
+                  min={0}
+                  max={1}
+                  step={0.01}
+                  defaultValue={(volMedia?.muted ? 0 : (volMedia?.volume ?? 1))}
+                  onInput={(e) => {
+                    if (!volMedia) return;
+                    const val = Number((e.currentTarget as HTMLInputElement).value);
+                    volMedia.volume = val;
+                    if (val > 0) { volMedia.muted = false; lastNonZeroVolumeRef.current = val; } else { volMedia.muted = true; }
+                    setIsHeroMuted(volMedia.muted);
+                  }}
+                  onChange={(e) => {
+                    if (!volMedia) return;
+                    const val = Number((e.currentTarget as HTMLInputElement).value);
+                    volMedia.volume = val;
+                    if (val > 0) { volMedia.muted = false; lastNonZeroVolumeRef.current = val; } else { volMedia.muted = true; }
+                    setIsHeroMuted(volMedia.muted);
+                    if (volumeHideTimerRef.current) window.clearTimeout(volumeHideTimerRef.current);
+                    volumeHideTimerRef.current = window.setTimeout(() => setShowVolumeSlider(false), 3000) as unknown as number;
+                  }}
+                  onPointerDown={(e) => { e.stopPropagation(); try { (e.currentTarget as any).setPointerCapture?.(e.pointerId); } catch {}; controlOwnerRef.current = 'volume'; lockBodyScroll(); bumpHeroOverlay(); }}
+                  onPointerMove={(e) => { e.stopPropagation(); }}
+                  onPointerUp={(e) => { e.stopPropagation(); try { (e.currentTarget as any).releasePointerCapture?.(e.pointerId); } catch {}; controlOwnerRef.current = null; unlockBodyScroll(); bumpHeroOverlay(); }}
+                  onWheel={(e) => { e.stopPropagation(); e.preventDefault(); }}
+                  onPointerCancel={(e) => { e.stopPropagation(); controlOwnerRef.current = null; unlockBodyScroll(); }}
+                  onTouchStart={(e) => { e.stopPropagation(); controlOwnerRef.current = 'volume'; lockBodyScroll(); bumpHeroOverlay(); }}
+                  onTouchMove={(e) => { e.stopPropagation(); bumpHeroOverlay(); }}
+                  onTouchEnd={(e) => { e.stopPropagation(); controlOwnerRef.current = null; unlockBodyScroll(); bumpHeroOverlay(); }}
+                  aria-label="Volume"
+                  aria-orientation="vertical"
+                  style={{ position: 'absolute', left: '50%', bottom: 'calc(100% + 6px)', transform: 'translateX(-50%) rotate(-90deg)', transformOrigin: 'center bottom', width: 64, height: 22, background: 'transparent', touchAction: 'manipulation' }}
+                />
+              )}
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (!volMedia) return;
+                  bumpHeroOverlay();
+                  setShowVolumeSlider(true);
+                  if (volumeHideTimerRef.current) window.clearTimeout(volumeHideTimerRef.current);
+                  volumeHideTimerRef.current = window.setTimeout(() => setShowVolumeSlider(false), 3000) as unknown as number;
+                  if (volMedia.muted || volMedia.volume === 0) {
+                    volMedia.muted = false;
+                    volMedia.volume = lastNonZeroVolumeRef.current || 1;
+                    setIsHeroMuted(false);
+                    try { if (volumeSliderRef.current) volumeSliderRef.current.value = String(volMedia.volume); } catch {}
+                    try { void volMedia.play(); } catch {}
+                  } else {
+                    volMedia.muted = true;
+                    setIsHeroMuted(true);
+                    try { if (volumeSliderRef.current) volumeSliderRef.current.value = '0'; } catch {}
+                  }
+                }}
+                aria-label="Mute/Volume"
+                style={dockActionBtn}
+              >
+                {isHeroMuted ? '🔇' : '🔊'}
+              </button>
+            </div>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                const wrap = mediaWrapRefs.current.get(itemIdx);
+                if (!wrap) return;
+                bumpHeroOverlay();
+                try {
+                  if (!document.fullscreenElement) {
+                    if (wrap.requestFullscreen) wrap.requestFullscreen();
+                    else if ((wrap as any).webkitRequestFullscreen) (wrap as any).webkitRequestFullscreen();
+                    else if ((wrap as any).msRequestFullscreen) (wrap as any).msRequestFullscreen();
+                  } else {
+                    if (document.exitFullscreen) document.exitFullscreen();
+                    else if ((document as any).webkitExitFullscreen) (document as any).webkitExitFullscreen();
+                    else if ((document as any).msExitFullscreen) (document as any).msExitFullscreen();
+                  }
+                } catch {}
+              }}
+              aria-label="Fullscreen"
+              style={dockActionBtn}
+            >
+              ⤢
+            </button>
+          </div>
+        </div>
       </div>
     );
   };
 
-  const renderHeroAudioMuteCluster = (
-    itemIdx: number,
-    overlayBg: string,
-    overlayFg: string,
-  ) => (
-    <div
-      style={{
-        position: 'absolute',
-        right: 12,
-        bottom: 12,
-        display: 'block',
-        opacity: showHeroOverlay ? 1 : 0,
-        transition: 'opacity .15s ease',
-        pointerEvents: 'auto',
-      }}
-      className="carousel-media-overlay"
-      onMouseEnter={() => { if (overlayHideTimerRef.current) window.clearTimeout(overlayHideTimerRef.current); }}
-      onMouseLeave={() => { overlayHideTimerRef.current = window.setTimeout(() => setShowHeroOverlay(false), 4000) as unknown as number; }}
-    >
-      <div style={{ position: 'relative', display: 'inline-block' }}>
-        {showVolumeSlider && (
-          <input
-            ref={(el) => { volumeSliderRef.current = el; }}
-            type="range"
-            min={0}
-            max={1}
-            step={0.01}
-            defaultValue={(audioRefs.current.get(itemIdx)?.muted ? 0 : (audioRefs.current.get(itemIdx)?.volume ?? 1))}
-            onInput={(e) => {
-              const a = audioRefs.current.get(itemIdx);
-              if (!a) return;
-              const val = Number((e.currentTarget as HTMLInputElement).value);
-              a.volume = val;
-              if (val > 0) { a.muted = false; lastNonZeroVolumeRef.current = val; } else { a.muted = true; }
-              setIsHeroMuted(a.muted);
-            }}
-            onChange={(e) => {
-              const a = audioRefs.current.get(itemIdx);
-              if (!a) return;
-              const val = Number((e.currentTarget as HTMLInputElement).value);
-              a.volume = val;
-              if (val > 0) { a.muted = false; lastNonZeroVolumeRef.current = val; } else { a.muted = true; }
-              setIsHeroMuted(a.muted);
-              if (volumeHideTimerRef.current) window.clearTimeout(volumeHideTimerRef.current);
-              volumeHideTimerRef.current = window.setTimeout(() => setShowVolumeSlider(false), 3000) as unknown as number;
-            }}
-            onPointerDown={(e) => { e.stopPropagation(); try { (e.currentTarget as any).setPointerCapture?.(e.pointerId); } catch {}; controlOwnerRef.current = 'volume'; lockBodyScroll(); bumpHeroOverlay(); }}
-            onPointerMove={(e) => { e.stopPropagation(); }}
-            onPointerUp={(e) => { e.stopPropagation(); try { (e.currentTarget as any).releasePointerCapture?.(e.pointerId); } catch {}; controlOwnerRef.current = null; unlockBodyScroll(); bumpHeroOverlay(); }}
-            onWheel={(e) => { e.stopPropagation(); e.preventDefault(); }}
-            onPointerCancel={(e) => { e.stopPropagation(); controlOwnerRef.current = null; unlockBodyScroll(); }}
-            onTouchStart={(e) => { e.stopPropagation(); controlOwnerRef.current = 'volume'; lockBodyScroll(); bumpHeroOverlay(); }}
-            onTouchMove={(e) => { e.stopPropagation(); bumpHeroOverlay(); }}
-            onTouchEnd={(e) => { e.stopPropagation(); controlOwnerRef.current = null; unlockBodyScroll(); bumpHeroOverlay(); }}
-            aria-label="Volume"
-            aria-orientation="vertical"
-            style={{ position: 'absolute', left: '50%', bottom: 'calc(100% + 6px)', transform: 'translateX(-50%) rotate(-90deg)', transformOrigin: 'center bottom', width: 64, height: 22, background: 'transparent', touchAction: 'manipulation' }}
-          />
-        )}
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            const a = audioRefs.current.get(itemIdx);
-            if (!a) return;
-            bumpHeroOverlay();
-            setShowVolumeSlider(true);
-            if (volumeHideTimerRef.current) window.clearTimeout(volumeHideTimerRef.current);
-            volumeHideTimerRef.current = window.setTimeout(() => setShowVolumeSlider(false), 3000) as unknown as number;
-            if (a.muted || a.volume === 0) {
-              a.muted = false;
-              a.volume = lastNonZeroVolumeRef.current || 1;
-              setIsHeroMuted(false);
-              try { if (volumeSliderRef.current) volumeSliderRef.current.value = String(a.volume); } catch {}
-              try { void a.play(); } catch {}
-            } else {
-              a.muted = true;
-              setIsHeroMuted(true);
-              try { if (volumeSliderRef.current) volumeSliderRef.current.value = '0'; } catch {}
-            }
-          }}
-          aria-label="Mute/Volume"
-          style={{ background: overlayBg, border: '1px solid rgba(255,255,255,0.5)', color: overlayFg, borderRadius: 8, padding: '6px 8px', fontSize: 12, cursor: 'pointer', height: 28, lineHeight: 1, display: 'inline-flex', alignItems: 'center' }}
-        >
-          {isHeroMuted ? '🔇' : '🔊'}
-        </button>
-      </div>
-    </div>
-  );
-
-  const renderOverlayDescriptionPanel = (
+  /** Image-only heroes: legacy centered description panel (unchanged in this pass). */
+  const renderImageHeroDescriptionPanel = (
     desc: string,
     overlayBg: string,
     overlayFg: string,
@@ -1592,7 +1826,7 @@ export const OrbitPeekCarousel: React.FC<Props> = ({ items, index, onIndexChange
             const v = videoRefs.current.get(itemIdx!);
             if (!v) return;
             try {
-              if (v.paused) { void v.play(); setShowPauseFlash(true); window.setTimeout(()=>setShowPauseFlash(false), 600); }
+              if (v.paused) { void v.play(); }
               else { v.pause(); }
             } catch {}
             setShowHeroOverlay(true);
@@ -1619,137 +1853,7 @@ export const OrbitPeekCarousel: React.FC<Props> = ({ items, index, onIndexChange
             const overlayBoxStyle: React.CSSProperties = { position:'absolute', left:'var(--pad-x, 0px)', top:'var(--pad-y, 0px)', width: 'var(--content-w, 100%)', height: 'var(--content-h, 100%)', pointerEvents:'none', transform:'translateZ(1px)' };
             return (
               <div ref={heroOverlayBoxRef} style={overlayBoxStyle}>
-                {/* Title with clickable description */}
-                {(() => {
-                  const desc = (asset as any).metadata?.description ?? (asset as any).metadata?.desc ?? '';
-                  const hasDescription = !!desc; // Show dropdown for ANY description (default or custom)
-                  
-                  return (
-                    <>
-                      {/* Title button - stays in same position */}
-                      <div ref={heroTitleChipRef} style={{ position:'absolute', left:6, bottom:12, maxWidth:'50%', zIndex:10 }}>
-                        <button
-                        onClick={(e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          if (desc) {
-                            setShowTitleDescription(!showTitleDescription);
-                            setShowHeroOverlay(true);
-                            if (overlayHideTimerRef.current) window.clearTimeout(overlayHideTimerRef.current);
-                          }
-                        }}
-                        onTouchEnd={(e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          if (desc) {
-                            setShowTitleDescription(!showTitleDescription);
-                            setShowHeroOverlay(true);
-                            if (overlayHideTimerRef.current) window.clearTimeout(overlayHideTimerRef.current);
-                          }
-                        }}
-                        onMouseEnter={() => {
-                          if (desc) {
-                            setShowHeroOverlay(true);
-                            if (overlayHideTimerRef.current) window.clearTimeout(overlayHideTimerRef.current);
-                          }
-                        }}
-                        style={{ 
-                          display:'flex', 
-                          alignItems:'center', 
-                          gap:4, 
-                          padding:'5px 8px', 
-                          borderRadius:6, 
-                          background: overlayBg, 
-                          color: overlayFg, 
-                          fontFamily: overlayFont, 
-                          fontSize:11, 
-                          lineHeight:1.2, 
-                          pointerEvents: 'auto',
-                          opacity: showHeroOverlay ? 1 : 0, 
-                          transition:'opacity .15s ease', 
-                          cursor: desc ? 'pointer' : 'default',
-                          border: desc ? '1px solid rgba(255,255,255,0.5)' : 'none',
-                          touchAction: 'manipulation',
-                          zIndex: 100
-                        }} 
-                        className="carousel-media-overlay"
-                      >
-                        {isOwner && (
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              if (onEditAsset) onEditAsset(asset);
-                            }}
-                            style={{
-                              marginRight: 6,
-                              padding: '2px 4px',
-                              background: 'rgba(255,255,255,0.2)',
-                              border: '1px solid rgba(255,255,255,0.4)',
-                              borderRadius: 4,
-                              cursor: 'pointer',
-                              fontSize: 10,
-                              lineHeight: 1,
-                              color: 'inherit',
-                              transition: 'background 0.2s ease',
-                              flexShrink: 0
-                            }}
-                            onMouseEnter={(e) => {
-                              e.currentTarget.style.background = 'rgba(255,255,255,0.4)';
-                            }}
-                            onMouseLeave={(e) => {
-                              e.currentTarget.style.background = 'rgba(255,255,255,0.2)';
-                            }}
-                            title="Edit asset"
-                          >
-                            ✏️
-                          </button>
-                        )}
-                        <span style={{ fontWeight:600, whiteSpace:'normal', display:'-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient:'vertical', overflow:'hidden', textOverflow:'ellipsis', lineHeight: 1.2, maxHeight: '2.4em', flex: 1, minWidth: 0 }}>{asset.title || 'Untitled'}</span>
-                        {desc && <span style={{ fontSize:10, flexShrink: 0 }}>{showTitleDescription ? '▼' : '▲'}</span>}
-                        </button>
-                      </div>
-                      {renderOverlayDescriptionPanel(desc, overlayBg, overlayFg, overlayFont)}
-                    </>
-                  );
-                })()}
-                {renderHeroMediaScrubberCluster(itemIdx!, overlayBg, overlayFg, overlayFont)}
-                {/* Mute/Volume bottom-right with vertical slider above */}
-                <div style={{ position:'absolute', right:12, bottom:12, display:'block', opacity:(showHeroOverlay ? 1 : 0), transition:'opacity .15s ease', pointerEvents:'auto' }} className="carousel-media-overlay" onMouseEnter={() => { if (overlayHideTimerRef.current) window.clearTimeout(overlayHideTimerRef.current); }} onMouseLeave={() => { overlayHideTimerRef.current = window.setTimeout(()=>setShowHeroOverlay(false), 4000) as unknown as number; }}>
-                  <div style={{ position:'relative', display:'inline-block' }}>
-                    {showVolumeSlider && (
-                      <input ref={(el)=>{volumeSliderRef.current = el}} type="range" min={0} max={1} step={0.01}
-                        defaultValue={(videoRefs.current.get(itemIdx!)?.muted ? 0 : (videoRefs.current.get(itemIdx!)?.volume ?? 1))}
-                        onInput={(e) => { const v = videoRefs.current.get(itemIdx!); if (!v) return; const val = Number((e.currentTarget as HTMLInputElement).value); v.volume = val; if (val > 0) { v.muted = false; lastNonZeroVolumeRef.current = val; } else { v.muted = true; } setIsHeroMuted(v.muted); }}
-                        onChange={(e) => { const v = videoRefs.current.get(itemIdx!); if (!v) return; const val = Number((e.currentTarget as HTMLInputElement).value); v.volume = val; if (val > 0) { v.muted = false; lastNonZeroVolumeRef.current = val; } else { v.muted = true; } setIsHeroMuted(v.muted); if (volumeHideTimerRef.current) window.clearTimeout(volumeHideTimerRef.current); volumeHideTimerRef.current = window.setTimeout(()=>setShowVolumeSlider(false), 3000) as unknown as number; }}
-                        onPointerDown={(e)=>{ e.stopPropagation(); try { (e.currentTarget as any).setPointerCapture?.(e.pointerId); } catch {}; controlOwnerRef.current = 'volume'; lockBodyScroll(); setShowHeroOverlay(true); if (overlayHideTimerRef.current) window.clearTimeout(overlayHideTimerRef.current); }}
-                        onPointerMove={(e)=>{ e.stopPropagation(); }}
-                        onPointerUp={(e)=>{ e.stopPropagation(); try { (e.currentTarget as any).releasePointerCapture?.(e.pointerId); } catch {}; controlOwnerRef.current = null; unlockBodyScroll(); overlayHideTimerRef.current = window.setTimeout(()=>setShowHeroOverlay(false), 4000) as unknown as number; }}
-                        onWheel={(e)=>{ e.stopPropagation(); e.preventDefault(); }}
-                        onPointerCancel={(e)=>{ e.stopPropagation(); controlOwnerRef.current = null; unlockBodyScroll(); }}
-                        onMouseDown={(e)=>{ e.stopPropagation(); controlOwnerRef.current = 'volume'; setShowHeroOverlay(true); if (overlayHideTimerRef.current) window.clearTimeout(overlayHideTimerRef.current); }}
-                        onMouseMove={(e)=>{ if (controlOwnerRef.current==='volume') { e.stopPropagation(); } }}
-                        onMouseUp={(e)=>{ e.stopPropagation(); controlOwnerRef.current = null; overlayHideTimerRef.current = window.setTimeout(()=>setShowHeroOverlay(false), 4000) as unknown as number; }}
-                        onTouchStart={(e)=>{ e.stopPropagation(); controlOwnerRef.current = 'volume'; lockBodyScroll(); setShowHeroOverlay(true); if (overlayHideTimerRef.current) window.clearTimeout(overlayHideTimerRef.current); }}
-                        onTouchMove={(e)=>{ e.stopPropagation(); setShowHeroOverlay(true); if (overlayHideTimerRef.current) window.clearTimeout(overlayHideTimerRef.current); }}
-                        onTouchEnd={(e)=>{ e.stopPropagation(); controlOwnerRef.current = null; unlockBodyScroll(); overlayHideTimerRef.current = window.setTimeout(()=>setShowHeroOverlay(false), 4000) as unknown as number; }}
-                        aria-label="Volume"
-                        aria-orientation="vertical"
-                        style={{ position:'absolute', left:'50%', bottom:'calc(100% + 6px)', transform:'translateX(-50%) rotate(-90deg)', transformOrigin:'center bottom', width:64, height:22, background:'transparent', touchAction:'manipulation' }} />
-                    )}
-                    <button onClick={(e)=>{ e.stopPropagation(); const v=videoRefs.current.get(itemIdx!); if(!v) return;
-                      setShowHeroOverlay(true); if (overlayHideTimerRef.current) window.clearTimeout(overlayHideTimerRef.current); overlayHideTimerRef.current = window.setTimeout(()=>setShowHeroOverlay(false), 4000) as unknown as number;
-                      setShowVolumeSlider(true); if (volumeHideTimerRef.current) window.clearTimeout(volumeHideTimerRef.current); volumeHideTimerRef.current = window.setTimeout(()=>setShowVolumeSlider(false), 3000) as unknown as number;
-                      if (v.muted || v.volume === 0) { v.muted = false; v.volume = lastNonZeroVolumeRef.current || 1; setIsHeroMuted(false); try { if (volumeSliderRef.current) volumeSliderRef.current.value = String(v.volume); } catch {} try { void v.play(); } catch {} }
-                      else { v.muted = true; setIsHeroMuted(true); try { if (volumeSliderRef.current) volumeSliderRef.current.value = '0'; } catch {} }
-                    }} aria-label="Mute/Volume" style={{ background: overlayBg, border:'1px solid rgba(255,255,255,0.5)', color:overlayFg, borderRadius:8, padding:'6px 8px', fontSize:12, cursor:'pointer', height:28, lineHeight:1, display:'inline-flex', alignItems:'center' }}>{isHeroMuted ? '🔇' : '🔊'}</button>
-                  </div>
-                </div>
-                {/* Center Play/Pause */}
-                <button onClick={(e)=>{ e.stopPropagation(); const v=videoRefs.current.get(itemIdx!); if(!v) return; if(v.paused){ try{ void v.play(); setShowPauseFlash(true); if(overlayHideTimerRef.current) window.clearTimeout(overlayHideTimerRef.current); overlayHideTimerRef.current = window.setTimeout(()=>setShowPauseFlash(false),600) as unknown as number; }catch{} } else { try{ v.pause(); }catch{} } setShowHeroOverlay(true); if (overlayHideTimerRef.current) window.clearTimeout(overlayHideTimerRef.current); overlayHideTimerRef.current = window.setTimeout(()=>setShowHeroOverlay(false), 4000) as unknown as number; }} aria-label="Toggle Play"
-                  style={{ position:'absolute', left:'50%', top:'50%', transform:'translate(-50%,-50%)', background:'rgba(0,0,0,0.4)', color:'#fff', border:'1px solid rgba(255,255,255,0.6)', borderRadius:40, width:64, height:64, display:'flex', alignItems:'center', justifyContent:'center', fontSize:22, cursor:'pointer', opacity:(isHeroPaused?1:(showPauseFlash?1:0)), transition:'opacity .15s ease', pointerEvents:'auto' }}> {isHeroPaused ? '▶︎' : '⏸'} </button>
-                {/* Fullscreen top-right */}
-                <button onClick={(e)=>{ e.stopPropagation(); const v=videoRefs.current.get(itemIdx!); const wrap = (e.currentTarget.parentElement?.parentElement as HTMLElement); if(!v||!wrap) return; try{ if (!document.fullscreenElement) { if (wrap.requestFullscreen) wrap.requestFullscreen(); else if ((wrap as any).webkitRequestFullscreen) (wrap as any).webkitRequestFullscreen(); else if ((wrap as any).msRequestFullscreen) (wrap as any).msRequestFullscreen(); else if ((v as any).webkitEnterFullscreen) (v as any).webkitEnterFullscreen(); } else { if (document.exitFullscreen) document.exitFullscreen(); else if ((document as any).webkitExitFullscreen) (document as any).webkitExitFullscreen(); else if ((document as any).msExitFullscreen) (document as any).msExitFullscreen(); } }catch{} }} aria-label="Fullscreen"
-                  style={{ position:'absolute', right:12, top:12, background:'rgba(0,0,0,0.4)', color:'#fff', border:'1px solid rgba(255,255,255,0.6)', borderRadius:8, padding:'6px 8px', fontSize:12, cursor:'pointer', opacity:(showHeroOverlay?1:0), transition:'opacity .15s ease', pointerEvents:'auto', height:28, lineHeight:1, display:'inline-flex', alignItems:'center' }} className="carousel-media-overlay">⤢</button>
+                {renderHeroMediaDock(itemIdx!, asset, 'video', overlayBg, overlayFg, overlayFont)}
               </div>
             );
           })()}
@@ -1824,7 +1928,6 @@ export const OrbitPeekCarousel: React.FC<Props> = ({ items, index, onIndexChange
             }}
           />
           {isHero && (() => {
-            const desc = (asset as any).metadata?.description ?? (asset as any).metadata?.desc ?? '';
             const overlayBoxStyle: React.CSSProperties = {
               position: 'absolute',
               left: 'var(--pad-x, 0px)',
@@ -1836,97 +1939,7 @@ export const OrbitPeekCarousel: React.FC<Props> = ({ items, index, onIndexChange
             };
             return (
               <div ref={heroOverlayBoxRef} style={overlayBoxStyle}>
-                <div ref={heroTitleChipRef} style={{ position: 'absolute', left: 6, bottom: 12, maxWidth: '50%', zIndex: 10, pointerEvents: 'auto' }}>
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      if (desc) {
-                        setShowTitleDescription(!showTitleDescription);
-                        setShowHeroOverlay(true);
-                        if (overlayHideTimerRef.current) window.clearTimeout(overlayHideTimerRef.current);
-                      }
-                    }}
-                    onTouchEnd={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      if (desc) {
-                        setShowTitleDescription(!showTitleDescription);
-                        setShowHeroOverlay(true);
-                        if (overlayHideTimerRef.current) window.clearTimeout(overlayHideTimerRef.current);
-                      }
-                    }}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 4,
-                      padding: '5px 8px',
-                      borderRadius: 6,
-                      background: overlayBg,
-                      color: overlayFg,
-                      fontFamily: overlayFont,
-                      fontSize: 11,
-                      lineHeight: 1.2,
-                      pointerEvents: 'auto',
-                      opacity: showHeroOverlay ? 1 : 0,
-                      transition: 'opacity .15s ease',
-                      cursor: desc ? 'pointer' : 'default',
-                      border: desc ? '1px solid rgba(255,255,255,0.5)' : 'none',
-                      touchAction: 'manipulation',
-                      zIndex: 100,
-                    }}
-                    className="carousel-media-overlay"
-                  >
-                    {isOwner && onEditAsset && (
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onEditAsset(asset);
-                        }}
-                        style={{
-                          marginRight: 6,
-                          padding: '2px 4px',
-                          background: 'rgba(255,255,255,0.2)',
-                          border: '1px solid rgba(255,255,255,0.4)',
-                          borderRadius: 4,
-                          cursor: 'pointer',
-                          fontSize: 10,
-                          lineHeight: 1,
-                          color: 'inherit',
-                          flexShrink: 0,
-                        }}
-                        title="Edit asset"
-                      >
-                        ✏️
-                      </button>
-                    )}
-                    <span
-                      style={{
-                        fontWeight: 600,
-                        whiteSpace: 'normal',
-                        display: '-webkit-box',
-                        WebkitLineClamp: 2,
-                        WebkitBoxOrient: 'vertical',
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                        lineHeight: 1.2,
-                        maxHeight: '2.4em',
-                        flex: 1,
-                        minWidth: 0,
-                      }}
-                    >
-                      {asset.title || 'Untitled'}
-                    </span>
-                    {desc ? (
-                      <span style={{ fontSize: 10, flexShrink: 0 }}>{showTitleDescription ? '▼' : '▲'}</span>
-                    ) : null}
-                  </button>
-                </div>
-                {renderHeroMediaScrubberCluster(itemIdx!, overlayBg, overlayFg, overlayFont)}
-                {renderHeroAudioMuteCluster(itemIdx!, overlayBg, overlayFg)}
-                {renderOverlayDescriptionPanel(desc, overlayBg, overlayFg, overlayFont)}
+                {renderHeroMediaDock(itemIdx!, asset, 'audio', overlayBg, overlayFg, overlayFont)}
               </div>
             );
           })()}
@@ -2049,7 +2062,7 @@ export const OrbitPeekCarousel: React.FC<Props> = ({ items, index, onIndexChange
                       {desc && <span style={{ fontSize:10, flexShrink: 0 }}>{showTitleDescription ? '▼' : '▲'}</span>}
                       </button>
                     </div>
-                    {renderOverlayDescriptionPanel(desc, overlayBg, overlayFg, overlayFont)}
+                    {renderImageHeroDescriptionPanel(desc, overlayBg, overlayFg, overlayFont)}
                   </>
                 );
               })()}
