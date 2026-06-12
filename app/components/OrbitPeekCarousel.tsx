@@ -1407,8 +1407,33 @@ export const OrbitPeekCarousel: React.FC<Props> = ({ items, index, onIndexChange
             width: 'fit-content',
             maxWidth: `${DOCK_TITLE_MAX_WIDTH_PCT}%`,
             minWidth: 0,
+            gap: 4,
           }}
         >
+          {isOwner && onEditAsset && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onEditAsset(asset);
+              }}
+              style={{
+                padding: '2px 4px',
+                background: 'rgba(255,255,255,0.2)',
+                border: '1px solid rgba(255,255,255,0.4)',
+                borderRadius: 4,
+                cursor: 'pointer',
+                fontSize: 10,
+                lineHeight: 1,
+                color: overlayFg,
+                flexShrink: 0,
+                touchAction: 'manipulation',
+              }}
+              title="Edit asset"
+            >
+              ✏️
+            </button>
+          )}
           <button
             type="button"
             onClick={(e) => {
@@ -1445,30 +1470,6 @@ export const OrbitPeekCarousel: React.FC<Props> = ({ items, index, onIndexChange
               textAlign: 'left',
             }}
           >
-            {isOwner && onEditAsset && (
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onEditAsset(asset);
-                }}
-                style={{
-                  marginRight: 4,
-                  padding: '2px 4px',
-                  background: 'rgba(255,255,255,0.2)',
-                  border: '1px solid rgba(255,255,255,0.4)',
-                  borderRadius: 4,
-                  cursor: 'pointer',
-                  fontSize: 10,
-                  lineHeight: 1,
-                  color: 'inherit',
-                  flexShrink: 0,
-                }}
-                title="Edit asset"
-              >
-                ✏️
-              </button>
-            )}
             <span
               style={{
                 fontWeight: 600,
@@ -2006,8 +2007,40 @@ export const OrbitPeekCarousel: React.FC<Props> = ({ items, index, onIndexChange
                 return (
                   <>
                     {/* Title button - stays in same position */}
-                    <div style={{ position:'absolute', left:6, bottom:12, maxWidth:'50%', zIndex:10 }}>
+                    <div style={{ position:'absolute', left:6, bottom:12, maxWidth:'50%', zIndex:10, display:'flex', alignItems:'center', gap:4, opacity: showHeroOverlay ? 1 : 0, transition:'opacity .15s ease' }}>
+                      {isOwner && onEditAsset && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onEditAsset(asset);
+                          }}
+                          style={{
+                            padding: '2px 4px',
+                            background: 'rgba(255,255,255,0.2)',
+                            border: '1px solid rgba(255,255,255,0.4)',
+                            borderRadius: 4,
+                            cursor: 'pointer',
+                            fontSize: 10,
+                            lineHeight: 1,
+                            color: overlayFg,
+                            transition: 'background 0.2s ease',
+                            flexShrink: 0,
+                            touchAction: 'manipulation',
+                          }}
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.background = 'rgba(255,255,255,0.4)';
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.background = 'rgba(255,255,255,0.2)';
+                          }}
+                          title="Edit asset"
+                        >
+                          ✏️
+                        </button>
+                      )}
                       <button
+                      type="button"
                       onClick={(e) => {
                         e.preventDefault();
                         e.stopPropagation();
@@ -2044,8 +2077,6 @@ export const OrbitPeekCarousel: React.FC<Props> = ({ items, index, onIndexChange
                         fontSize:11, 
                         lineHeight:1.2, 
                         pointerEvents: 'auto',
-                        opacity: showHeroOverlay ? 1 : 0, 
-                        transition:'opacity .15s ease', 
                         cursor: desc ? 'pointer' : 'default',
                         border: desc ? '1px solid rgba(255,255,255,0.5)' : 'none',
                         touchAction: 'manipulation',
@@ -2053,36 +2084,6 @@ export const OrbitPeekCarousel: React.FC<Props> = ({ items, index, onIndexChange
                       }} 
                       className="carousel-media-overlay"
                     >
-                      {isOwner && (
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            if (onEditAsset) onEditAsset(asset);
-                          }}
-                          style={{
-                            marginRight: 6,
-                            padding: '2px 4px',
-                            background: 'rgba(255,255,255,0.2)',
-                            border: '1px solid rgba(255,255,255,0.4)',
-                            borderRadius: 4,
-                            cursor: 'pointer',
-                            fontSize: 10,
-                            lineHeight: 1,
-                            color: 'inherit',
-                            transition: 'background 0.2s ease',
-                            flexShrink: 0
-                          }}
-                          onMouseEnter={(e) => {
-                            e.currentTarget.style.background = 'rgba(255,255,255,0.4)';
-                          }}
-                          onMouseLeave={(e) => {
-                            e.currentTarget.style.background = 'rgba(255,255,255,0.2)';
-                          }}
-                          title="Edit asset"
-                        >
-                          ✏️
-                        </button>
-                      )}
                       <span style={{ fontWeight:600, whiteSpace:'normal', display:'-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient:'vertical', overflow:'hidden', textOverflow:'ellipsis', lineHeight: 1.2, maxHeight: '2.4em', flex: 1, minWidth: 0 }}>{asset.title || 'Untitled'}</span>
                       {desc && <span style={{ fontSize:10, flexShrink: 0 }}>{showTitleDescription ? '▼' : '▲'}</span>}
                       </button>
