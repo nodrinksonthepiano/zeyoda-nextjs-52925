@@ -49,3 +49,14 @@ node_modules/
 .next/
 .DS_Store
 .env.local
+
+# Local secrets
+.env
+.env.*
+!.env.example
+
+*.pem
+*.key
+*.secret
+*.sqlite
+*.db
